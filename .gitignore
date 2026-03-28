@@ -1,0 +1,13 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Personal graph data — don't commit your knowledge graph
+knowledge_graph.json
+
+# Claude Code project config
+.claude/
