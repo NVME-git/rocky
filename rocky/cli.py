@@ -248,10 +248,11 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="subcommand")
 
-    # rocky install / uninstall / config
+    # rocky install / uninstall / config / report
     subparsers.add_parser("install", help="Install git post-commit hook")
     subparsers.add_parser("uninstall", help="Remove git post-commit hook")
     subparsers.add_parser("config", help="Show active configuration")
+    subparsers.add_parser("report", help="Prompt quality trends, PKG health, and next topics to learn")
 
     # rocky [task] [flags]
     parser.add_argument("task", nargs="?", help="Task description to analyze")
@@ -283,6 +284,12 @@ def main():
 
     from pathlib import Path
     pkg = PKG(vault_dir=Path(config.obsidian_vault))
+
+    if args.subcommand == "report":
+        from rocky.export.report import print_report
+        from rocky.graph.store import DB_FILE
+        print_report(pkg, db_path=DB_FILE)
+        return
     session = Session(
         daily_budget=config.daily_budget,
         min_gap_minutes=config.min_gap_minutes,
