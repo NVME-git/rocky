@@ -1,6 +1,6 @@
 """
-PKG - Personal Knowledge Graph
-Knowledge graph storage and classification logic.
+PKG — Personal Knowledge Graph.
+Storage and classification logic.
 """
 
 import json
@@ -9,7 +9,8 @@ from datetime import datetime, date
 from pathlib import Path
 from typing import Optional
 
-GRAPH_FILE = Path(__file__).parent / "knowledge_graph.json"
+GRAPH_DIR = Path.home() / ".rocky"
+GRAPH_FILE = GRAPH_DIR / "knowledge_graph.json"
 
 # Confidence thresholds
 KNOWN_THRESHOLD = 0.70
@@ -38,6 +39,7 @@ def _decay(confidence: float, last_reviewed: str, kind: str = "concept") -> floa
 class KnowledgeGraph:
     def __init__(self, path: Path = GRAPH_FILE):
         self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.data: dict = self._load()
 
     def _load(self) -> dict:
@@ -83,7 +85,6 @@ class KnowledgeGraph:
 
         if node_id in self.data["nodes"]:
             node = self.data["nodes"][node_id]
-            # Apply decay first, then add delta
             current = _decay(node["confidence"], node["last_reviewed"], node.get("kind", kind))
             new_conf = max(0.0, min(1.0, current + confidence_delta))
             node["confidence"] = round(new_conf, 4)
@@ -108,7 +109,7 @@ class KnowledgeGraph:
         self.save()
 
     def mark_encountered(self, topic: str):
-        """Record that the topic was encountered (without a Q&A session)."""
+        """Record that the topic was encountered without a Q&A session."""
         node_id = self._node_id(topic)
         if node_id in self.data["nodes"]:
             self.data["nodes"][node_id]["last_encountered"] = date.today().isoformat()

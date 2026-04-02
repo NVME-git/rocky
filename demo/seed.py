@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Seed the demo knowledge graph with pre-existing topics in various states.
+Seed the demo PKG with pre-existing topics in various states.
 
 Run this before run.py to start from an interesting, realistic baseline
-instead of an empty graph:
+instead of an empty PKG:
 
     python demo/seed.py
 

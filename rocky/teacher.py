@@ -1,5 +1,5 @@
 """
-PKG - Personal Knowledge Graph
+Rocky — the AI teacher.
 Claude-powered engine: topic extraction, question generation, answer evaluation.
 """
 
@@ -57,7 +57,6 @@ Example output:
 ]"""
 
     result = _ask(system, f"Task: {task_description}")
-    # Strip markdown code fences if present
     result = result.strip()
     if result.startswith("```"):
         result = result.split("```")[1]
@@ -134,7 +133,7 @@ Developer's answer: {answer}"""
 
 def generate_reminder(topic: str, node: dict, context: str) -> str:
     """Generate a brief reminder for a stale topic."""
-    system = """You are a technical mentor. Given a topic a developer learned before
+    system = """You are a Socratic technical mentor. Given a topic a developer learned before
 but hasn't revisited recently, write a 2-3 sentence reminder that:
 1. Refreshes the core idea
 2. Connects it to their current task

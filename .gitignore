@@ -10,5 +10,11 @@ __pycache__/
 knowledge_graph.json
 demo/demo_graph.json
 
+# Package build artifacts
+*.egg-info/
+
 # Claude Code project config
 .claude/
+
+# Personal scratchpad
+CLAUDE_CODE_SCRATCHPAD.md

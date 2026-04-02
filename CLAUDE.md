@@ -14,12 +14,12 @@ Always activate the venv first:
 source .venv/bin/activate
 ```
 
-Main CLI (current MVP, pre-restructure):
+Main CLI:
 
 ```bash
-python pkg.py "your task description here"
-python pkg.py --stats
-python pkg.py --list
+rocky "your task description here"
+rocky --stats
+rocky --list
 ```
 
 Demo (isolated PKG, safe to experiment with):
@@ -31,22 +31,21 @@ python demo/run.py --task 1  # run a single task
 python demo/run.py --reset   # re-seed the PKG
 ```
 
-## Key files (current MVP)
+## Key files
 
 | File | Purpose |
 |---|---|
-| `pkg.py` | CLI entry point, Q&A loop, output formatting |
-| `engine.py` | Rocky: Claude API calls for topic extraction, question generation, answer evaluation |
-| `graph.py` | PKG: storage, confidence decay, classification (known/stale/new) |
-| `graph_cli.py` | JSON-over-stdout wrapper used by the Claude Code skill integration |
+| `rocky/cli.py` | CLI entry point, Q&A loop, output formatting |
+| `rocky/teacher.py` | Rocky: Claude API calls for topic extraction, question generation, answer evaluation |
+| `rocky/graph/store.py` | PKG: storage, confidence decay, classification (known/stale/new) |
+| `graph_cli.py` | JSON-over-stdout wrapper used by the Claude Code skill integration (stays at root) |
 | `demo/seed.py` | Populates `demo/demo_graph.json` with pre-aged topics |
 | `demo/run.py` | Runs the 5-task demo scenario against the demo PKG |
 | `demo/tasks.py` | The task list and notes on what each task tests |
 
 ## Data files
 
-- `~/.rocky/graph.db` — global PKG (SQLite), follows the user across projects (planned)
-- `knowledge_graph.json` — current MVP PKG (local JSON, gitignored)
+- `~/.rocky/knowledge_graph.json` — global PKG (JSON), follows the user across projects
 - `demo/demo_graph.json` — demo PKG, gitignored, reset with `demo/run.py --reset`
 
 ## Environment

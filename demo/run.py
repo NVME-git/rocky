@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-PKG Demo — watch the knowledge graph evolve through a realistic dev scenario.
+Rocky Demo — watch the PKG evolve through a realistic dev scenario.
 
 Setup:
-    python demo/seed.py       # populate the demo graph with a starting state
+    python demo/seed.py       # populate the demo PKG with a starting state
 
 Run:
     python demo/run.py              # run all tasks interactively
     python demo/run.py --task 2     # run a single task (1-indexed)
-    python demo/run.py --reset      # reset graph back to seeded state
+    python demo/run.py --reset      # reset PKG back to seeded state
     python demo/run.py --list       # show available tasks
 
-The demo uses demo/demo_graph.json — your real knowledge_graph.json is untouched.
+The demo uses demo/demo_graph.json — your real PKG (~/.rocky/) is untouched.
 """
 
 import argparse
@@ -27,8 +27,8 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 # Make parent package importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from graph import KnowledgeGraph
-from pkg import color, run_task
+from rocky.graph.store import KnowledgeGraph
+from rocky.cli import color, run_task
 from demo.tasks import TASKS
 
 DEMO_GRAPH = Path(__file__).parent / "demo_graph.json"
@@ -98,7 +98,7 @@ def run_demo(indices: list[int]):
 def main():
     parser = argparse.ArgumentParser(
         prog="demo/run.py",
-        description="PKG Demo — watch the knowledge graph evolve",
+        description="Rocky Demo — watch the PKG evolve",
     )
     parser.add_argument("--task", type=int, metavar="N", help="Run only task N (1-indexed)")
     parser.add_argument("--reset", action="store_true", help="Reset graph to seeded state")

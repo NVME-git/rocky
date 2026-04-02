@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Thin CLI wrapper around graph.py for use by the PKG Claude Code skill.
+Thin CLI wrapper around the PKG for use by the Rocky Claude Code skill.
+Communicates via JSON over stdout.
 """
 
 import json
@@ -8,7 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from graph import KnowledgeGraph
+from rocky.graph.store import KnowledgeGraph
 
 graph = KnowledgeGraph()
 
