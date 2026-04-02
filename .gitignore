@@ -9,6 +9,8 @@ __pycache__/
 # Personal graph data — don't commit your knowledge graphs
 knowledge_graph.json
 demo/demo_graph.json
+demo/demo_graph.db
+demo/demo_vault/
 
 # Package build artifacts
 *.egg-info/

@@ -14,13 +14,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from rocky.graph.store import KnowledgeGraph
+from rocky.graph.store import PKG
+from rocky.graph import fsrs
 import rocky.teacher as teacher
 
-# Confidence adjustments
-CONFIDENCE_CORRECT = 0.15
-CONFIDENCE_PARTIAL = 0.07
-CONFIDENCE_INITIAL = 0.45
 MAX_QUESTIONS = 3
 
 
@@ -35,7 +32,7 @@ def print_header():
 
 
 def run_socratic_loop(topic: str, topic_info: dict, task: str,
-                      known_topics: list[str], graph: KnowledgeGraph):
+                      known_topics: list[str], pkg: PKG):
     """Drive the Socratic Q&A loop for a new or poorly understood topic."""
     print(f"\n{color('Rocky:', 'cyan')} New topic — {topic}")
     print(color(f"  {topic_info['description']}", "dim"))
@@ -60,23 +57,21 @@ def run_socratic_loop(topic: str, topic_info: dict, task: str,
 
         if not answer:
             print(color("   Skipped — topic flagged for review later.", "yellow"))
-            graph.add_or_update(topic, 0.1, kind=topic_info.get("kind", "concept"),
-                                description=topic_info["description"], context=task)
+            pkg.add_or_update(topic, 0.0, kind=topic_info.get("kind", "concept"),
+                              description=topic_info["description"], context=task)
             return
 
         print(color("   Evaluating...", "dim"))
         result = teacher.evaluate_answer(topic, question, answer, topic_info["description"])
         score = result.get("score", 0.0)
         total_score += score
-        feedback = result.get("feedback", "")
 
-        print(f"\n   {color(feedback, 'cyan')}")
+        print(f"\n   {color(result.get('feedback', ''), 'cyan')}")
 
         if result.get("understood"):
             print(color("   Added to your PKG.", "green"))
-            conf_delta = CONFIDENCE_INITIAL + (score * CONFIDENCE_CORRECT)
-            graph.add_or_update(topic, conf_delta, kind=topic_info.get("kind", "concept"),
-                                description=topic_info["description"], context=task)
+            pkg.add_or_update(topic, score, kind=topic_info.get("kind", "concept"),
+                              description=topic_info["description"], context=task)
             return
 
         followup = result.get("followup")
@@ -89,16 +84,13 @@ def run_socratic_loop(topic: str, topic_info: dict, task: str,
     avg_score = total_score / max(questions_asked, 1)
     if avg_score >= 0.4:
         print(color("\n   Partial understanding — added to PKG with lower confidence.", "yellow"))
-        graph.add_or_update(topic, CONFIDENCE_INITIAL * avg_score,
-                            kind=topic_info.get("kind", "concept"),
-                            description=topic_info["description"], context=task)
     else:
         print(color("\n   Topic saved — revisit this one before proceeding.", "red"))
-        graph.add_or_update(topic, 0.1, kind=topic_info.get("kind", "concept"),
-                            description=topic_info["description"], context=task)
+    pkg.add_or_update(topic, avg_score, kind=topic_info.get("kind", "concept"),
+                      description=topic_info["description"], context=task)
 
 
-def run_task(task: str, graph: KnowledgeGraph):
+def run_task(task: str, pkg: PKG):
     print_header()
     print(f"\n{color('Task:', 'bold')} {task}\n")
     print(color("Analyzing topics...", "dim"))
@@ -114,8 +106,8 @@ def run_task(task: str, graph: KnowledgeGraph):
         return
 
     known_topic_names = [
-        n["topic"] for n in graph.all_topics()
-        if graph.classify(n["topic"]) == "known"
+        n.topic for n in pkg.all_topics()
+        if fsrs.classify(fsrs.retrievability(n.stability, n.last_reviewed)) == "known"
     ]
 
     new_count = 0
@@ -123,41 +115,42 @@ def run_task(task: str, graph: KnowledgeGraph):
 
     for topic_info in topics:
         topic = topic_info["topic"]
-        classification = graph.classify(topic)
+        classification = pkg.classify(topic)
 
         if classification == "known":
+            r = pkg.retrievability(topic)
             print(color(f"  ✓ {topic}", "green") +
-                  color(f" ({graph.effective_confidence(topic):.0%} confidence)", "dim"))
-            graph.mark_encountered(topic)
+                  color(f" ({r:.0%})", "dim"))
+            pkg.mark_encountered(topic)
 
         elif classification == "stale":
             stale_count += 1
-            node = graph.get(topic)
-            eff = graph.effective_confidence(topic)
+            node = pkg.get(topic)
+            r = pkg.retrievability(topic)
             print(color(f"  ~ {topic}", "yellow") +
-                  color(f" (confidence faded to {eff:.0%})", "dim"))
+                  color(f" (recall faded to {r:.0%})", "dim"))
             print(color("  Refreshing...", "dim"))
             reminder = teacher.generate_reminder(topic, node, task)
             print(f"\n  {color('Rocky:', 'yellow')} {reminder}\n")
-            graph.add_or_update(topic, 0.05, kind=topic_info.get("kind", node.get("kind", "concept")),
-                                context=task)
+            pkg.add_or_update(topic, 0.5, kind=topic_info.get("kind", node.kind),
+                              context=task)
 
         else:
             new_count += 1
-            run_socratic_loop(topic, topic_info, task, known_topic_names, graph)
+            run_socratic_loop(topic, topic_info, task, known_topic_names, pkg)
 
     print()
     if new_count == 0 and stale_count == 0:
         print(color("All topics are in your PKG. You're good to go.", "green"))
     else:
-        stats = graph.summary()
+        stats = pkg.summary()
         print(color(f"PKG: {stats['known']} known | "
                     f"{stats['stale']} fading | {stats['total']} total", "dim"))
 
 
-def show_stats(graph: KnowledgeGraph):
+def show_stats(pkg: PKG):
     print_header()
-    stats = graph.summary()
+    stats = pkg.summary()
     print(f"\n  Total topics:  {stats['total']}")
     print(color(f"  Known:         {stats['known']}", "green"))
     print(color(f"  Fading:        {stats['stale']}", "yellow"))
@@ -165,24 +158,22 @@ def show_stats(graph: KnowledgeGraph):
     print()
 
 
-def list_topics(graph: KnowledgeGraph):
+def list_topics(pkg: PKG):
     print_header()
-    nodes = graph.all_topics()
+    nodes = pkg.all_topics()
     if not nodes:
         print("\n  PKG is empty. Run a task to populate it.")
         return
 
-    print(f"\n  {'Topic':<35} {'Kind':<15} {'Confidence':<12} {'Last Reviewed'}")
+    print(f"\n  {'Topic':<35} {'Kind':<15} {'Recall':<12} {'Last Reviewed'}")
     print(color("  " + "─" * 75, "dim"))
 
-    for node in sorted(nodes, key=lambda n: graph.effective_confidence(n["topic"]), reverse=True):
-        topic = node["topic"]
-        kind = node.get("kind", "concept")
-        eff = graph.effective_confidence(topic)
-        classification = graph.classify(topic)
+    for node in sorted(nodes, key=lambda n: fsrs.retrievability(n.stability, n.last_reviewed), reverse=True):
+        r = fsrs.retrievability(node.stability, node.last_reviewed)
+        classification = fsrs.classify(r)
         color_code = "green" if classification == "known" else "yellow" if classification == "stale" else "red"
-        bar = "█" * int(eff * 10) + "░" * (10 - int(eff * 10))
-        print(f"  {color(topic[:34], color_code):<35} {kind:<15} {bar} {eff:.0%}  {node['last_reviewed']}")
+        bar = "█" * int(r * 10) + "░" * (10 - int(r * 10))
+        print(f"  {color(node.topic[:34], color_code):<35} {node.kind:<15} {bar} {r:.0%}  {node.last_reviewed}")
     print()
 
 
@@ -196,14 +187,14 @@ def main():
     parser.add_argument("--list", action="store_true", help="List all topics in your PKG")
 
     args = parser.parse_args()
-    graph = KnowledgeGraph()
+    pkg = PKG()
 
     if args.stats:
-        show_stats(graph)
+        show_stats(pkg)
     elif args.list:
-        list_topics(graph)
+        list_topics(pkg)
     elif args.task:
-        run_task(args.task, graph)
+        run_task(args.task, pkg)
     else:
         parser.print_help()
 

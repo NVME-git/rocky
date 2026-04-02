@@ -9,45 +9,47 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from rocky.graph.store import KnowledgeGraph
+from rocky.graph.store import PKG
+from rocky.graph import fsrs
 
-graph = KnowledgeGraph()
+pkg = PKG()
 
 
 def cmd_classify(topic: str):
-    result = {
-        "classification": graph.classify(topic),
-        "confidence": graph.effective_confidence(topic),
-        "node": graph.get(topic),
-    }
-    print(json.dumps(result))
+    node = pkg.get(topic)
+    r = pkg.retrievability(topic)
+    print(json.dumps({
+        "classification": pkg.classify(topic),
+        "retrievability": r,
+        "node": node.to_dict() if node else None,
+    }))
 
 
-def cmd_update(topic: str, confidence: float, kind: str, description: str, context: str):
-    graph.add_or_update(topic, confidence, kind=kind, description=description, context=context)
+def cmd_update(topic: str, score: float, kind: str, description: str, context: str):
+    pkg.add_or_update(topic, score, kind=kind, description=description, context=context)
     print(json.dumps({"ok": True, "topic": topic}))
 
 
 def cmd_encountered(topic: str):
-    graph.mark_encountered(topic)
+    pkg.mark_encountered(topic)
     print(json.dumps({"ok": True}))
 
 
 def cmd_list():
-    nodes = graph.all_topics()
+    nodes = pkg.all_topics()
     enriched = []
     for n in nodes:
-        enriched.append({
-            **n,
-            "classification": graph.classify(n["topic"]),
-            "effective_confidence": graph.effective_confidence(n["topic"]),
-        })
-    enriched.sort(key=lambda x: x["effective_confidence"], reverse=True)
+        r = fsrs.retrievability(n.stability, n.last_reviewed)
+        d = n.to_dict()
+        d["classification"] = fsrs.classify(r)
+        d["retrievability"] = r
+        enriched.append(d)
+    enriched.sort(key=lambda x: x["retrievability"], reverse=True)
     print(json.dumps(enriched))
 
 
 def cmd_stats():
-    print(json.dumps(graph.summary()))
+    print(json.dumps(pkg.summary()))
 
 
 if __name__ == "__main__":

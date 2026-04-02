@@ -131,8 +131,8 @@ Developer's answer: {answer}"""
     return json.loads(result)
 
 
-def generate_reminder(topic: str, node: dict, context: str) -> str:
-    """Generate a brief reminder for a stale topic."""
+def generate_reminder(topic: str, node, context: str) -> str:
+    """Generate a brief reminder for a stale topic. node is a rocky.graph.node.Node."""
     system = """You are a Socratic technical mentor. Given a topic a developer learned before
 but hasn't revisited recently, write a 2-3 sentence reminder that:
 1. Refreshes the core idea
@@ -141,10 +141,15 @@ but hasn't revisited recently, write a 2-3 sentence reminder that:
 
 Be concise. No fluff."""
 
+    from datetime import date
+    days_since = (date.today() - node.last_reviewed).days if hasattr(node, 'last_reviewed') else "unknown"
+    description = node.description if hasattr(node, 'description') else str(node)
+    contexts = node.contexts[:3] if hasattr(node, 'contexts') else []
+
     user = f"""Topic: {topic}
-What they learned: {node.get('description', 'No description saved')}
-Previous contexts: {', '.join(node.get('contexts', [])[:3])}
+What they learned: {description}
+Previous contexts: {', '.join(contexts)}
 Current task context: {context}
-Days since reviewed: calculated from {node.get('last_reviewed', 'unknown')}"""
+Days since reviewed: {days_since}"""
 
     return _ask(system, user)

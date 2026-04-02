@@ -27,11 +27,12 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 # Make parent package importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from rocky.graph.store import KnowledgeGraph
+from rocky.graph.store import PKG
+from rocky.graph import fsrs
 from rocky.cli import color, run_task
 from demo.tasks import TASKS
 
-DEMO_GRAPH = Path(__file__).parent / "demo_graph.json"
+DEMO_DB = Path(__file__).parent / "demo_graph.db"
 
 
 def print_divider(label: str = ""):
@@ -43,35 +44,35 @@ def print_divider(label: str = ""):
         print(f"\n{color('─' * width, 'dim')}\n")
 
 
-def print_graph_state(kg: KnowledgeGraph):
-    nodes = kg.all_topics()
+def print_graph_state(pkg: PKG):
+    nodes = pkg.all_topics()
     if not nodes:
-        print("  (graph is empty — run seed.py first)")
+        print("  (PKG is empty — run seed.py first)")
         return
 
-    print(f"  {'Topic':<36} {'Confidence':<14} Status")
+    print(f"  {'Topic':<36} {'Recall':<14} Status")
     print(color("  " + "─" * 62, "dim"))
 
-    for n in sorted(nodes, key=lambda x: kg.effective_confidence(x["topic"]), reverse=True):
-        topic = n["topic"]
-        c = kg.classify(topic)
-        eff = kg.effective_confidence(topic)
-        bar = "█" * int(eff * 10) + "░" * (10 - int(eff * 10))
+    for n in sorted(nodes, key=lambda x: fsrs.retrievability(x.stability, x.last_reviewed), reverse=True):
+        r = fsrs.retrievability(n.stability, n.last_reviewed)
+        c = fsrs.classify(r)
+        bar = "█" * int(r * 10) + "░" * (10 - int(r * 10))
         label = color("known", "green") if c == "known" else color("stale", "yellow") if c == "stale" else color("new/weak", "red")
         symbol = color("✓", "green") if c == "known" else color("~", "yellow") if c == "stale" else color("?", "red")
-        print(f"  {symbol} {topic[:35]:<35} {bar} {eff:.0%}  {label}")
+        print(f"  {symbol} {n.topic[:35]:<35} {bar} {r:.0%}  {label}")
     print()
 
 
 def run_demo(indices: list[int]):
-    if not DEMO_GRAPH.exists():
-        print(color("Demo graph not found. Run: python demo/seed.py", "red"))
+    if not DEMO_DB.exists():
+        print(color("Demo PKG not found. Run: python demo/seed.py", "red"))
         sys.exit(1)
 
-    kg = KnowledgeGraph(path=DEMO_GRAPH)
+    demo_vault = Path(__file__).parent / "demo_vault"
+    pkg = PKG(path=DEMO_DB, vault_dir=demo_vault)
 
     print_divider("STARTING STATE")
-    print_graph_state(kg)
+    print_graph_state(pkg)
 
     for i in indices:
         task, note = TASKS[i]
@@ -79,13 +80,13 @@ def run_demo(indices: list[int]):
         print(color(f"  Note: {note}", "dim"))
         print()
 
-        run_task(task, kg)
+        run_task(task, pkg)
 
-        # Reload from disk to reflect any saves made inside run_task
-        kg = KnowledgeGraph(path=DEMO_GRAPH)
+        # Reload to reflect latest DB state
+        pkg = PKG(path=DEMO_DB, vault_dir=demo_vault)
 
-        print_divider(f"GRAPH AFTER TASK {i + 1}")
-        print_graph_state(kg)
+        print_divider(f"PKG AFTER TASK {i + 1}")
+        print_graph_state(pkg)
 
         if i < indices[-1]:
             try:
