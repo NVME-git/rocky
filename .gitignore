@@ -6,8 +6,9 @@ __pycache__/
 *.pyc
 .venv/
 
-# Personal graph data — don't commit your knowledge graph
+# Personal graph data — don't commit your knowledge graphs
 knowledge_graph.json
+demo/demo_graph.json
 
 # Claude Code project config
 .claude/
