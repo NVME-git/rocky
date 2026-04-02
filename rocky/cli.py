@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from rocky.config import Config
 from rocky.graph.store import PKG
 from rocky.graph import fsrs
 from rocky.capture.session import Session
@@ -201,7 +202,7 @@ def run_task(task: str, pkg: PKG, session: Session | None = None, mode: str = "m
     print(color(f"  PKG: {stats['known']} known | {stats['stale']} fading | {stats['total']} total", "dim"))
 
 
-def show_stats(pkg: PKG):
+def show_stats(pkg: PKG, config: "Config | None" = None):
     print_header()
     stats = pkg.summary()
     print(f"\n  Total topics:  {stats['total']}")
@@ -209,13 +210,15 @@ def show_stats(pkg: PKG):
     print(color(f"  Fading:        {stats['stale']}", "yellow"))
     print(color(f"  Gaps/weak:     {stats['gaps']}", "red"))
 
-    session = Session()
-    budget = session.budget_remaining()
-    cooldown, reason = session.can_quiz()
-    if not cooldown:
-        print(color(f"\n  {reason}", "dim"))
-    else:
-        print(color(f"\n  Quiz budget: {budget}/3 remaining today", "dim"))
+    if config:
+        session = Session(daily_budget=config.daily_budget, min_gap_minutes=config.min_gap_minutes)
+        budget = session.budget_remaining()
+        allowed, reason = session.can_quiz()
+        if not allowed:
+            print(color(f"\n  {reason}", "dim"))
+        else:
+            print(color(f"\n  Quiz budget: {budget}/{config.daily_budget} remaining today"
+                        f"  ·  provider: {config.llm_provider} ({config.llm_model})", "dim"))
     print()
 
 
@@ -245,9 +248,10 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="subcommand")
 
-    # rocky install / uninstall
+    # rocky install / uninstall / config
     subparsers.add_parser("install", help="Install git post-commit hook")
     subparsers.add_parser("uninstall", help="Remove git post-commit hook")
+    subparsers.add_parser("config", help="Show active configuration")
 
     # rocky [task] [flags]
     parser.add_argument("task", nargs="?", help="Task description to analyze")
@@ -270,11 +274,22 @@ def main():
         print(color(f"  {'✓' if ok else '✗'} {msg}", "green" if ok else "red"))
         return
 
-    pkg = PKG()
-    session = Session()
+    config = Config.load()
+    teacher.configure(config.create_provider())
+
+    if args.subcommand == "config":
+        config.show()
+        return
+
+    from pathlib import Path
+    pkg = PKG(vault_dir=Path(config.obsidian_vault))
+    session = Session(
+        daily_budget=config.daily_budget,
+        min_gap_minutes=config.min_gap_minutes,
+    )
 
     if args.stats:
-        show_stats(pkg)
+        show_stats(pkg, config)
     elif args.list:
         list_topics(pkg)
     elif args.after:

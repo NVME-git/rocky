@@ -15,12 +15,16 @@ from pathlib import Path
 
 from rocky.graph.store import DB_FILE
 
-DAILY_BUDGET = 3          # max Socratic Q&A loops per day
-MIN_GAP_MINUTES = 120     # cool-down between quiz sessions
+_DEFAULT_DAILY_BUDGET = 3
+_DEFAULT_MIN_GAP_MINUTES = 120
 
 
 class Session:
-    def __init__(self, db_path: Path = DB_FILE):
+    def __init__(self, db_path: Path = DB_FILE,
+                 daily_budget: int = _DEFAULT_DAILY_BUDGET,
+                 min_gap_minutes: int = _DEFAULT_MIN_GAP_MINUTES):
+        self.daily_budget = daily_budget
+        self.min_gap_minutes = min_gap_minutes
         self._db = db_path
 
     def _connect(self) -> sqlite3.Connection:
@@ -57,7 +61,7 @@ class Session:
             return DAILY_BUDGET
 
         used = int(self._get("budget_used") or "0")
-        return max(0, DAILY_BUDGET - used)
+        return max(0, self.daily_budget - used)
 
     def record_quiz(self):
         """Call once per completed Socratic loop to decrement the budget."""
@@ -73,14 +77,14 @@ class Session:
         if not last:
             return False
         elapsed = datetime.now() - datetime.fromisoformat(last)
-        return elapsed < timedelta(minutes=MIN_GAP_MINUTES)
+        return elapsed < timedelta(minutes=self.min_gap_minutes)
 
     def minutes_until_ready(self) -> int:
         last = self._get("last_quiz_at")
         if not last:
             return 0
         elapsed = datetime.now() - datetime.fromisoformat(last)
-        remaining = timedelta(minutes=MIN_GAP_MINUTES) - elapsed
+        remaining = timedelta(minutes=self.min_gap_minutes) - elapsed
         return max(0, int(remaining.total_seconds() / 60))
 
     # ── combined gate ─────────────────────────────────────────────────────────

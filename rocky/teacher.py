@@ -1,37 +1,28 @@
 """
 Rocky — the AI teacher.
-Claude-powered engine: topic extraction, question generation, answer evaluation.
+Topic extraction, Socratic question generation, and answer evaluation.
+Uses whichever LLMProvider is configured via configure().
 """
 
-import os
-import anthropic
+import json
 
-MODEL = "claude-sonnet-4-6"
+from rocky.llm.base import LLMProvider
 
-_client: anthropic.Anthropic | None = None
+_provider: LLMProvider | None = None
 
 
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "ANTHROPIC_API_KEY not set. Add it to your .env file or environment."
-            )
-        _client = anthropic.Anthropic(api_key=api_key)
-    return _client
+def configure(provider: LLMProvider):
+    """Set the LLM provider. Call this once at startup before any teacher functions."""
+    global _provider
+    _provider = provider
 
 
 def _ask(system: str, user: str) -> str:
-    client = _get_client()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1024,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-    )
-    return response.content[0].text.strip()
+    if _provider is None:
+        # Lazy default: fall back to Claude so existing code paths still work
+        from rocky.llm.claude import ClaudeProvider
+        configure(ClaudeProvider())
+    return _provider.complete(system, user)
 
 
 def extract_topics(task_description: str) -> list[dict]:
@@ -56,13 +47,11 @@ Example output:
   {"topic": "token expiry handling", "kind": "implementation", "description": "How to detect, communicate, and refresh expired tokens in an API."}
 ]"""
 
-    result = _ask(system, f"Task: {task_description}")
-    result = result.strip()
+    result = _ask(system, f"Task: {task_description}").strip()
     if result.startswith("```"):
         result = result.split("```")[1]
         if result.startswith("json"):
             result = result[4:]
-    import json
     return json.loads(result)
 
 
@@ -122,7 +111,6 @@ Description: {topic_description}
 Question asked: {question}
 Developer's answer: {answer}"""
 
-    import json
     result = _ask(system, user).strip()
     if result.startswith("```"):
         result = result.split("```")[1]
@@ -142,13 +130,13 @@ but hasn't revisited recently, write a 2-3 sentence reminder that:
 Be concise. No fluff."""
 
     from datetime import date
-    days_since = (date.today() - node.last_reviewed).days if hasattr(node, 'last_reviewed') else "unknown"
-    description = node.description if hasattr(node, 'description') else str(node)
-    contexts = node.contexts[:3] if hasattr(node, 'contexts') else []
+    days_since = (date.today() - node.last_reviewed).days if hasattr(node, "last_reviewed") else "unknown"
+    description = node.description if hasattr(node, "description") else str(node)
+    contexts = node.contexts[:3] if hasattr(node, "contexts") else []
 
     user = f"""Topic: {topic}
 What they learned: {description}
-Previous contexts: {', '.join(contexts)}
+Previous contexts: {", ".join(contexts)}
 Current task context: {context}
 Days since reviewed: {days_since}"""
 
