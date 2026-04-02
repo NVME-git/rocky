@@ -18,6 +18,19 @@ VAULT_DIR = ROCKY_DIR / "vault"
 LEGACY_JSON = ROCKY_DIR / "knowledge_graph.json"
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS session_state (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    task      TEXT NOT NULL,
+    mode      TEXT NOT NULL DEFAULT 'manual',
+    logged_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS nodes (
     id              TEXT PRIMARY KEY,
     topic           TEXT NOT NULL,

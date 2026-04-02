@@ -3,12 +3,16 @@
 Rocky — Personal Knowledge Graph CLI.
 
 Usage:
-    rocky "add JWT authentication to my REST API"
+    rocky "add JWT authentication to my REST API"   # before mode (manual)
+    rocky --after "fix: resolve null pointer in auth"  # after a commit
     rocky --stats
     rocky --list
+    rocky install    # install git post-commit hook
+    rocky uninstall  # remove git hook
 """
 
 import argparse
+import re
 import sys
 from dotenv import load_dotenv
 
@@ -16,9 +20,16 @@ load_dotenv()
 
 from rocky.graph.store import PKG
 from rocky.graph import fsrs
+from rocky.capture.session import Session
 import rocky.teacher as teacher
 
 MAX_QUESTIONS = 3
+
+# Commit message patterns that indicate a hotfix — Rocky stays quiet
+_HOTFIX_RE = re.compile(
+    r"^(fix|hotfix|bugfix|patch)(\(.+\))?[!:]|^\[hotfix\]",
+    re.IGNORECASE,
+)
 
 
 def color(text: str, code: str) -> str:
@@ -31,9 +42,16 @@ def print_header():
     print(color(" ─────────────────────────────", "dim"))
 
 
+def _is_hotfix(message: str) -> bool:
+    return bool(_HOTFIX_RE.match(message.strip()))
+
+
 def run_socratic_loop(topic: str, topic_info: dict, task: str,
-                      known_topics: list[str], pkg: PKG):
-    """Drive the Socratic Q&A loop for a new or poorly understood topic."""
+                      known_topics: list[str], pkg: PKG, session: Session) -> bool:
+    """
+    Drive the Socratic Q&A loop for a new or poorly understood topic.
+    Returns True if a quiz was completed (budget should be decremented).
+    """
     print(f"\n{color('Rocky:', 'cyan')} New topic — {topic}")
     print(color(f"  {topic_info['description']}", "dim"))
     print()
@@ -59,7 +77,7 @@ def run_socratic_loop(topic: str, topic_info: dict, task: str,
             print(color("   Skipped — topic flagged for review later.", "yellow"))
             pkg.add_or_update(topic, 0.0, kind=topic_info.get("kind", "concept"),
                               description=topic_info["description"], context=task)
-            return
+            return True
 
         print(color("   Evaluating...", "dim"))
         result = teacher.evaluate_answer(topic, question, answer, topic_info["description"])
@@ -72,7 +90,7 @@ def run_socratic_loop(topic: str, topic_info: dict, task: str,
             print(color("   Added to your PKG.", "green"))
             pkg.add_or_update(topic, score, kind=topic_info.get("kind", "concept"),
                               description=topic_info["description"], context=task)
-            return
+            return True
 
         followup = result.get("followup")
         if followup and questions_asked < MAX_QUESTIONS:
@@ -88,13 +106,24 @@ def run_socratic_loop(topic: str, topic_info: dict, task: str,
         print(color("\n   Topic saved — revisit this one before proceeding.", "red"))
     pkg.add_or_update(topic, avg_score, kind=topic_info.get("kind", "concept"),
                       description=topic_info["description"], context=task)
+    return True
 
 
-def run_task(task: str, pkg: PKG):
+def run_task(task: str, pkg: PKG, session: Session | None = None, mode: str = "manual"):
+    if session is None:
+        session = Session()
+
+    session.log_task(task, mode=mode)
+
     print_header()
     print(f"\n{color('Task:', 'bold')} {task}\n")
-    print(color("Analyzing topics...", "dim"))
 
+    # Hotfix guard — after mode only
+    if mode == "after" and _is_hotfix(task):
+        print(color("  Hotfix detected — Rocky stepping back.", "dim"))
+        return
+
+    print(color("Analyzing topics...", "dim"))
     try:
         topics = teacher.extract_topics(task)
     except Exception as e:
@@ -112,6 +141,12 @@ def run_task(task: str, pkg: PKG):
 
     new_count = 0
     stale_count = 0
+    queued = []  # topics over budget, to report at the end
+
+    # Check session gates before starting any quiz
+    quiz_allowed, block_reason = session.can_quiz()
+    budget = session.budget_remaining() if quiz_allowed else 0
+    quizzed = 0
 
     for topic_info in topics:
         topic = topic_info["topic"]
@@ -129,23 +164,41 @@ def run_task(task: str, pkg: PKG):
             r = pkg.retrievability(topic)
             print(color(f"  ~ {topic}", "yellow") +
                   color(f" (recall faded to {r:.0%})", "dim"))
-            print(color("  Refreshing...", "dim"))
-            reminder = teacher.generate_reminder(topic, node, task)
-            print(f"\n  {color('Rocky:', 'yellow')} {reminder}\n")
-            pkg.add_or_update(topic, 0.5, kind=topic_info.get("kind", node.kind),
-                              context=task)
 
-        else:
+            if quiz_allowed and quizzed < budget:
+                print(color("  Refreshing...", "dim"))
+                reminder = teacher.generate_reminder(topic, node, task)
+                print(f"\n  {color('Rocky:', 'yellow')} {reminder}\n")
+                pkg.add_or_update(topic, 0.5, kind=topic_info.get("kind", node.kind), context=task)
+                session.record_quiz()
+                quizzed += 1
+            else:
+                queued.append(topic)
+
+        else:  # new
             new_count += 1
-            run_socratic_loop(topic, topic_info, task, known_topic_names, pkg)
+            if quiz_allowed and quizzed < budget:
+                completed = run_socratic_loop(topic, topic_info, task, known_topic_names, pkg, session)
+                if completed:
+                    session.record_quiz()
+                    quizzed += 1
+            else:
+                queued.append(topic)
+                pkg.add_or_update(topic, 0.0, kind=topic_info.get("kind", "concept"),
+                                  description=topic_info["description"], context=task)
 
     print()
-    if new_count == 0 and stale_count == 0:
+
+    if queued:
+        print(color(f"  Queued for next session: {', '.join(queued)}", "dim"))
+
+    if not quiz_allowed and (new_count > 0 or stale_count > 0):
+        print(color(f"  {block_reason}", "yellow"))
+    elif new_count == 0 and stale_count == 0:
         print(color("All topics are in your PKG. You're good to go.", "green"))
-    else:
-        stats = pkg.summary()
-        print(color(f"PKG: {stats['known']} known | "
-                    f"{stats['stale']} fading | {stats['total']} total", "dim"))
+
+    stats = pkg.summary()
+    print(color(f"  PKG: {stats['known']} known | {stats['stale']} fading | {stats['total']} total", "dim"))
 
 
 def show_stats(pkg: PKG):
@@ -155,6 +208,14 @@ def show_stats(pkg: PKG):
     print(color(f"  Known:         {stats['known']}", "green"))
     print(color(f"  Fading:        {stats['stale']}", "yellow"))
     print(color(f"  Gaps/weak:     {stats['gaps']}", "red"))
+
+    session = Session()
+    budget = session.budget_remaining()
+    cooldown, reason = session.can_quiz()
+    if not cooldown:
+        print(color(f"\n  {reason}", "dim"))
+    else:
+        print(color(f"\n  Quiz budget: {budget}/3 remaining today", "dim"))
     print()
 
 
@@ -182,19 +243,44 @@ def main():
         prog="rocky",
         description="Rocky — understand what your agents build.",
     )
+    subparsers = parser.add_subparsers(dest="subcommand")
+
+    # rocky install / uninstall
+    subparsers.add_parser("install", help="Install git post-commit hook")
+    subparsers.add_parser("uninstall", help="Remove git post-commit hook")
+
+    # rocky [task] [flags]
     parser.add_argument("task", nargs="?", help="Task description to analyze")
+    parser.add_argument("--after", metavar="MSG",
+                        help="After-mode: review topics from a commit message or completed task")
     parser.add_argument("--stats", action="store_true", help="Show PKG stats")
     parser.add_argument("--list", action="store_true", help="List all topics in your PKG")
 
     args = parser.parse_args()
+
+    if args.subcommand == "install":
+        from rocky.capture.hooks import install_git_hook
+        ok, msg = install_git_hook()
+        print(color(f"  {'✓' if ok else '✗'} {msg}", "green" if ok else "red"))
+        return
+
+    if args.subcommand == "uninstall":
+        from rocky.capture.hooks import uninstall_git_hook
+        ok, msg = uninstall_git_hook()
+        print(color(f"  {'✓' if ok else '✗'} {msg}", "green" if ok else "red"))
+        return
+
     pkg = PKG()
+    session = Session()
 
     if args.stats:
         show_stats(pkg)
     elif args.list:
         list_topics(pkg)
+    elif args.after:
+        run_task(args.after, pkg, session, mode="after")
     elif args.task:
-        run_task(args.task, pkg)
+        run_task(args.task, pkg, session, mode="manual")
     else:
         parser.print_help()
 
