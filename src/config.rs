@@ -14,6 +14,7 @@ struct TomlFile {
     llm: Option<LlmSection>,
     session: Option<SessionSection>,
     export: Option<ExportSection>,
+    ui: Option<UiSection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +35,11 @@ struct ExportSection {
     obsidian_vault: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct UiSection {
+    personality: Option<bool>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub llm_provider: String,
@@ -43,6 +49,7 @@ pub struct Config {
     pub min_gap_minutes: u32,
     pub obsidian_vault: PathBuf,
     pub db_path: PathBuf,
+    pub personality: bool,
 }
 
 impl Default for Config {
@@ -56,6 +63,7 @@ impl Default for Config {
             min_gap_minutes: 120,
             obsidian_vault: rocky_dir.join("vault"),
             db_path: rocky_dir.join("graph.db"),
+            personality: true,
         }
     }
 }
@@ -98,6 +106,9 @@ impl Config {
                 self.obsidian_vault = PathBuf::from(expanded);
             }
         }
+        if let Some(ui) = file.ui {
+            if let Some(v) = ui.personality { self.personality = v; }
+        }
     }
 
     pub fn show(&self) {
@@ -115,6 +126,8 @@ impl Config {
         println!("    min_gap_minutes  = {}", self.min_gap_minutes);
         println!("\n  [export]");
         println!("    obsidian_vault   = {}", self.obsidian_vault.display());
+        println!("\n  [ui]");
+        println!("    personality      = {}", self.personality);
         println!();
     }
 }

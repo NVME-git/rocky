@@ -82,4 +82,30 @@ impl Session {
         Ok((true, String::new()))
     }
 
+    /// Returns the current quiz streak in days.
+    pub fn get_streak(&self) -> Result<u32> {
+        Ok(self.db.session_get("quiz_streak")?
+            .unwrap_or_default()
+            .parse()
+            .unwrap_or(0))
+    }
+
+    /// Call once at the start of a quiz session to update the streak counter.
+    /// Returns the new streak value.
+    pub fn update_streak(&self) -> Result<u32> {
+        let today = Local::now().date_naive().to_string();
+        let yesterday = (Local::now().date_naive() - Duration::days(1)).to_string();
+        let last_date = self.db.session_get("last_quiz_date")?;
+        let current: u32 = self.db.session_get("quiz_streak")?
+            .unwrap_or_default().parse().unwrap_or(0);
+        let new_streak = match last_date.as_deref() {
+            Some(d) if d == today     => current,       // already counted today
+            Some(d) if d == yesterday => current + 1,   // consecutive day
+            _                         => 1,             // first time or broken
+        };
+        self.db.session_set("last_quiz_date", &today)?;
+        self.db.session_set("quiz_streak", &new_streak.to_string())?;
+        Ok(new_streak)
+    }
+
 }

@@ -4,6 +4,7 @@ mod fsrs;
 mod local_log;
 mod node;
 mod obsidian;
+mod personality;
 mod session;
 mod teacher;
 
@@ -101,6 +102,7 @@ fn run() -> Result<()> {
 
     let cfg = Config::load()?;
     let db = Db::open(&cfg.db_path, &cfg.obsidian_vault)?;
+    let p = personality::Personality::new(cfg.personality);
 
     match cli.subcommand {
         Some(Cmd::Install) => {
@@ -128,12 +130,12 @@ fn run() -> Result<()> {
                 cfg.min_gap_minutes,
             );
             if let Some(query) = topic {
-                run_quiz_topic(&db, &teacher, &session, &query)?;
+                run_quiz_topic(&db, &teacher, &session, &p, &query)?;
             } else {
-                run_quiz(&db, &teacher, &session, hours)?;
+                run_quiz(&db, &teacher, &session, &p, hours)?;
             }
         }
-        Some(Cmd::Stats) => show_stats(&db, &cfg)?,
+        Some(Cmd::Stats) => show_stats(&db, &cfg, &p)?,
         Some(Cmd::List) => list_topics(&db)?,
         Some(Cmd::Delete { query }) => delete_topics(&db, &query)?,
         Some(Cmd::Export) => run_export(&db, &cfg)?,
@@ -145,7 +147,7 @@ fn run() -> Result<()> {
                 cfg.daily_budget,
                 cfg.min_gap_minutes,
             );
-            run_diff(&db, &teacher, &session, git_ref.as_deref(), staged)?;
+            run_diff(&db, &teacher, &session, &p, git_ref.as_deref(), staged)?;
         }
         Some(Cmd::Hook) => unreachable!(),
         None => {
@@ -156,7 +158,7 @@ fn run() -> Result<()> {
                     cfg.daily_budget,
                     cfg.min_gap_minutes,
                 );
-                run_task(&db, &teacher, &session, &msg, "after")?;
+                run_task(&db, &teacher, &session, &p, &msg, "after")?;
             } else if let Some(task) = cli.task {
                 let teacher = make_teacher(&cfg)?;
                 let session = Session::new(
@@ -164,7 +166,7 @@ fn run() -> Result<()> {
                     cfg.daily_budget,
                     cfg.min_gap_minutes,
                 );
-                run_task(&db, &teacher, &session, &task, "manual")?;
+                run_task(&db, &teacher, &session, &p, &task, "manual")?;
             } else {
                 use clap::CommandFactory;
                 Cli::command().print_help()?;
@@ -188,7 +190,7 @@ fn make_teacher(cfg: &Config) -> Result<Teacher> {
 
 // ── commands ──────────────────────────────────────────────────────────────────
 
-fn show_stats(db: &Db, cfg: &Config) -> Result<()> {
+fn show_stats(db: &Db, cfg: &Config, p: &personality::Personality) -> Result<()> {
     print_header();
     let (total, known, stale, gaps) = db.summary()?;
     println!("\n  Total topics:  {total}");
@@ -214,6 +216,9 @@ fn show_stats(db: &Db, cfg: &Config) -> Result<()> {
             )
             .dimmed()
         );
+    }
+    if let Some(mood) = p.pkg_mood(known, total) {
+        println!("\n  {mood}");
     }
     println!();
     Ok(())
@@ -277,7 +282,7 @@ fn list_topics(db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn run_task(db: &Db, teacher: &Teacher, session: &Session, task: &str, mode: &str) -> Result<()> {
+fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, task: &str, mode: &str) -> Result<()> {
     print_header();
     println!("\n{} {task}\n", "Task:".bold());
 
@@ -371,7 +376,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, task: &str, mode: &st
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let completed =
-                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names)?;
+                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -414,6 +419,7 @@ fn run_socratic_loop(
     topic_info: &TopicInfo,
     task: &str,
     known_topics: &[String],
+    p: &personality::Personality,
 ) -> Result<bool> {
     let topic = &topic_info.topic;
     println!("\n{} New topic — {topic}", "Rocky:".cyan().bold());
@@ -434,7 +440,8 @@ fn run_socratic_loop(
 
     while questions_asked < MAX_QUESTIONS {
         questions_asked += 1;
-        println!("{} {question}", format!("Q{questions_asked}.").bold());
+        let display_q = p.format_question(&question);
+        println!("{} {display_q}", format!("Q{questions_asked}.").bold());
         println!(
             "{}",
             "   [e] too easy  [?] explain it  [i] not relevant  or type your answer:".dimmed()
@@ -454,20 +461,21 @@ fn run_socratic_loop(
 
         // Skip / quit — queue for later without touching PKG
         if answer.is_empty() {
-            println!("{}", "   Skipped — topic queued for next session.".yellow());
+            if let Some(msg) = p.skipped() { println!("   {msg}"); }
+            else { println!("{}", "   Skipped — topic queued for next session.".yellow()); }
             queue_for_later(topic, topic_info.kind.as_str(), &topic_info.description, task);
             return Ok(true);
         }
 
         // Ignore — LLM hallucinated or topic is irrelevant, discard silently
         if answer.eq_ignore_ascii_case("i") {
-            println!("{}", "   Ignored — not added to PKG.".dimmed());
+            if let Some(msg) = p.ignored() { println!("   {msg}"); }
+            else { println!("{}", "   Ignored — not added to PKG.".dimmed()); }
             return Ok(false);
         }
 
         // Too easy — self-report high confidence
         if answer.eq_ignore_ascii_case("e") {
-            println!("{}", "   Marked as known.".green());
             db.add_or_update(
                 topic,
                 0.75,
@@ -476,6 +484,9 @@ fn run_socratic_loop(
                 task,
                 None,
             )?;
+            if let Some(msg) = p.too_easy() { println!("   {msg}"); }
+            else { println!("{}", "   Marked as known.".green()); }
+            print_milestone(db, p, topic);
             return Ok(true);
         }
 
@@ -514,7 +525,6 @@ fn run_socratic_loop(
         println!("\n   {}", result.feedback.cyan());
 
         if result.understood {
-            println!("{}", "   Added to your PKG.".green());
             db.add_or_update(
                 topic,
                 result.score,
@@ -523,11 +533,15 @@ fn run_socratic_loop(
                 task,
                 None,
             )?;
+            if let Some(msg) = p.correct() { println!("   {msg}"); }
+            else { println!("{}", "   Added to your PKG.".green()); }
+            print_milestone(db, p, topic);
             return Ok(true);
         }
 
         if let Some(followup) = result.followup {
             if questions_asked < MAX_QUESTIONS {
+                if let Some(msg) = p.partial() { println!("   {msg}"); }
                 println!();
                 question = followup;
                 continue;
@@ -548,7 +562,8 @@ fn run_socratic_loop(
     )?;
     println!("   {}\n", explanation.cyan());
 
-    if avg_score >= 0.4 {
+    if let Some(msg) = p.failed() { println!("   {msg}"); }
+    else if avg_score >= 0.4 {
         println!("{}", "   Added to PKG with partial confidence — you're on the right track.".yellow());
     } else {
         println!("{}", "   Added to PKG — come back to this one.".red());
@@ -564,8 +579,9 @@ fn run_socratic_loop(
     Ok(true)
 }
 
-fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, query: &str) -> Result<()> {
+fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, query: &str) -> Result<()> {
     print_header();
+    p.print_rocky(false);
 
     let matches = db.search_nodes(query)?;
     if matches.is_empty() {
@@ -631,7 +647,8 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, query: &str) ->
         .map(|n| n.topic)
         .collect();
 
-    println!("\n  Quizzing {} topic{}.\n", selected.len(), if selected.len() == 1 { "" } else { "s" });
+    let selected_count = selected.len();
+    println!("\n  Quizzing {} topic{}.\n", selected_count, if selected_count == 1 { "" } else { "s" });
 
     for node in selected {
         let topic_info = TopicInfo {
@@ -640,7 +657,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, query: &str) ->
             description: node.description.clone(),
         };
         let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
-        let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names)?;
+        let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
         if completed {
             session.record_quiz()?;
         }
@@ -652,12 +669,21 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, query: &str) ->
         "  {}",
         format!("PKG: {known} known | {stale} fading | {total} total").dimmed()
     );
+    if let Some(msg) = p.session_done(selected_count as u32) { println!("  {msg}"); }
     println!();
     Ok(())
 }
 
-fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, hours: u32) -> Result<()> {
+fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, hours: u32) -> Result<()> {
     print_header();
+    p.print_rocky(false);
+
+    // Streak
+    if let Ok(streak) = session.update_streak() {
+        if let Some(msg) = p.streak(streak) {
+            println!("  {msg}\n");
+        }
+    }
 
     // ── Step 1: Queued topics (from previous sessions that hit the cooldown) ──
     let local_log = local_log::LocalLog::open_existing();
@@ -727,7 +753,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, hours: u32) -> Result
                 kind: kind.clone(),
                 description: description.clone(),
             };
-            let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names)?;
+            let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
             if completed {
                 session.record_quiz()?;
                 // Remove from queue now that it has been properly reviewed
@@ -773,7 +799,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, hours: u32) -> Result
                 kind: node.kind.as_str().to_string(),
                 description: node.description.clone(),
             };
-            let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names)?;
+            let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -792,7 +818,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, hours: u32) -> Result
             .collect();
 
         for topic_info in new_from_prompts {
-            let completed = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names)?;
+            let completed = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -805,6 +831,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, hours: u32) -> Result
         "  {}",
         format!("PKG: {known} known | {stale} fading | {total} total").dimmed()
     );
+    if let Some(msg) = p.session_done(0) { println!("  {msg}"); }
     println!();
     Ok(())
 }
@@ -943,6 +970,7 @@ fn run_diff(
     db: &Db,
     teacher: &Teacher,
     session: &Session,
+    p: &personality::Personality,
     git_ref: Option<&str>,
     staged: bool,
 ) -> Result<()> {
@@ -1039,7 +1067,7 @@ fn run_diff(
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let completed =
-                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names)?;
+                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -1184,6 +1212,16 @@ fn uninstall_git_hook() -> Result<(bool, String)> {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/// Check if adding this topic crossed a milestone and print Rocky's reaction.
+fn print_milestone(db: &Db, p: &personality::Personality, _topic: &str) {
+    if let Ok((_, known, _, _)) = db.summary() {
+        if let Some(msg) = p.milestone(known) {
+            p.print_rocky(true);
+            println!("   {msg}");
+        }
+    }
+}
 
 /// Save a topic to the local project queue (.rocky) without writing to the global PKG.
 /// Best-effort — silently ignored if not in a hooked project.
