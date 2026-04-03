@@ -1104,15 +1104,26 @@ fn run_diff(
 fn run_export(db: &Db, cfg: &Config) -> Result<()> {
     let nodes = db.all_nodes()?;
     if nodes.is_empty() {
-        println!("  PKG is empty — nothing to export.");
+        // Still write dashboard pages so user can see empty-state queries
+        obsidian::write_dashboard_pages(&cfg.obsidian_vault)?;
+        println!("  PKG is empty — no topic files to export.");
+        println!(
+            "  {} Dashboard pages written to {}",
+            "✓".green(),
+            cfg.obsidian_vault.display()
+        );
         return Ok(());
     }
     let count = obsidian::write_all(&nodes, &cfg.obsidian_vault)?;
     println!(
-        "  {} Exported {count} topic{} to {}",
+        "  {} Exported {count} topic{} + dashboard to {}",
         "✓".green(),
         if count == 1 { "" } else { "s" },
         cfg.obsidian_vault.display()
+    );
+    println!(
+        "  {}",
+        "Open 'Rocky Dashboard.md' and 'Rocky Review Queue.md' in Obsidian.".dimmed()
     );
     Ok(())
 }
