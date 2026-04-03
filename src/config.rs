@@ -15,6 +15,7 @@ struct TomlFile {
     session: Option<SessionSection>,
     export: Option<ExportSection>,
     ui: Option<UiSection>,
+    sync: Option<SyncSection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +41,29 @@ struct UiSection {
     personality: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+struct SyncSection {
+    enabled: Option<bool>,
+    auto_commit: Option<bool>,
+    commit_visible: Option<bool>,
+    remind_push_sessions: Option<u32>,
+    remind_push_days: Option<u32>,
+    remote: Option<String>,
+    branch: Option<String>,
+}
+
+/// Sync configuration — public, passed to sync module.
+#[derive(Debug, Clone)]
+pub struct SyncConfig {
+    pub enabled: bool,
+    pub auto_commit: bool,
+    pub commit_visible: bool,
+    pub remind_push_sessions: u32,
+    pub remind_push_days: u32,
+    pub remote: String,
+    pub branch: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub llm_provider: String,
@@ -49,7 +73,9 @@ pub struct Config {
     pub min_gap_minutes: u32,
     pub obsidian_vault: PathBuf,
     pub db_path: PathBuf,
+    pub rocky_dir: PathBuf,
     pub personality: bool,
+    pub sync: SyncConfig,
 }
 
 impl Default for Config {
@@ -63,7 +89,17 @@ impl Default for Config {
             min_gap_minutes: 120,
             obsidian_vault: rocky_dir.join("vault"),
             db_path: rocky_dir.join("graph.db"),
+            rocky_dir: rocky_dir.clone(),
             personality: true,
+            sync: SyncConfig {
+                enabled: false,
+                auto_commit: true,
+                commit_visible: true,
+                remind_push_sessions: 5,
+                remind_push_days: 0,
+                remote: "origin".into(),
+                branch: "main".into(),
+            },
         }
     }
 }
@@ -109,6 +145,15 @@ impl Config {
         if let Some(ui) = file.ui {
             if let Some(v) = ui.personality { self.personality = v; }
         }
+        if let Some(s) = file.sync {
+            if let Some(v) = s.enabled { self.sync.enabled = v; }
+            if let Some(v) = s.auto_commit { self.sync.auto_commit = v; }
+            if let Some(v) = s.commit_visible { self.sync.commit_visible = v; }
+            if let Some(v) = s.remind_push_sessions { self.sync.remind_push_sessions = v; }
+            if let Some(v) = s.remind_push_days { self.sync.remind_push_days = v; }
+            if let Some(v) = s.remote { self.sync.remote = v; }
+            if let Some(v) = s.branch { self.sync.branch = v; }
+        }
     }
 
     pub fn show(&self) {
@@ -128,6 +173,21 @@ impl Config {
         println!("    obsidian_vault   = {}", self.obsidian_vault.display());
         println!("\n  [ui]");
         println!("    personality      = {}", self.personality);
+        println!("\n  [sync]");
+        println!("    enabled          = {}", self.sync.enabled);
+        if self.sync.enabled {
+            println!("    auto_commit      = {}", self.sync.auto_commit);
+            println!("    commit_visible   = {}", self.sync.commit_visible);
+            println!("    remote           = {}", self.sync.remote);
+            println!("    branch           = {}", self.sync.branch);
+            if self.sync.remind_push_sessions > 0 {
+                println!("    remind_push      = every {} sessions", self.sync.remind_push_sessions);
+            } else if self.sync.remind_push_days > 0 {
+                println!("    remind_push      = every {} days", self.sync.remind_push_days);
+            } else {
+                println!("    remind_push      = off");
+            }
+        }
         println!();
     }
 }

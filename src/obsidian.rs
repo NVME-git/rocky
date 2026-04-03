@@ -1,13 +1,14 @@
 /// Obsidian vault exporter.
 ///
-/// Writes one markdown file per PKG node. Files use YAML frontmatter so
-/// Obsidian's Dataview plugin can query them:
+/// File layout:
+///   vault/{Domain}/topic-id.md   — one file per PKG node
+///   vault/pkg.json               — full PKG backup for cross-machine restore
+///   vault/Rocky Dashboard.md     — Dataview dashboard
+///   vault/Rocky Review Queue.md  — review queue
 ///
-///   TABLE rocky_retrievability, rocky_last_reviewed
-///   FROM #rocky/node
-///   WHERE rocky_retrievability < 0.7
-///   SORT rocky_retrievability ASC
-use std::path::Path;
+/// Nodes with no domain (empty string) are written to vault root for
+/// backwards compatibility; run `rocky export --classify` to migrate them.
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use chrono::Local;
@@ -15,17 +16,59 @@ use chrono::Local;
 use crate::fsrs;
 use crate::node::Node;
 
+// ── File path helpers ─────────────────────────────────────────────────────────
+
+fn node_path(node: &Node, vault_dir: &Path) -> PathBuf {
+    if node.domain.is_empty() {
+        vault_dir.join(format!("{}.md", node.id))
+    } else {
+        vault_dir.join(&node.domain).join(format!("{}.md", node.id))
+    }
+}
+
+// ── Write a single node ───────────────────────────────────────────────────────
+
 pub fn write_node(node: &Node, vault_dir: &Path) -> Result<()> {
-    std::fs::create_dir_all(vault_dir)?;
+    write_node_inner(node, vault_dir, &[])
+}
+
+pub fn write_node_with_links(node: &Node, vault_dir: &Path, related_ids: &[String]) -> Result<()> {
+    write_node_inner(node, vault_dir, related_ids)
+}
+
+fn write_node_inner(node: &Node, vault_dir: &Path, related_ids: &[String]) -> Result<()> {
+    let path = node_path(node, vault_dir);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    // If the node was previously written at a different location (e.g. root
+    // before domain was assigned), remove the stale file.
+    let root_path = vault_dir.join(format!("{}.md", node.id));
+    if root_path != path && root_path.exists() {
+        std::fs::remove_file(&root_path).ok();
+    }
 
     let r = fsrs::retrievability(node.stability, node.last_reviewed);
     let today = Local::now().date_naive();
     let days_since = (today - node.last_reviewed).num_days();
 
+    let domain_tag = if node.domain.is_empty() {
+        String::new()
+    } else {
+        format!("\nrocky_domain: {}", node.domain)
+    };
+
+    let kind_tag = node.kind.as_str();
+    let domain_folder_tag = if node.domain.is_empty() {
+        String::new()
+    } else {
+        format!(", rocky/domain/{}", node.domain.to_lowercase())
+    };
+
     let frontmatter = format!(
-        "---\nrocky_id: {}\nrocky_kind: {}\nrocky_difficulty: {}\nrocky_stability: {}\nrocky_retrievability: {}\nrocky_last_reviewed: {}\nrocky_last_encountered: {}\nrocky_review_count: {}\nrocky_days_since_review: {}\ntags: [rocky/node, rocky/kind/{}]\n---\n",
+        "---\nrocky_id: {}\nrocky_kind: {kind_tag}{domain_tag}\nrocky_difficulty: {:.3}\nrocky_stability: {:.2}\nrocky_retrievability: {:.4}\nrocky_last_reviewed: {}\nrocky_last_encountered: {}\nrocky_review_count: {}\nrocky_days_since_review: {}\ntags: [rocky/node, rocky/kind/{kind_tag}{domain_folder_tag}]\n---\n",
         node.id,
-        node.kind.as_str(),
         node.difficulty,
         node.stability,
         r,
@@ -33,7 +76,6 @@ pub fn write_node(node: &Node, vault_dir: &Path) -> Result<()> {
         node.last_encountered,
         node.review_count,
         days_since,
-        node.kind.as_str(),
     );
 
     let mut body = format!("# {}\n\n", node.topic);
@@ -47,24 +89,61 @@ pub fn write_node(node: &Node, vault_dir: &Path) -> Result<()> {
             body.push_str(&format!("- {ctx}\n"));
         }
     }
+    if !related_ids.is_empty() {
+        body.push_str("\n## Related\n");
+        for id in related_ids {
+            body.push_str(&format!("- [[{id}]]\n"));
+        }
+    }
 
-    let content = format!("{frontmatter}\n{body}");
-    let file_path = vault_dir.join(format!("{}.md", node.id));
-    std::fs::write(file_path, content)?;
+    std::fs::write(path, format!("{frontmatter}\n{body}"))?;
     Ok(())
 }
 
+// ── Delete a node's vault file ────────────────────────────────────────────────
+
+pub fn delete_node(node_id: &str, domain: &str, vault_dir: &Path) {
+    // Try both domain subfolder and root (covers migration edge cases)
+    if !domain.is_empty() {
+        std::fs::remove_file(vault_dir.join(domain).join(format!("{node_id}.md"))).ok();
+    }
+    std::fs::remove_file(vault_dir.join(format!("{node_id}.md"))).ok();
+}
+
+// ── Export all nodes ──────────────────────────────────────────────────────────
+
 pub fn write_all(nodes: &[Node], vault_dir: &Path) -> Result<usize> {
     std::fs::create_dir_all(vault_dir)?;
+
+    // Pre-compute wikilinks: for each node, find others whose topic ID shares
+    // a meaningful keyword (word >3 chars from the ID slug)
+    let all_ids: Vec<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+
     for node in nodes {
-        write_node(node, vault_dir)?;
+        let related = find_related_ids(node, &all_ids);
+        write_node_with_links(node, vault_dir, &related)?;
     }
+
     write_dashboard_pages(vault_dir)?;
     Ok(nodes.len())
 }
 
-/// Write the Rocky Dashboard and Review Queue pages to the vault.
-/// Always overwrites so queries stay up-to-date as Rocky adds new fields.
+fn find_related_ids(node: &Node, all_ids: &[&str]) -> Vec<String> {
+    // Split this node's ID on '-', keep words >3 chars, match against other IDs
+    let keywords: Vec<&str> = node.id.split('-').filter(|w| w.len() > 3).collect();
+    if keywords.is_empty() {
+        return vec![];
+    }
+    all_ids.iter()
+        .filter(|&&id| id != node.id)
+        .filter(|&&id| keywords.iter().any(|kw| id.contains(kw)))
+        .map(|&id| id.to_string())
+        .take(5) // cap at 5 related links per node
+        .collect()
+}
+
+// ── Dashboard pages ───────────────────────────────────────────────────────────
+
 pub fn write_dashboard_pages(vault_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(vault_dir)?;
     std::fs::write(vault_dir.join("Rocky Dashboard.md"), DASHBOARD)?;
@@ -108,15 +187,13 @@ dv.paragraph(
 
 ## 🔴 Gaps — Review Now
 
-Topics where recall has dropped below 70%. Run `rocky quiz` to work through these.
-
 ```dataview
 TABLE
   round(rocky_retrievability * 100) + "%" AS "Recall",
+  rocky_domain AS "Domain",
   rocky_kind AS "Kind",
   rocky_days_since_review + "d ago" AS "Last Reviewed",
-  round(rocky_difficulty * 100) + "%" AS "Difficulty",
-  rocky_review_count AS "Reviews"
+  round(rocky_difficulty * 100) + "%" AS "Difficulty"
 FROM #rocky/node
 WHERE rocky_retrievability < 0.7
 SORT rocky_retrievability ASC
@@ -126,11 +203,10 @@ SORT rocky_retrievability ASC
 
 ## 🟡 Fading — Review Soon
 
-Topics you know but are starting to slip. A quick reminder is all they need.
-
 ```dataview
 TABLE
   round(rocky_retrievability * 100) + "%" AS "Recall",
+  rocky_domain AS "Domain",
   rocky_kind AS "Kind",
   rocky_last_reviewed AS "Last Reviewed",
   round(rocky_stability) + "d" AS "Stability"
@@ -143,12 +219,11 @@ SORT rocky_retrievability ASC
 
 ## 🟢 Known
 
-Solid topics. Rocky will only surface these again if they start to fade.
-
 ```dataview
 TABLE
   round(rocky_retrievability * 100) + "%" AS "Recall",
   round(rocky_stability) + "d" AS "Stability",
+  rocky_domain AS "Domain",
   rocky_kind AS "Kind",
   rocky_review_count AS "Reviews"
 FROM #rocky/node
@@ -158,56 +233,36 @@ SORT rocky_stability DESC
 
 ---
 
-## By Kind
+## By Domain
 
-### Concepts
-
-```dataview
-TABLE
-  round(rocky_retrievability * 100) + "%" AS "Recall",
-  round(rocky_difficulty * 100) + "%" AS "Difficulty",
-  rocky_review_count AS "Reviews",
-  rocky_last_reviewed AS "Last Reviewed"
-FROM #rocky/kind/concept
-SORT rocky_retrievability ASC
-```
-
-### Patterns
-
-```dataview
-TABLE
-  round(rocky_retrievability * 100) + "%" AS "Recall",
-  round(rocky_difficulty * 100) + "%" AS "Difficulty",
-  rocky_review_count AS "Reviews",
-  rocky_last_reviewed AS "Last Reviewed"
-FROM #rocky/kind/pattern
-SORT rocky_retrievability ASC
-```
-
-### Implementations
-
-```dataview
-TABLE
-  round(rocky_retrievability * 100) + "%" AS "Recall",
-  round(rocky_difficulty * 100) + "%" AS "Difficulty",
-  rocky_review_count AS "Reviews",
-  rocky_last_reviewed AS "Last Reviewed"
-FROM #rocky/kind/implementation
-SORT rocky_retrievability ASC
+```dataviewjs
+const domains = [...new Set(dv.pages('#rocky/node').map(p => p.rocky_domain).filter(d => d))];
+for (const domain of domains.sort()) {
+  const pages = dv.pages('#rocky/node').filter(p => p.rocky_domain === domain);
+  const known = pages.filter(p => p.rocky_retrievability >= 0.9).length;
+  dv.header(3, `${domain} (${pages.length} topics · ${known} known)`);
+  dv.table(
+    ["Topic", "Recall", "Kind", "Reviews"],
+    pages.sort(p => p.rocky_retrievability).map(p => [
+      p.file.link,
+      Math.round(p.rocky_retrievability * 100) + "%",
+      p.rocky_kind,
+      p.rocky_review_count
+    ])
+  );
+}
 ```
 
 ---
 
 ## Hardest Topics
 
-Topics with the highest difficulty score — these have taken the most repetitions to stick.
-
 ```dataview
 TABLE
   round(rocky_difficulty * 100) + "%" AS "Difficulty",
   round(rocky_retrievability * 100) + "%" AS "Recall",
-  rocky_review_count AS "Reviews",
-  round(rocky_stability) + "d" AS "Stability"
+  rocky_domain AS "Domain",
+  rocky_review_count AS "Reviews"
 FROM #rocky/node
 WHERE rocky_difficulty > 0.4
 SORT rocky_difficulty DESC
@@ -218,14 +273,12 @@ LIMIT 15
 
 ## Most Practiced
 
-Topics you've come back to the most — either because they're hard or genuinely important.
-
 ```dataview
 TABLE
   rocky_review_count AS "Reviews",
   round(rocky_retrievability * 100) + "%" AS "Recall",
   round(rocky_stability) + "d" AS "Stability",
-  rocky_kind AS "Kind"
+  rocky_domain AS "Domain"
 FROM #rocky/node
 SORT rocky_review_count DESC
 LIMIT 15
@@ -235,12 +288,11 @@ LIMIT 15
 
 ## Recently Encountered
 
-Topics that appeared in your recent tasks or diffs, regardless of review status.
-
 ```dataview
 TABLE
   rocky_last_encountered AS "Last Encountered",
   round(rocky_retrievability * 100) + "%" AS "Recall",
+  rocky_domain AS "Domain",
   rocky_kind AS "Kind"
 FROM #rocky/node
 SORT rocky_last_encountered DESC
@@ -263,15 +315,13 @@ tags: [rocky/meta]
 
 ## Priority Order
 
-All topics that need attention, sorted by urgency (lowest recall first).
-
 ```dataview
 TABLE
   round(rocky_retrievability * 100) + "%" AS "Recall",
+  rocky_domain AS "Domain",
   rocky_kind AS "Kind",
   rocky_days_since_review + "d ago" AS "Last Reviewed",
-  round(rocky_difficulty * 100) + "%" AS "Difficulty",
-  rocky_review_count AS "Reviews"
+  round(rocky_difficulty * 100) + "%" AS "Difficulty"
 FROM #rocky/node
 WHERE rocky_retrievability < 0.9
 SORT rocky_retrievability ASC
@@ -279,38 +329,22 @@ SORT rocky_retrievability ASC
 
 ---
 
-## Overdue by Kind
+## By Domain
 
-### Concepts to re-learn
-
-```dataview
-TABLE
-  round(rocky_retrievability * 100) + "%" AS "Recall",
-  rocky_days_since_review + "d ago" AS "Last Reviewed"
-FROM #rocky/kind/concept
-WHERE rocky_retrievability < 0.9
-SORT rocky_retrievability ASC
-```
-
-### Patterns to re-learn
-
-```dataview
-TABLE
-  round(rocky_retrievability * 100) + "%" AS "Recall",
-  rocky_days_since_review + "d ago" AS "Last Reviewed"
-FROM #rocky/kind/pattern
-WHERE rocky_retrievability < 0.9
-SORT rocky_retrievability ASC
-```
-
-### Implementations to re-learn
-
-```dataview
-TABLE
-  round(rocky_retrievability * 100) + "%" AS "Recall",
-  rocky_days_since_review + "d ago" AS "Last Reviewed"
-FROM #rocky/kind/implementation
-WHERE rocky_retrievability < 0.9
-SORT rocky_retrievability ASC
+```dataviewjs
+const domains = [...new Set(dv.pages('#rocky/node').filter(p => p.rocky_retrievability < 0.9).map(p => p.rocky_domain).filter(d => d))];
+for (const domain of domains.sort()) {
+  const pages = dv.pages('#rocky/node').filter(p => p.rocky_domain === domain && p.rocky_retrievability < 0.9);
+  if (pages.length === 0) continue;
+  dv.header(3, domain);
+  dv.table(
+    ["Topic", "Recall", "Days Since Review"],
+    pages.sort(p => p.rocky_retrievability).map(p => [
+      p.file.link,
+      Math.round(p.rocky_retrievability * 100) + "%",
+      p.rocky_days_since_review + "d ago"
+    ])
+  );
+}
 ```
 "#;

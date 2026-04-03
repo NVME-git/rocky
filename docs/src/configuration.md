@@ -14,15 +14,27 @@ If neither exists, Rocky uses sensible defaults.
 ```toml
 [llm]
 provider = "ollama"          # "claude" (default) or "ollama"
-model = "qwen2.5-coder:7b"  # any model available to your provider
-ollama_base_url = "http://localhost:11434"  # only needed for ollama
+model = "qwen2.5-coder:7b"
+ollama_base_url = "http://localhost:11434"
 
 [session]
-daily_budget = 3      # max quizzes per day (default: 3)
-min_gap_minutes = 120 # minimum minutes between quizzes (default: 120)
+daily_budget = 3
+min_gap_minutes = 120
 
 [export]
 obsidian_vault = "~/Documents/Obsidian/MyVault/rocky"
+
+[ui]
+personality = true           # Rocky's voice and ASCII art (default: true)
+
+[sync]
+enabled = false              # opt-in — enable vault version control
+auto_commit = true           # commit after each quiz/task/diff session
+commit_visible = true        # print what was committed (set false to silence)
+remote = "origin"
+branch = "main"
+remind_push_sessions = 5     # remind to push every N sessions (0 = off)
+remind_push_days = 0         # OR remind every N calendar days (0 = off)
 ```
 
 ---
@@ -37,7 +49,7 @@ provider = "claude"
 model = "claude-sonnet-4-6"
 ```
 
-Requires `ANTHROPIC_API_KEY` set in your environment or a `.env` file in your working directory:
+Requires `ANTHROPIC_API_KEY` set in your environment or a `.env` file:
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-your-key-here
@@ -54,8 +66,6 @@ ollama_base_url = "http://localhost:11434"
 
 Make sure Ollama is running (`ollama serve`) and the model is pulled (`ollama pull qwen2.5-coder:7b`).
 
-**Recommended models by hardware:**
-
 | Your GPU VRAM | Recommended model |
 |---|---|
 | 6 GB | `qwen2.5-coder:7b` |
@@ -68,10 +78,56 @@ Make sure Ollama is running (`ollama serve`) and the model is pulled (`ollama pu
 
 | Setting | Default | What it does |
 |---|---|---|
-| `daily_budget` | 3 | Max quizzes Rocky will run in one day |
-| `min_gap_minutes` | 120 | Rocky won't quiz again within this many minutes |
+| `daily_budget` | 3 | Max quizzes Rocky will auto-trigger per day (manual calls bypass this) |
+| `min_gap_minutes` | 120 | Minimum minutes between auto-triggered quizzes |
 
-These exist so Rocky doesn't interrupt you constantly. You can increase them if you want more practice.
+These only apply to automatic triggers (git hooks, Claude Code hook). Manual `rocky quiz` always runs.
+
+---
+
+## UI settings
+
+| Setting | Default | What it does |
+|---|---|---|
+| `personality` | `true` | Rocky the alien's voice, ASCII art, and milestone celebrations |
+
+Set `personality = false` for plain, quiet output.
+
+---
+
+## Sync settings
+
+Rocky can version-control your vault and `pkg.json` as a git repo. Disabled by default — opt in when ready.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `enabled` | `false` | Enable vault git tracking |
+| `auto_commit` | `true` | Auto-commit after each session (when enabled) |
+| `commit_visible` | `true` | Print `✓ Rocky: ...` after auto-commit |
+| `remote` | `"origin"` | Git remote name |
+| `branch` | `"main"` | Branch to push to |
+| `remind_push_sessions` | `5` | Remind to push every N sessions (0 = off) |
+| `remind_push_days` | `0` | Remind every N calendar days instead (0 = off) |
+
+Only one of `remind_push_sessions` or `remind_push_days` should be non-zero.
+
+### Getting started with sync
+
+```bash
+# 1. Enable sync in your config
+echo '[sync]
+enabled = true' >> ~/.rocky/.rocky.toml
+
+# 2. Initialise the git repo (optionally set a remote at the same time)
+rocky sync --init https://github.com/you/rocky-pkg.git
+
+# 3. Do some quizzes, then push manually when ready
+rocky sync --push
+
+# 4. On a new machine: clone and restore
+git clone https://github.com/you/rocky-pkg.git ~/.rocky
+rocky restore
+```
 
 ---
 
@@ -89,16 +145,18 @@ To make Rocky log your AI prompts automatically, add this to `~/.claude/settings
 }
 ```
 
-Once set up, every prompt you send to Claude Code is silently logged. Run `rocky quiz` at any time to review what topics came up.
+Every prompt is silently logged to `./.rocky` in your project folder (only if `rocky install` was run there). Run `rocky quiz` at any time to review topics from recent prompts.
 
 ---
 
 ## Where Rocky stores data
 
-Everything lives in `~/.rocky/`:
-
-| File | What it is |
+| Path | What it is |
 |---|---|
 | `~/.rocky/graph.db` | Your PKG — all topics, recall scores, review history |
 | `~/.rocky/.rocky.toml` | Your global config |
-| `~/.rocky/vault/` | Obsidian markdown files (if you use Obsidian) |
+| `~/.rocky/vault/` | Obsidian markdown files + `pkg.json` backup |
+| `~/.rocky/vault/pkg.json` | Full PKG export for backup and cross-machine restore |
+| `./.rocky` | Per-project prompt log (only in hooked projects) |
+
+`graph.db` is never tracked by git. Everything in `vault/` is tracked when sync is enabled.

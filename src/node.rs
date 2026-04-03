@@ -31,12 +31,20 @@ impl std::fmt::Display for Kind {
     }
 }
 
+/// The 13 fixed taxonomy domains Rocky uses to group topics.
+pub const DOMAINS: &[&str] = &[
+    "Language", "Database", "Auth", "API", "Frontend",
+    "DevOps", "Architecture", "Performance", "Security",
+    "Testing", "Tooling", "Data", "Other",
+];
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Node {
     pub id: String,
     pub topic: String,
     pub kind: Kind,
+    pub domain: String,
     pub description: String,
     pub difficulty: f64,
     pub stability: f64,

@@ -11,6 +11,7 @@ use crate::node::Node;
 pub struct TopicInfo {
     pub topic: String,
     pub kind: String,
+    pub domain: String,
     pub description: String,
 }
 
@@ -118,6 +119,7 @@ Ignore:
 Return ONLY valid JSON: a list of objects with keys:
 - "topic": concise topic name (2-5 words)
 - "kind": one of "concept", "pattern", "implementation"
+- "domain": one of "Language", "Database", "Auth", "API", "Frontend", "DevOps", "Architecture", "Performance", "Security", "Testing", "Tooling", "Data", "Other"
 - "description": one sentence explaining what this topic is and why it matters
 
 Return 2-6 topics maximum."#;
@@ -135,6 +137,7 @@ extract the distinct technical topics a developer needs to understand to complet
 Return ONLY valid JSON: a list of objects with keys:
 - "topic": concise topic name (2-5 words)
 - "kind": one of "concept", "pattern", "implementation"
+- "domain": one of "Language", "Database", "Auth", "API", "Frontend", "DevOps", "Architecture", "Performance", "Security", "Testing", "Tooling", "Data", "Other"
 - "description": one sentence explaining what this topic is
 
 Focus on non-trivial topics where understanding gaps could cause problems.
@@ -142,8 +145,8 @@ Skip obvious boilerplate. Return 2-5 topics maximum.
 
 Example output:
 [
-  {"topic": "JWT authentication", "kind": "pattern", "description": "Stateless token-based auth where the server signs a payload the client stores and sends back."},
-  {"topic": "token expiry handling", "kind": "implementation", "description": "How to detect, communicate, and refresh expired tokens in an API."}
+  {"topic": "JWT authentication", "kind": "pattern", "domain": "Auth", "description": "Stateless token-based auth where the server signs a payload the client stores and sends back."},
+  {"topic": "token expiry handling", "kind": "implementation", "domain": "Auth", "description": "How to detect, communicate, and refresh expired tokens in an API."}
 ]"#;
 
         let raw = self.ask(system, &format!("Task: {task}"))?;
@@ -264,6 +267,31 @@ Be concise. No fluff."#;
         );
 
         self.ask(system, &user)
+    }
+
+    /// Classify a list of topic names into domains in a single LLM call.
+    /// Returns Vec<(topic, domain)>.
+    pub fn classify_domains(&self, topics: &[(String, String)]) -> Result<Vec<(String, String)>> {
+        let system = r#"You are classifying technical topics into knowledge domains.
+For each topic+description pair, assign exactly one domain from this list:
+Language, Database, Auth, API, Frontend, DevOps, Architecture, Performance, Security, Testing, Tooling, Data, Other
+
+Return ONLY valid JSON: array of objects with "topic" and "domain" keys.
+Use the exact topic string provided, unchanged."#;
+
+        let input: Vec<serde_json::Value> = topics.iter()
+            .map(|(t, d)| serde_json::json!({"topic": t, "description": d}))
+            .collect();
+        let user = serde_json::to_string(&input)?;
+        let raw = self.ask(system, &user)?;
+        let cleaned = strip_code_fence(&raw);
+        let result: Vec<serde_json::Value> = serde_json::from_str(cleaned)?;
+
+        Ok(result.into_iter().filter_map(|v| {
+            let topic = v["topic"].as_str()?.to_string();
+            let domain = v["domain"].as_str()?.to_string();
+            Some((topic, domain))
+        }).collect())
     }
 }
 

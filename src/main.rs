@@ -6,6 +6,7 @@ mod node;
 mod obsidian;
 mod personality;
 mod session;
+mod sync;
 mod teacher;
 
 use std::io::{self, Read as _, Write as _};
@@ -79,6 +80,22 @@ enum Cmd {
     Logs,
     /// Claude Code hook — reads JSON from stdin, logs prompt (non-blocking)
     Hook,
+    /// Commit vault + pkg.json to git; optionally push or initialise the repo
+    Sync {
+        /// Initialise git repo and optionally set a remote URL
+        #[arg(long, value_name = "REMOTE_URL")]
+        init: Option<Option<String>>,
+        /// Commit pending changes and push to configured remote
+        #[arg(long)]
+        push: bool,
+        /// Show vault git status
+        #[arg(long)]
+        status: bool,
+    },
+    /// Rebuild graph.db from vault/pkg.json (use after cloning on a new machine)
+    Restore,
+    /// Assign taxonomy domains to existing undomained topics via LLM
+    Classify,
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -134,10 +151,11 @@ fn run() -> Result<()> {
             } else {
                 run_quiz(&db, &teacher, &session, &p, hours)?;
             }
+            auto_sync(&db, &cfg);
         }
         Some(Cmd::Stats) => show_stats(&db, &cfg, &p)?,
         Some(Cmd::List) => list_topics(&db)?,
-        Some(Cmd::Delete { query }) => delete_topics(&db, &query)?,
+        Some(Cmd::Delete { query }) => delete_topics(&db, &cfg.obsidian_vault, &query)?,
         Some(Cmd::Export) => run_export(&db, &cfg)?,
         Some(Cmd::Logs) => run_logs()?,
         Some(Cmd::Diff { git_ref, staged }) => {
@@ -148,8 +166,21 @@ fn run() -> Result<()> {
                 cfg.min_gap_minutes,
             );
             run_diff(&db, &teacher, &session, &p, git_ref.as_deref(), staged)?;
+            auto_sync(&db, &cfg);
         }
         Some(Cmd::Hook) => unreachable!(),
+        Some(Cmd::Sync { init, push, status }) => {
+            run_sync(&db, &cfg, init, push, status)?;
+        }
+        Some(Cmd::Restore) => {
+            let pkg_json = cfg.obsidian_vault.join("pkg.json");
+            let count = db.import_pkg_json(&pkg_json)?;
+            println!("  {} Restored {count} topics from {}", "✓".green(), pkg_json.display());
+            println!("  {}", "Run  to sync vault files.".dimmed());
+        }
+        Some(Cmd::Classify) => {
+            run_classify(&db, &make_teacher(&cfg)?)?;
+        }
         None => {
             if let Some(msg) = cli.after {
                 let teacher = make_teacher(&cfg)?;
@@ -159,6 +190,7 @@ fn run() -> Result<()> {
                     cfg.min_gap_minutes,
                 );
                 run_task(&db, &teacher, &session, &p, &msg, "after")?;
+                auto_sync(&db, &cfg);
             } else if let Some(task) = cli.task {
                 let teacher = make_teacher(&cfg)?;
                 let session = Session::new(
@@ -167,6 +199,7 @@ fn run() -> Result<()> {
                     cfg.min_gap_minutes,
                 );
                 run_task(&db, &teacher, &session, &p, &task, "manual")?;
+                auto_sync(&db, &cfg);
             } else {
                 use clap::CommandFactory;
                 Cli::command().print_help()?;
@@ -361,6 +394,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                         topic,
                         0.5,
                         &Kind::from_str(&topic_info.kind),
+                        &topic_info.domain,
                         &topic_info.description,
                         task,
                         None,
@@ -480,6 +514,7 @@ fn run_socratic_loop(
                 topic,
                 0.75,
                 &Kind::from_str(&topic_info.kind),
+                &topic_info.domain,
                 &topic_info.description,
                 task,
                 None,
@@ -506,6 +541,7 @@ fn run_socratic_loop(
                 topic,
                 0.2,
                 &Kind::from_str(&topic_info.kind),
+                &topic_info.domain,
                 &topic_info.description,
                 task,
                 None,
@@ -529,6 +565,7 @@ fn run_socratic_loop(
                 topic,
                 result.score,
                 &Kind::from_str(&topic_info.kind),
+                &topic_info.domain,
                 &topic_info.description,
                 task,
                 None,
@@ -572,6 +609,7 @@ fn run_socratic_loop(
         topic,
         avg_score,
         &Kind::from_str(&topic_info.kind),
+        &topic_info.domain,
         &topic_info.description,
         task,
         None,
@@ -654,6 +692,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
         let topic_info = TopicInfo {
             topic: node.topic.clone(),
             kind: node.kind.as_str().to_string(),
+            domain: node.domain.clone(),
             description: node.description.clone(),
         };
         let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
@@ -751,6 +790,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             let topic_info = TopicInfo {
                 topic: topic.clone(),
                 kind: kind.clone(),
+                domain: String::new(),
                 description: description.clone(),
             };
             let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
@@ -788,7 +828,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             let reminder = teacher.generate_reminder(topic, node, context)?;
             println!("\n  {} {reminder}\n", "Rocky:".yellow().bold());
             db.add_or_update(
-                topic, 0.5, &node.kind, &node.description, context, None,
+                topic, 0.5, &node.kind, &node.domain, &node.description, context, None,
             )?;
             session.record_quiz()?;
         } else {
@@ -797,6 +837,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             let topic_info = TopicInfo {
                 topic: node.topic.clone(),
                 kind: node.kind.as_str().to_string(),
+            domain: node.domain.clone(),
                 description: node.description.clone(),
             };
             let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
@@ -836,7 +877,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
     Ok(())
 }
 
-fn delete_topics(db: &Db, query: &str) -> Result<()> {
+fn delete_topics(db: &Db, vault_dir: &std::path::Path, query: &str) -> Result<()> {
     let matches = db.search_nodes(query)?;
 
     if matches.is_empty() {
@@ -1052,6 +1093,7 @@ fn run_diff(
                         topic,
                         0.5,
                         &Kind::from_str(&topic_info.kind),
+                        &topic_info.domain,
                         &topic_info.description,
                         &label,
                         None,
@@ -1236,6 +1278,114 @@ fn print_milestone(db: &Db, p: &personality::Personality, _topic: &str) {
 
 /// Save a topic to the local project queue (.rocky) without writing to the global PKG.
 /// Best-effort — silently ignored if not in a hooked project.
+fn run_sync(db: &Db, cfg: &Config, init: Option<Option<String>>, push: bool, status: bool) -> Result<()> {
+    use colored::Colorize;
+    let rocky_dir = &cfg.rocky_dir;
+
+    if status {
+        println!("  {}", sync::status_summary(rocky_dir));
+        let ahead = sync::commits_ahead(rocky_dir, &cfg.sync.remote, &cfg.sync.branch);
+        if ahead > 0 {
+            println!("  {} commit{} ahead of {}/{}", ahead, if ahead == 1 { "" } else { "s" }, cfg.sync.remote, cfg.sync.branch);
+        }
+        return Ok(());
+    }
+
+    if let Some(remote_url) = init {
+        let newly_created = sync::ensure_repo(rocky_dir)?;
+        if newly_created {
+            println!("  {} Initialised git repo at {}", "✓".green(), rocky_dir.display());
+        } else {
+            println!("  {} Git repo already exists", "✓".green());
+        }
+        if let Some(url) = remote_url {
+            sync::set_remote(rocky_dir, &cfg.sync.remote, &url)?;
+            println!("  {} Remote '{}' set to {url}", "✓".green(), cfg.sync.remote);
+            println!("  {}", "Run `rocky sync --push` to push your PKG.".dimmed());
+        } else {
+            println!("  {}", format!("Add a remote: rocky sync --init <url>  or  git -C {} remote add origin <url>", rocky_dir.display()).dimmed());
+        }
+        return Ok(());
+    }
+
+    if !sync::is_git_repo(rocky_dir) {
+        println!("  {} Vault is not a git repo — run `rocky sync --init` first.", "✗".red());
+        return Ok(());
+    }
+
+    // Write pkg.json then commit
+    let nodes = db.all_nodes()?;
+    obsidian::write_all(&nodes, &cfg.obsidian_vault)?;
+    db.export_pkg_json(&cfg.obsidian_vault.join("pkg.json"))?;
+
+    let msg = build_commit_message(db);
+    match sync::commit(rocky_dir, &msg)? {
+        true  => println!("  {} {msg}", "✓".green()),
+        false => println!("  {} Nothing changed since last commit.", "·".dimmed()),
+    }
+
+    if push {
+        sync::push(rocky_dir, &cfg.sync.remote, &cfg.sync.branch)?;
+        sync::reset_push_counter(db)?;
+        println!("  {} Pushed to {}/{}", "✓".green(), cfg.sync.remote, cfg.sync.branch);
+    }
+
+    Ok(())
+}
+
+fn run_classify(db: &Db, teacher: &Teacher) -> Result<()> {
+    let undomained = db.undomained_nodes()?;
+    if undomained.is_empty() {
+        println!("  {} All topics already have a domain.", "✓".green());
+        return Ok(());
+    }
+    println!("  Classifying {} topic{} into domains...", undomained.len(), if undomained.len() == 1 { "" } else { "s" });
+    let pairs: Vec<(String, String)> = undomained.iter()
+        .map(|n| (n.topic.clone(), n.description.clone()))
+        .collect();
+    let results = teacher.classify_domains(&pairs)?;
+    for (topic, domain) in &results {
+        let node_id = topic.to_lowercase().trim().replace(' ', "-");
+        db.set_domain(&node_id, domain)?;
+        println!("  {} {} → {}", "✓".green(), topic, domain.cyan());
+    }
+    println!("  {} Run `rocky export` to update vault files.", "·".dimmed());
+    Ok(())
+}
+
+/// Auto-sync after a session: export vault, write pkg.json, commit if configured.
+fn auto_sync(db: &Db, cfg: &Config) {
+    if !cfg.sync.enabled || !cfg.sync.auto_commit { return; }
+    if !sync::is_git_repo(&cfg.rocky_dir) { return; }
+
+    let nodes = match db.all_nodes() { Ok(n) => n, Err(_) => return };
+    obsidian::write_all(&nodes, &cfg.obsidian_vault).ok();
+    db.export_pkg_json(&cfg.obsidian_vault.join("pkg.json")).ok();
+
+    let msg = build_commit_message(db);
+    match sync::commit(&cfg.rocky_dir, &msg) {
+        Ok(true) => {
+            if cfg.sync.commit_visible {
+                println!("  {} {}", "✓".green(), msg);
+            }
+            sync::increment_sessions_since_push(db).ok();
+        }
+        Ok(false) => {} // nothing to commit
+        Err(_) => {}    // best-effort
+    }
+
+    // Push reminder
+    if let Some(reminder) = sync::push_reminder(db, &cfg.sync) {
+        println!("  {}", reminder.yellow());
+    }
+}
+
+fn build_commit_message(db: &Db) -> String {
+    let (total, known, _, _) = db.summary().unwrap_or((0, 0, 0, 0));
+    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    format!("Rocky: {known}/{total} known — {date}")
+}
+
 fn queue_for_later(topic: &str, kind: &str, description: &str, context: &str) {
     if let Some(log) = local_log::LocalLog::open_if_configured() {
         log.queue_topic(topic, kind, description, context).ok();
