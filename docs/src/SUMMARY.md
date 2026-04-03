@@ -6,3 +6,4 @@
 - [Commands](commands.md)
 - [Configuration](configuration.md)
 - [Obsidian Integration](obsidian.md)
+- [How It Works](how-it-works.md)

@@ -63,7 +63,8 @@ impl Session {
         Ok(0)
     }
 
-    /// Returns (allowed, reason_if_blocked).
+    /// Returns (allowed, reason_if_blocked). Enforces both cooldown and daily budget.
+    /// Use for automatic triggers (git hooks, Claude Code hook).
     pub fn can_quiz(&self) -> Result<(bool, String)> {
         if self.cool_down_active()? {
             let mins = self.minutes_until_ready()?;
@@ -75,7 +76,10 @@ impl Session {
         Ok((true, String::new()))
     }
 
-    pub fn log_task(&self, task: &str, mode: &str) -> Result<()> {
-        self.db.log_task(task, mode)
+    /// Always allows quizzing — no cooldown, no budget cap.
+    /// Use when the user explicitly invokes Rocky, since they're choosing to learn.
+    pub fn can_quiz_manual(&self) -> Result<(bool, String)> {
+        Ok((true, String::new()))
     }
+
 }

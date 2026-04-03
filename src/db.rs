@@ -16,13 +16,6 @@ CREATE TABLE IF NOT EXISTS session_state (
     updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS task_log (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    task      TEXT NOT NULL,
-    mode      TEXT NOT NULL DEFAULT 'manual',
-    logged_at TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS nodes (
     id               TEXT PRIMARY KEY,
     topic            TEXT NOT NULL,
@@ -243,32 +236,6 @@ impl Db {
             params![key, value, Self::now()],
         )?;
         Ok(())
-    }
-
-    // ── task log ──────────────────────────────────────────────────────────────
-
-    pub fn log_task(&self, task: &str, mode: &str) -> Result<()> {
-        let conn = self.connect()?;
-        conn.execute(
-            "INSERT INTO task_log (task, mode, logged_at) VALUES (?, ?, ?)",
-            params![task, mode, Self::now()],
-        )?;
-        Ok(())
-    }
-
-    pub fn recent_tasks(&self, hours: u32) -> Result<Vec<String>> {
-        let cutoff = (Local::now() - chrono::Duration::hours(hours as i64))
-            .naive_local()
-            .to_string();
-        let conn = self.connect()?;
-        let mut stmt = conn.prepare(
-            "SELECT task FROM task_log WHERE logged_at >= ? AND mode = 'claude-code' ORDER BY logged_at DESC",
-        )?;
-        let tasks = stmt
-            .query_map(params![cutoff], |r| r.get(0))?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(tasks)
     }
 
     // ── search / delete ───────────────────────────────────────────────────────

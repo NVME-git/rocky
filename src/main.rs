@@ -1,6 +1,7 @@
 mod config;
 mod db;
 mod fsrs;
+mod local_log;
 mod node;
 mod obsidian;
 mod session;
@@ -32,41 +33,31 @@ struct Cli {
     #[arg(long, value_name = "MSG")]
     after: Option<String>,
 
-    /// Show PKG stats
-    #[arg(long)]
-    stats: bool,
-
-    /// List all topics in your PKG
-    #[arg(long)]
-    list: bool,
-
     #[command(subcommand)]
     subcommand: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Show PKG stats
+    Stats,
+    /// List all topics in your PKG
+    #[command(alias = "ls")]
+    List,
     /// Install git post-commit hook
     Install,
     /// Remove git post-commit hook
     Uninstall,
     /// Show active configuration
     Config,
-    /// On-demand quiz from recent AI agent tasks
+    /// On-demand quiz — general review, or search for specific topics
     Quiz {
-        /// Look back N hours for tasks (default: 24)
+        /// Search for specific topics to quiz (substring match). Omit for full review.
+        topic: Option<String>,
+        /// Look back N hours for prompt context (default: 24)
         #[arg(long, default_value = "24")]
         hours: u32,
     },
-    /// Claude Code hook — reads JSON from stdin, logs prompt (non-blocking)
-    Hook,
-    /// Search for and delete topics from your PKG
-    Delete {
-        /// Search query (substring match on topic name and description)
-        query: String,
-    },
-    /// Export all PKG topics to your Obsidian vault
-    Export,
     /// Analyze a git diff and quiz on topics found in the code changes
     Diff {
         /// Git ref to diff against HEAD (e.g. HEAD~1, main). Defaults to last commit.
@@ -76,6 +67,17 @@ enum Cmd {
         #[arg(long)]
         staged: bool,
     },
+    /// Search for and delete topics from your PKG
+    Delete {
+        /// Search query (substring match on topic name and description)
+        query: String,
+    },
+    /// Export all PKG topics to your Obsidian vault
+    Export,
+    /// Show recent prompts logged in this project
+    Logs,
+    /// Claude Code hook — reads JSON from stdin, logs prompt (non-blocking)
+    Hook,
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -118,17 +120,24 @@ fn run() -> Result<()> {
             }
         }
         Some(Cmd::Config) => cfg.show(),
-        Some(Cmd::Quiz { hours }) => {
+        Some(Cmd::Quiz { topic, hours }) => {
             let teacher = make_teacher(&cfg)?;
             let session = Session::new(
                 Db::open(&cfg.db_path, &cfg.obsidian_vault)?,
                 cfg.daily_budget,
                 cfg.min_gap_minutes,
             );
-            run_quiz(&db, &teacher, &session, hours)?;
+            if let Some(query) = topic {
+                run_quiz_topic(&db, &teacher, &session, &query)?;
+            } else {
+                run_quiz(&db, &teacher, &session, hours)?;
+            }
         }
+        Some(Cmd::Stats) => show_stats(&db, &cfg)?,
+        Some(Cmd::List) => list_topics(&db)?,
         Some(Cmd::Delete { query }) => delete_topics(&db, &query)?,
         Some(Cmd::Export) => run_export(&db, &cfg)?,
+        Some(Cmd::Logs) => run_logs()?,
         Some(Cmd::Diff { git_ref, staged }) => {
             let teacher = make_teacher(&cfg)?;
             let session = Session::new(
@@ -140,11 +149,7 @@ fn run() -> Result<()> {
         }
         Some(Cmd::Hook) => unreachable!(),
         None => {
-            if cli.stats {
-                show_stats(&db, &cfg)?;
-            } else if cli.list {
-                list_topics(&db)?;
-            } else if let Some(msg) = cli.after {
+            if let Some(msg) = cli.after {
                 let teacher = make_teacher(&cfg)?;
                 let session = Session::new(
                     Db::open(&cfg.db_path, &cfg.obsidian_vault)?,
@@ -223,10 +228,10 @@ fn list_topics(db: &Db) -> Result<()> {
     }
 
     println!(
-        "\n  {:<35} {:<15} {:<12} {}",
-        "Topic", "Kind", "Recall", "Last Reviewed"
+        "\n  {:<35} {:<14} {:<14} {:<7} {:<7} {:<7} {}",
+        "Topic", "Kind", "Recall", "Stab", "Diff", "Reviews", "Last Reviewed"
     );
-    println!("  {}", "─".repeat(75).dimmed());
+    println!("  {}", "─".repeat(100).dimmed());
 
     let mut sorted = nodes;
     sorted.sort_by(|a, b| {
@@ -241,12 +246,19 @@ fn list_topics(db: &Db) -> Result<()> {
         let filled = (r * 10.0) as usize;
         let bar = format!("{}{}", "█".repeat(filled), "░".repeat(10 - filled));
         let topic_str = &node.topic[..node.topic.len().min(34)];
+        // Stability: shown as days (how long until recall would hit 90%)
+        let stab_str = format!("{:.1}d", node.stability);
+        // Difficulty: 0.0–1.0, lower is easier
+        let diff_str = format!("{:.2}", node.difficulty);
         let line = format!(
-            "  {:<35} {:<15} {} {:.0}%  {}",
+            "  {:<35} {:<14} {} {:.0}%  {:<7} {:<7} {:<7} {}",
             topic_str,
             node.kind.as_str(),
             bar,
             r * 100.0,
+            stab_str,
+            diff_str,
+            node.review_count,
             node.last_reviewed
         );
         let colored = match cls {
@@ -256,12 +268,16 @@ fn list_topics(db: &Db) -> Result<()> {
         };
         println!("{colored}");
     }
+
+    println!(
+        "\n  {}",
+        "Stab = days until recall hits 90%  ·  Diff = topic difficulty for you (0=easy, 1=hard)  ·  Reviews = times quizzed".dimmed()
+    );
     println!();
     Ok(())
 }
 
 fn run_task(db: &Db, teacher: &Teacher, session: &Session, task: &str, mode: &str) -> Result<()> {
-    session.log_task(task, mode)?;
     print_header();
     println!("\n{} {task}\n", "Task:".bold());
 
@@ -289,7 +305,13 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, task: &str, mode: &st
         .map(|n| n.topic)
         .collect();
 
-    let (quiz_allowed, block_reason) = session.can_quiz()?;
+    // Manual invocations bypass the cooldown — the user is explicitly asking to learn.
+    // Automatic triggers (git hook, claude-code) respect the full cooldown + budget gate.
+    let (quiz_allowed, block_reason) = if mode == "manual" {
+        session.can_quiz_manual()?
+    } else {
+        session.can_quiz()?
+    };
     let budget = if quiz_allowed { session.budget_remaining()? } else { 0 };
     let mut quizzed = 0u32;
     let mut queued: Vec<String> = Vec::new();
@@ -342,6 +364,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, task: &str, mode: &st
                     quizzed += 1;
                 } else {
                     queued.push(topic.clone());
+                    queue_for_later(topic, &topic_info.kind, &topic_info.description, task);
                 }
             }
             _ => {
@@ -355,14 +378,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, task: &str, mode: &st
                     }
                 } else {
                     queued.push(topic.clone());
-                    db.add_or_update(
-                        topic,
-                        0.0,
-                        &Kind::from_str(&topic_info.kind),
-                        &topic_info.description,
-                        task,
-                        None,
-                    )?;
+                    queue_for_later(topic, &topic_info.kind, &topic_info.description, task);
                 }
             }
         }
@@ -406,6 +422,8 @@ fn run_socratic_loop(
 
     let mut total_score = 0.0f64;
     let mut questions_asked = 0u32;
+    let mut last_question = String::new();
+    let mut last_answer = String::new();
     let mut question = teacher.generate_question(
         topic,
         &topic_info.description,
@@ -417,7 +435,10 @@ fn run_socratic_loop(
     while questions_asked < MAX_QUESTIONS {
         questions_asked += 1;
         println!("{} {question}", format!("Q{questions_asked}.").bold());
-        println!("{}", "   (Press Enter to skip, type your answer below)".dimmed());
+        println!(
+            "{}",
+            "   [e] too easy  [?] explain it  [i] not relevant  or type your answer:".dimmed()
+        );
         print!("   > ");
         io::stdout().flush()?;
 
@@ -431,11 +452,25 @@ fn run_socratic_loop(
         }
         let answer = line.trim();
 
+        // Skip / quit — queue for later without touching PKG
         if answer.is_empty() {
-            println!("{}", "   Skipped — topic flagged for review later.".yellow());
+            println!("{}", "   Skipped — topic queued for next session.".yellow());
+            queue_for_later(topic, topic_info.kind.as_str(), &topic_info.description, task);
+            return Ok(true);
+        }
+
+        // Ignore — LLM hallucinated or topic is irrelevant, discard silently
+        if answer.eq_ignore_ascii_case("i") {
+            println!("{}", "   Ignored — not added to PKG.".dimmed());
+            return Ok(false);
+        }
+
+        // Too easy — self-report high confidence
+        if answer.eq_ignore_ascii_case("e") {
+            println!("{}", "   Marked as known.".green());
             db.add_or_update(
                 topic,
-                0.0,
+                0.75,
                 &Kind::from_str(&topic_info.kind),
                 &topic_info.description,
                 task,
@@ -443,6 +478,33 @@ fn run_socratic_loop(
             )?;
             return Ok(true);
         }
+
+        // Explain it — show explanation, mark with low confidence
+        if answer == "?" {
+            println!("{}", "   Fetching explanation...".dimmed());
+            let explanation = teacher.generate_explanation(
+                topic,
+                &topic_info.description,
+                &question,
+                "",
+                task,
+            )?;
+            println!("\n   {}\n", explanation.cyan());
+            println!("{}", "   Saved to PKG — revisit before your next task.".yellow());
+            db.add_or_update(
+                topic,
+                0.2,
+                &Kind::from_str(&topic_info.kind),
+                &topic_info.description,
+                task,
+                None,
+            )?;
+            return Ok(true);
+        }
+
+        // Normal answer — evaluate it
+        last_question = question.clone();
+        last_answer = answer.to_string();
 
         println!("{}", "   Evaluating...".dimmed());
         let result =
@@ -474,11 +536,22 @@ fn run_socratic_loop(
         break;
     }
 
+    // Exhausted questions without understanding — give the full explanation
     let avg_score = total_score / questions_asked.max(1) as f64;
+    println!("{}", "\n   Let me walk you through this one.\n".yellow());
+    let explanation = teacher.generate_explanation(
+        topic,
+        &topic_info.description,
+        &last_question,
+        &last_answer,
+        task,
+    )?;
+    println!("   {}\n", explanation.cyan());
+
     if avg_score >= 0.4 {
-        println!("{}", "\n   Partial understanding — added to PKG with lower confidence.".yellow());
+        println!("{}", "   Added to PKG with partial confidence — you're on the right track.".yellow());
     } else {
-        println!("{}", "\n   Topic saved — revisit this one before proceeding.".red());
+        println!("{}", "   Added to PKG — come back to this one.".red());
     }
     db.add_or_update(
         topic,
@@ -491,143 +564,242 @@ fn run_socratic_loop(
     Ok(true)
 }
 
-fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, hours: u32) -> Result<()> {
+fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, query: &str) -> Result<()> {
     print_header();
 
-    let tasks = db.recent_tasks(hours)?;
-    if tasks.is_empty() {
-        println!(
-            "{}",
-            format!("\n  No Claude Code prompts logged in the last {hours}h.").dimmed()
-        );
-        println!("{}", "  Run some tasks in Claude Code first, then come back.".dimmed());
-        println!();
+    let matches = db.search_nodes(query)?;
+    if matches.is_empty() {
+        println!("\n  {} No topics found matching \"{}\".", "✗".red(), query);
         return Ok(());
     }
 
+    println!("\n  Topics matching \"{}\":\n", query);
+    for (i, node) in matches.iter().enumerate() {
+        let r = fsrs::retrievability(node.stability, node.last_reviewed);
+        let cls = fsrs::classify(r);
+        let label = format!("  [{}]  {} ({:.0}%)", i + 1, node.topic, r * 100.0);
+        let colored = match cls {
+            "known" => label.green().to_string(),
+            "stale" => label.yellow().to_string(),
+            _ => label.red().to_string(),
+        };
+        println!("{}", colored);
+        println!("       {}", node.description.dimmed());
+    }
+
+    println!();
     println!(
-        "{}",
-        format!(
-            "\n  Reviewing {} prompt{} from the last {hours}h...",
-            tasks.len(),
-            if tasks.len() == 1 { "" } else { "s" }
-        )
-        .dimmed()
+        "  {}",
+        "Enter numbers to quiz (e.g. 1 3), 'a' for all, or Enter to cancel:".dimmed()
     );
+    print!("  > ");
+    io::stdout().flush()?;
 
-    let combined = tasks[..tasks.len().min(10)].join(" | ");
-
-    let (quiz_allowed, block_reason) = session.can_quiz()?;
-    if !quiz_allowed {
-        println!("\n  {}", block_reason.yellow());
-        println!();
+    let mut line = String::new();
+    match io::stdin().read_line(&mut line) {
+        Err(_) | Ok(0) => return Ok(()),
+        Ok(_) => {}
+    }
+    let input = line.trim();
+    if input.is_empty() {
         return Ok(());
     }
 
-    println!("{}", "  Analyzing topics...".dimmed());
-    let topics = teacher.extract_topics(&combined)?;
+    let selected: Vec<&crate::node::Node> = if input.eq_ignore_ascii_case("a") {
+        matches.iter().collect()
+    } else {
+        let mut sel = Vec::new();
+        for part in input.split_whitespace() {
+            if let Ok(n) = part.parse::<usize>() {
+                if n >= 1 && n <= matches.len() {
+                    sel.push(&matches[n - 1]);
+                }
+            }
+        }
+        sel
+    };
 
-    if topics.is_empty() {
-        println!("{}", "\n  No significant topics found in recent prompts.".green());
-        println!();
+    if selected.is_empty() {
+        println!("  No valid selection.");
         return Ok(());
     }
 
     let known_topic_names: Vec<String> = db
         .all_nodes()?
         .into_iter()
-        .filter(|n| {
-            fsrs::classify(fsrs::retrievability(n.stability, n.last_reviewed)) == "known"
-        })
+        .filter(|n| fsrs::classify(fsrs::retrievability(n.stability, n.last_reviewed)) == "known")
         .map(|n| n.topic)
         .collect();
 
-    let budget = session.budget_remaining()?;
-    let mut quizzed = 0u32;
-    let mut queued: Vec<String> = Vec::new();
+    println!("\n  Quizzing {} topic{}.\n", selected.len(), if selected.len() == 1 { "" } else { "s" });
 
-    for topic_info in &topics {
-        let topic = &topic_info.topic;
-        let node = db.get_node(topic)?;
-        let classification = match &node {
-            None => "new",
-            Some(n) => fsrs::classify(fsrs::retrievability(n.stability, n.last_reviewed)),
+    for node in selected {
+        let topic_info = TopicInfo {
+            topic: node.topic.clone(),
+            kind: node.kind.as_str().to_string(),
+            description: node.description.clone(),
         };
+        let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
+        let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names)?;
+        if completed {
+            session.record_quiz()?;
+        }
+    }
 
-        match classification {
-            "known" => {
-                let r = node
-                    .as_ref()
-                    .map(|n| fsrs::retrievability(n.stability, n.last_reviewed))
-                    .unwrap_or(1.0);
-                println!(
-                    "{} {}",
-                    format!("\n  ✓ {topic}").green(),
-                    format!("({:.0}% recall)", r * 100.0).dimmed()
-                );
-                db.mark_encountered(topic)?;
-            }
-            "stale" => {
-                if quizzed < budget {
-                    let n = node.as_ref().unwrap();
-                    let r = fsrs::retrievability(n.stability, n.last_reviewed);
-                    println!(
-                        "{} {}",
-                        format!("\n  ~ {topic}").yellow(),
-                        format!("(faded to {:.0}%)", r * 100.0).dimmed()
-                    );
-                    let reminder = teacher.generate_reminder(topic, n, &combined)?;
-                    println!("\n  {} {reminder}\n", "Rocky:".yellow().bold());
-                    db.add_or_update(
-                        topic,
-                        0.5,
-                        &Kind::from_str(&topic_info.kind),
-                        &topic_info.description,
-                        &combined,
-                        None,
-                    )?;
-                    session.record_quiz()?;
-                    quizzed += 1;
-                } else {
-                    queued.push(topic.clone());
-                }
-            }
-            _ => {
-                if quizzed < budget {
-                    let completed = run_socratic_loop(
-                        db,
-                        teacher,
-                        topic_info,
-                        &combined,
-                        &known_topic_names,
-                    )?;
-                    if completed {
-                        session.record_quiz()?;
-                        quizzed += 1;
-                    }
-                } else {
-                    queued.push(topic.clone());
-                    db.add_or_update(
-                        topic,
-                        0.0,
-                        &Kind::from_str(&topic_info.kind),
-                        &topic_info.description,
-                        &combined,
-                        None,
-                    )?;
+    println!();
+    let (total, known, stale, _) = db.summary()?;
+    println!(
+        "  {}",
+        format!("PKG: {known} known | {stale} fading | {total} total").dimmed()
+    );
+    println!();
+    Ok(())
+}
+
+fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, hours: u32) -> Result<()> {
+    print_header();
+
+    // ── Step 1: Queued topics (from previous sessions that hit the cooldown) ──
+    let local_log = local_log::LocalLog::open_existing();
+    let queued_topics = local_log
+        .as_ref()
+        .and_then(|l| l.get_queued_topics().ok())
+        .unwrap_or_default();
+
+    // ── Step 2: PKG stale/gap topics ──────────────────────────────────────────
+    let all_nodes = db.all_nodes()?;
+    let mut due: Vec<_> = all_nodes
+        .iter()
+        .filter(|n| {
+            fsrs::classify(fsrs::retrievability(n.stability, n.last_reviewed)) != "known"
+        })
+        .collect();
+    due.sort_by(|a, b| {
+        let ra = fsrs::retrievability(a.stability, a.last_reviewed);
+        let rb = fsrs::retrievability(b.stability, b.last_reviewed);
+        ra.partial_cmp(&rb).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // ── Step 3: Recent prompts for additional context ─────────────────────────
+    let prompt_context: Option<String> = local_log
+        .as_ref()
+        .and_then(|l| l.recent_prompts(hours).ok())
+        .filter(|entries| !entries.is_empty())
+        .map(|entries| {
+            let combined = entries
+                .iter()
+                .take(10)
+                .map(|(p, _)| p.as_str())
+                .collect::<Vec<_>>()
+                .join(" | ");
+            println!(
+                "{}",
+                format!("  Using {} recent prompt{} as context.", entries.len().min(10),
+                    if entries.len() == 1 { "" } else { "s" }).dimmed()
+            );
+            combined
+        });
+
+    if queued_topics.is_empty() && due.is_empty() && prompt_context.is_none() {
+        println!("{}", "\n  Nothing to review — all topics are solid.".green());
+        println!("{}", "  Run some tasks or check back later.".dimmed());
+        println!();
+        return Ok(());
+    }
+
+    let known_topic_names: Vec<String> = all_nodes
+        .iter()
+        .filter(|n| fsrs::classify(fsrs::retrievability(n.stability, n.last_reviewed)) == "known")
+        .map(|n| n.topic.clone())
+        .collect();
+
+    // ── Step 4: Quiz queued topics first (these are overdue) ─────────────────
+    if !queued_topics.is_empty() {
+        println!(
+            "{}",
+            format!("\n  {} topic{} queued from last session:\n",
+                queued_topics.len(), if queued_topics.len() == 1 { "" } else { "s" }).dimmed()
+        );
+        for (topic, kind, description, context) in &queued_topics {
+            use crate::teacher::TopicInfo;
+            let topic_info = TopicInfo {
+                topic: topic.clone(),
+                kind: kind.clone(),
+                description: description.clone(),
+            };
+            let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names)?;
+            if completed {
+                session.record_quiz()?;
+                // Remove from queue now that it has been properly reviewed
+                if let Some(log) = &local_log {
+                    log.remove_queued_topic(topic).ok();
                 }
             }
         }
     }
 
-    println!();
-    if !queued.is_empty() {
+    // ── Step 5: Quiz PKG-due topics ───────────────────────────────────────────
+    if !due.is_empty() {
         println!(
-            "  {}",
-            format!("Queued for next session: {}", queued.join(", ")).dimmed()
+            "{}",
+            format!("\n  {} topic{} need review:\n", due.len(), if due.len() == 1 { "" } else { "s" }).dimmed()
         );
     }
 
+    let context = prompt_context.as_deref().unwrap_or("general review");
+
+    for node in &due {
+        let topic = &node.topic;
+        let r = fsrs::retrievability(node.stability, node.last_reviewed);
+        let classification = fsrs::classify(r);
+
+        if classification == "stale" {
+            println!(
+                "{} {}",
+                format!("  ~ {topic}").yellow(),
+                format!("(faded to {:.0}%)", r * 100.0).dimmed()
+            );
+            let reminder = teacher.generate_reminder(topic, node, context)?;
+            println!("\n  {} {reminder}\n", "Rocky:".yellow().bold());
+            db.add_or_update(
+                topic, 0.5, &node.kind, &node.description, context, None,
+            )?;
+            session.record_quiz()?;
+        } else {
+            // gap — run full Socratic loop
+            use crate::teacher::TopicInfo;
+            let topic_info = TopicInfo {
+                topic: node.topic.clone(),
+                kind: node.kind.as_str().to_string(),
+                description: node.description.clone(),
+            };
+            let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names)?;
+            if completed {
+                session.record_quiz()?;
+            }
+        }
+    }
+
+    // ── Step 4: Extract and quiz on any prompt-derived topics not in PKG ──────
+    if let Some(combined) = &prompt_context {
+        println!("{}", "\n  Checking recent prompts for new topics...".dimmed());
+        let prompt_topics = teacher.extract_topics(combined)?;
+        let new_from_prompts: Vec<_> = prompt_topics
+            .iter()
+            .filter(|t| {
+                matches!(db.get_node(&t.topic), Ok(None))
+            })
+            .collect();
+
+        for topic_info in new_from_prompts {
+            let completed = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names)?;
+            if completed {
+                session.record_quiz()?;
+            }
+        }
+    }
+
+    println!();
     let (total, known, stale, _) = db.summary()?;
     println!(
         "  {}",
@@ -806,7 +978,8 @@ fn run_diff(
         .map(|n| n.topic)
         .collect();
 
-    let (quiz_allowed, block_reason) = session.can_quiz()?;
+    // rocky diff is always a manual invocation — bypass cooldown, check budget only.
+    let (quiz_allowed, block_reason) = session.can_quiz_manual()?;
     let budget = if quiz_allowed { session.budget_remaining()? } else { 0 };
     let mut quizzed = 0u32;
     let mut queued: Vec<String> = Vec::new();
@@ -859,6 +1032,7 @@ fn run_diff(
                     quizzed += 1;
                 } else {
                     queued.push(topic.clone());
+                    queue_for_later(topic, &topic_info.kind, &topic_info.description, &label);
                 }
             }
             _ => {
@@ -872,14 +1046,7 @@ fn run_diff(
                     }
                 } else {
                     queued.push(topic.clone());
-                    db.add_or_update(
-                        topic,
-                        0.0,
-                        &Kind::from_str(&topic_info.kind),
-                        &topic_info.description,
-                        &label,
-                        None,
-                    )?;
+                    queue_for_later(topic, &topic_info.kind, &topic_info.description, &label);
                 }
             }
         }
@@ -923,6 +1090,11 @@ fn run_export(db: &Db, cfg: &Config) -> Result<()> {
 }
 
 fn run_hook() -> Result<()> {
+    // Only log if this project has Rocky hooks installed — never log globally.
+    if !local_log::is_hook_installed() {
+        return Ok(());
+    }
+
     let mut input = String::new();
     io::stdin().lock().read_to_string(&mut input).ok();
 
@@ -930,14 +1102,36 @@ fn run_hook() -> Result<()> {
         if let Some(prompt) = data.get("prompt").and_then(|v| v.as_str()) {
             let prompt = prompt.trim();
             if !prompt.is_empty() {
-                if let Ok(cfg) = Config::load() {
-                    if let Ok(db) = Db::open(&cfg.db_path, &cfg.obsidian_vault) {
-                        db.log_task(prompt, "claude-code").ok();
-                    }
+                if let Some(log) = local_log::LocalLog::open_if_configured() {
+                    log.log_prompt(prompt).ok();
                 }
             }
         }
     }
+    Ok(())
+}
+
+fn run_logs() -> Result<()> {
+    print_header();
+    match local_log::LocalLog::open_existing() {
+        None => {
+            println!("\n  No local log found.");
+            println!("  {}", "Run `rocky install` in this project to enable prompt logging.".dimmed());
+        }
+        Some(log) => {
+            let entries = log.recent_prompts(24)?;
+            if entries.is_empty() {
+                println!("{}", "\n  No prompts logged in the last 24 hours.".dimmed());
+            } else {
+                println!("\n  {} prompt{} in the last 24h:\n", entries.len(), if entries.len() == 1 { "" } else { "s" });
+                for (prompt, logged_at) in &entries {
+                    let time = &logged_at[11..16]; // HH:MM
+                    println!("  {} {}", time.dimmed(), prompt);
+                }
+            }
+        }
+    }
+    println!();
     Ok(())
 }
 
@@ -963,7 +1157,8 @@ fn install_git_hook() -> Result<(bool, String)> {
             std::fs::set_permissions(hook_path, std::fs::Permissions::from_mode(0o755))?;
         }
     }
-    Ok((true, "git post-commit hook installed".into()))
+    local_log::ensure_gitignored()?;
+    Ok((true, "git post-commit hook installed — .rocky added to .gitignore".into()))
 }
 
 fn uninstall_git_hook() -> Result<(bool, String)> {
@@ -989,6 +1184,14 @@ fn uninstall_git_hook() -> Result<(bool, String)> {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/// Save a topic to the local project queue (.rocky) without writing to the global PKG.
+/// Best-effort — silently ignored if not in a hooked project.
+fn queue_for_later(topic: &str, kind: &str, description: &str, context: &str) {
+    if let Some(log) = local_log::LocalLog::open_if_configured() {
+        log.queue_topic(topic, kind, description, context).ok();
+    }
+}
 
 fn print_header() {
     println!("\n{}", " Rocky".bold());

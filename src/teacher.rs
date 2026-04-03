@@ -217,6 +217,34 @@ Return ONLY valid JSON:
         Ok(serde_json::from_str(cleaned)?)
     }
 
+    pub fn generate_explanation(
+        &self,
+        topic: &str,
+        description: &str,
+        question: &str,
+        answer: &str,
+        context: &str,
+    ) -> Result<String> {
+        let system = r#"You are a senior engineer explaining a concept to a junior developer in a pair programming session.
+They just answered a question incorrectly or got stuck. Give them the real answer.
+
+Your explanation should:
+1. Start with the core insight — the thing they're missing
+2. Show concretely how it applies to their specific task
+3. Give one mental model or rule of thumb they can remember
+4. Flag the most common mistake people make with this
+
+Tone: direct, warm, practical. Like explaining something over a coffee. No jargon without explanation.
+Length: 4-6 sentences. No bullet points — write it as natural speech.
+Do NOT start with "Great question" or any filler."#;
+
+        let user = format!(
+            "Topic: {topic}\nDescription: {description}\nTask context: {context}\nQuestion asked: {question}\nTheir answer: {answer}"
+        );
+
+        self.ask(system, &user)
+    }
+
     pub fn generate_reminder(&self, topic: &str, node: &Node, context: &str) -> Result<String> {
         let system = r#"You are a Socratic technical mentor. Given a topic a developer learned before
 but hasn't revisited recently, write a 2-3 sentence reminder that:
