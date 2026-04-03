@@ -1,22 +1,3 @@
-# Environment
+target/
 .env
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-
-# Personal graph data — don't commit your knowledge graphs
-knowledge_graph.json
-demo/demo_graph.json
-demo/demo_graph.db
-demo/demo_vault/
-
-# Package build artifacts
-*.egg-info/
-
-# Claude Code project config
-.claude/
-
-# Personal scratchpad
-CLAUDE_CODE_SCRATCHPAD.md
+docs/book/
