@@ -82,14 +82,6 @@ impl Session {
         Ok((true, String::new()))
     }
 
-    /// Returns the current quiz streak in days.
-    pub fn get_streak(&self) -> Result<u32> {
-        Ok(self.db.session_get("quiz_streak")?
-            .unwrap_or_default()
-            .parse()
-            .unwrap_or(0))
-    }
-
     /// Call once at the start of a quiz session to update the streak counter.
     /// Returns the new streak value.
     pub fn update_streak(&self) -> Result<u32> {

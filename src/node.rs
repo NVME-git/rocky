@@ -32,6 +32,7 @@ impl std::fmt::Display for Kind {
 }
 
 /// The 13 fixed taxonomy domains Rocky uses to group topics.
+#[allow(dead_code)]
 pub const DOMAINS: &[&str] = &[
     "Language", "Database", "Auth", "API", "Frontend",
     "DevOps", "Architecture", "Performance", "Security",

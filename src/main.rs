@@ -941,6 +941,7 @@ fn delete_topics(db: &Db, vault_dir: &std::path::Path, query: &str) -> Result<()
 
     for node in &to_delete {
         db.delete_node(&node.id)?;
+        obsidian::delete_node(&node.id, &node.domain, vault_dir);
         println!("  {} Deleted \"{}\".", "✓".green(), node.topic);
     }
 
