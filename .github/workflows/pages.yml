@@ -23,23 +23,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install mdBook
-        run: |
-          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz \
-            | tar -xz --directory /usr/local/bin
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
 
-      - name: Install mdbook-mermaid
-        run: |
-          curl -sSL https://github.com/badboy/mdbook-mermaid/releases/download/v0.14.0/mdbook-mermaid-v0.14.0-x86_64-unknown-linux-gnu.tar.gz \
-            | tar -xz --directory /usr/local/bin
+      - name: Install dependencies
+        working-directory: docs
+        run: flutter pub get
 
-      - name: Build docs
-        run: mdbook build docs
+      - name: Build Flutter web
+        working-directory: docs
+        run: flutter build web --base-href /rocky/ --release
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/book
+          path: docs/build/web
 
   deploy:
     needs: build
