@@ -432,12 +432,6 @@ class StyledMarkdown extends StatelessWidget {
           border: Border.all(color: AppColors.codeBorder, width: 1),
         ),
         codeblockPadding: const EdgeInsets.all(16),
-        codeblockTextStyle: const TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 13,
-          color: AppColors.textSecondary,
-          height: 1.6,
-        ),
         // Lists
         listBullet: const TextStyle(color: AppColors.primary, fontSize: 14),
         listBulletPadding: const EdgeInsets.only(right: 8),
