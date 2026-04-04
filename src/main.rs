@@ -26,7 +26,10 @@ const MAX_QUESTIONS: u32 = 3;
 // ── CLI definition ────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(name = "rocky", about = "Rocky — understand what your agents build.")]
+#[command(
+    name = "rocky",
+    about = "Rocky — Personal Knowledge Graph\n\n  ♫  Stay sharp. Stay human.\n\n  Quiz yourself on what your AI agent just built so you never lose the thread.",
+)]
 struct Cli {
     /// Task description to analyze before starting work
     task: Option<String>,
@@ -125,7 +128,11 @@ fn run() -> Result<()> {
         Some(Cmd::Install) => {
             let (ok, msg) = install_git_hook()?;
             if ok {
+                p.banner();
                 println!("  {} {msg}", "✓".green());
+                println!();
+                println!("  {}", "Rocky will run after every commit in this repo.".dimmed());
+                println!("  {}", "Use  rocky quiz  for an on-demand session anytime.".dimmed());
             } else {
                 println!("  {} {msg}", "✗".red());
             }
@@ -1394,8 +1401,8 @@ fn queue_for_later(topic: &str, kind: &str, description: &str, context: &str) {
 }
 
 fn print_header() {
-    println!("\n{}", " Rocky".bold());
-    println!("{}", " ─────────────────────────────".dimmed());
+    println!("\n{}  {}", " ♫".cyan(), "Rocky · Personal Knowledge Graph".bold());
+    println!("{}", " ──────────────────────────────────────".dimmed());
 }
 
 fn is_hotfix(msg: &str) -> bool {

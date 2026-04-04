@@ -9,24 +9,36 @@ use colored::Colorize;
 const ROCKY_CALM: &str = "
       ♫
    __|__
-  /o   o\\
-  \\__▼__/
+  /◉   ◉\\
+  \\ ─── /
+   \\_↑_/
   /|||||\\
 ";
 
 const ROCKY_HAPPY: &str = "
-    ♫  ♫
+    ♫   ♫
    __|__
-  /^ · ^\\
-  \\__▼__/
+  /^   ^\\
+  \\ ─── /
+   \\_↑_/
   /|||||\\
 ";
 
 const ROCKY_EXCITE: &str = "
-  ♫ ♫ ♫ ♫
-  \\(o · o)/
-    \\___/
-    |||||
+  ♫  ♫  ♫  ♫
+  \\(◉ · ◉)/
+    \\─────/
+     |||||
+";
+
+const ROCKY_BANNER: &str = "
+   ♫           ♪          ♫
+
+     __|__
+    /◉   ◉\\         R  O  C  K  Y
+    \\ ─── /         Personal Knowledge Graph
+     \\_↑_/
+    /|||||\\          Stay sharp. Stay human.
 ";
 
 const ASCII_VARIANTS: &[&str] = &[ROCKY_CALM, ROCKY_HAPPY, ROCKY_EXCITE];
@@ -157,6 +169,12 @@ pub struct Personality {
 impl Personality {
     pub fn new(enabled: bool) -> Self {
         Self { enabled }
+    }
+
+    /// Show the full welcome banner (used on install).
+    pub fn banner(&self) {
+        if !self.enabled { return; }
+        println!("{}", ROCKY_BANNER.cyan());
     }
 
     /// Show ASCII Rocky. Pass `excite=true` after big milestones.

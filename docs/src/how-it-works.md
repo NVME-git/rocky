@@ -23,7 +23,8 @@ flowchart TD
     K --> L[Record in PKG with partial confidence]
     I -- too easy --> M[Record as known — no Q&A needed]
     I -- skip --> N[Queue topic in .rocky\nNot added to PKG yet]
-    F & G & J & L & M & N --> O([Done — summary printed])
+    I -- ignore --> P[Dismiss topic entirely\nnot added to PKG]
+    F & G & J & L & M & N & P --> O([Done — summary printed])
 ```
 
 ---
@@ -133,3 +134,27 @@ flowchart LR
 ```
 
 Higher stability means the topic decays slower — if you've demonstrated solid understanding multiple times, Rocky won't ask you about it again for weeks.
+
+---
+
+## Domain taxonomy
+
+Every topic is assigned to one of 13 domains when it's first extracted. Domains group topics in the vault into subfolders and are used for Obsidian graph view clustering.
+
+| Domain | Examples |
+|---|---|
+| Language | Rust lifetimes, Python decorators, Go channels |
+| Database | SQL indexes, Redis TTL, Postgres transactions |
+| Auth | JWT, OAuth2, RBAC, session tokens |
+| API | REST design, GraphQL, WebSockets |
+| Frontend | React hooks, DOM events, CSS layout |
+| DevOps | Docker networking, CI/CD pipelines |
+| Architecture | Event sourcing, retry patterns, microservices |
+| Performance | Caching strategies, query optimisation |
+| Security | OWASP, encryption, input validation |
+| Testing | Unit vs integration, mocking, TDD |
+| Tooling | Build systems, package managers |
+| Data | Algorithms, data structures, ML concepts |
+| Other | Anything that doesn't fit above |
+
+Use `rocky classify` to assign domains to any older topics that predate this feature.

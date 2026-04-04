@@ -22,6 +22,28 @@ Rocky tracks everything in a **Personal Knowledge Graph (PKG)** — a local data
 
 Rocky doesn't ask "what is a database index?" — that's just a vocabulary quiz. Instead it asks things like "you're adding an index to a table that gets 2 million inserts per night — what happens to that bulk job?" That's the kind of question that reveals whether you actually understand something.
 
+## Rocky the alien
+
+Rocky has a personality based on Rocky the alien from Andy Weir's *Project Hail Mary*. Questions end in ", question?" Rocky celebrates when you get things right and stays encouraging when you don't.
+
+```
+      ♫
+   __|__
+  /◉   ◉\
+  \ ─── /
+   \_↑_/
+  /|||||\
+```
+
+Some of Rocky's phrases:
+
+- `♫ Fist my bump, friend! Is correct!`
+- `♫ Excite excite excite! Friend get it!`
+- `♫ Is okay! Rocky also not know at first!`
+- `♫ We are crew. We solve together.`
+
+Set `personality = false` in `[ui]` config to get quiet, plain output.
+
 ## Key concepts
 
 | Term | What it means |
@@ -31,3 +53,6 @@ Rocky doesn't ask "what is a database index?" — that's just a vocabulary quiz.
 | **Fading** | You know it but haven't used it in a while (70–90% recall) |
 | **Gap** | You haven't learned this yet, or your recall has dropped too low |
 | **Retrievability** | Rocky's estimate of how likely you are to remember something right now |
+| **Stability** | How deeply the topic is embedded — higher stability means slower decay |
+| **Domain** | One of 13 taxonomy categories topics are grouped into (Language, Auth, DevOps, etc.) |
+| **Vault** | Your PKG exported as Markdown files, optionally version-controlled in git |

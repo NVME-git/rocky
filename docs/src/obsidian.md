@@ -13,7 +13,7 @@ In `~/.rocky/.rocky.toml`:
 obsidian_vault = "~/Documents/Obsidian/MyVault/rocky"
 ```
 
-Replace the path with the actual location of your Obsidian vault. Rocky will create the `rocky/` subfolder inside it.
+Rocky will create the `rocky/` subfolder inside your vault and write everything there.
 
 ### 2. Export your topics
 
@@ -21,7 +21,7 @@ Replace the path with the actual location of your Obsidian vault. Rocky will cre
 rocky export
 ```
 
-This writes one `.md` file per topic into your vault. Rocky also does this automatically every time a topic is updated, so your vault stays in sync.
+This writes one `.md` file per topic, grouped by domain into subfolders. Rocky also exports automatically every time a topic is updated, so your vault stays in sync.
 
 ### 3. Install the Dataview plugin in Obsidian
 
@@ -31,14 +31,39 @@ This writes one `.md` file per topic into your vault. Rocky also does this autom
 
 ---
 
+## Vault structure
+
+Topics are grouped by domain into subfolders:
+
+```
+vault/
+  Rocky Dashboard.md       ← auto-created overview dashboard
+  Rocky Review Queue.md    ← auto-created review queue
+  pkg.json                 ← full PKG backup (for sync/restore)
+  Language/
+    rust-ownership.md
+    python-decorators.md
+  Database/
+    redis-ttl-expiry.md
+    sql-indexes.md
+  Auth/
+    jwt-authentication.md
+  ...
+```
+
+The 13 domains: Language, Database, Auth, API, Frontend, DevOps, Architecture, Performance, Security, Testing, Tooling, Data, Other.
+
+---
+
 ## What the notes look like
 
-Each topic becomes a file like `jwt-authentication.md`:
+Each topic becomes a file like `Auth/jwt-authentication.md`:
 
 ```markdown
 ---
 rocky_id: jwt-authentication
 rocky_kind: pattern
+rocky_domain: Auth
 rocky_difficulty: 0.3
 rocky_stability: 8.5
 rocky_retrievability: 0.94
@@ -46,7 +71,7 @@ rocky_last_reviewed: 2026-04-03
 rocky_last_encountered: 2026-04-03
 rocky_review_count: 3
 rocky_days_since_review: 0
-tags: [rocky/node, rocky/kind/pattern]
+tags: [rocky/node, rocky/kind/pattern, rocky/domain/Auth]
 ---
 
 # JWT authentication
@@ -55,50 +80,78 @@ Stateless token-based auth where the server signs a payload the client stores an
 
 ## Contexts
 - add user login with JWT tokens to my Express API
+
+## See also
+- [[token-expiry-handling]]
+- [[httponly-cookie-security]]
 ```
+
+Related topics are linked via `See also:` wikilinks, so Obsidian's graph view shows the connections between your topics.
 
 ---
 
-## Dataview queries
+## Auto-created dashboard pages
 
-Once your notes are in Obsidian, you can create dashboards using Dataview queries.
+Rocky automatically creates two dashboard pages when you export:
+
+### Rocky Dashboard.md
+
+An overview of your entire PKG, including a by-domain breakdown and a table of all topics sorted by recall.
+
+### Rocky Review Queue.md
+
+Topics that need attention — your gaps and fading topics, sorted by most urgent.
+
+Both pages use Dataview queries and update automatically as your PKG changes.
+
+---
+
+## Custom Dataview queries
+
+You can add your own queries to any Obsidian note.
 
 ### Topics that need attention
 
-Paste this into any Obsidian note (in a code block marked `dataview`):
-
-```
+```dataview
 TABLE rocky_retrievability AS "Recall %", rocky_last_reviewed AS "Last Reviewed", rocky_kind AS "Kind"
 FROM #rocky/node
 WHERE rocky_retrievability < 0.7
 SORT rocky_retrievability ASC
 ```
 
-This shows everything that's fading or weak, sorted by most urgent.
-
 ### Your strongest topics
 
-```
+```dataview
 TABLE rocky_retrievability AS "Recall %", rocky_review_count AS "Reviews"
 FROM #rocky/node
 WHERE rocky_retrievability >= 0.9
 SORT rocky_review_count DESC
 ```
 
-### Topics by type
+### Topics by domain
 
-```
+```dataview
 TABLE rocky_retrievability AS "Recall %", rocky_last_reviewed AS "Last Reviewed"
-FROM #rocky/node AND #rocky/kind/implementation
+FROM #rocky/node AND #rocky/domain/Auth
 SORT rocky_retrievability ASC
 ```
 
-Replace `implementation` with `concept` or `pattern` to filter by kind.
+Replace `Auth` with any domain name.
 
-### Everything, sorted by recall
+### Topics by kind
 
+```dataview
+TABLE rocky_retrievability AS "Recall %", rocky_last_reviewed AS "Last Reviewed"
+FROM #rocky/node AND #rocky/kind/pattern
+SORT rocky_retrievability ASC
 ```
-TABLE rocky_retrievability AS "Recall", rocky_kind AS "Kind", rocky_days_since_review AS "Days ago"
+
+Replace `pattern` with `concept` or `implementation`.
+
+### Everything sorted by recall
+
+```dataview
+TABLE rocky_retrievability AS "Recall", rocky_domain AS "Domain", rocky_days_since_review AS "Days ago"
 FROM #rocky/node
 SORT rocky_retrievability ASC
 ```
@@ -107,4 +160,6 @@ SORT rocky_retrievability ASC
 
 ## Graph view
 
-Because each topic is a regular Obsidian note, you can use Obsidian's graph view to see all your Rocky topics alongside your other notes. Topics share tags (`#rocky/node`, `#rocky/kind/pattern`, etc.) so you can filter the graph to show only your knowledge graph.
+Because each topic is a regular Obsidian note, you can use Obsidian's graph view to visualise your knowledge. Topics in the same domain are grouped together. The `See also:` wikilinks create edges between related topics.
+
+Filter the graph to `#rocky/node` to see only your PKG. Filter to `#rocky/domain/Auth` to zoom into a specific area.

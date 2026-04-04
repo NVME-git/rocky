@@ -1,15 +1,15 @@
 # Installation
 
-Rocky is a single binary with no dependencies. You download it and it just works.
+Rocky is a single binary with no external dependencies. You download it and it just works.
 
 ## Requirements
 
-- A terminal (the app where you type commands)
+- A terminal
 - An Anthropic API key **or** [Ollama](https://ollama.com) running locally
 
-## Option 1: Install with Cargo (recommended if you have Rust)
+## Option 1: Install with Cargo (recommended)
 
-If you have Rust installed on your machine:
+If you have Rust installed:
 
 ```bash
 cargo install --git https://github.com/NVME-git/rocky
@@ -25,14 +25,13 @@ Go to the [Releases page](https://github.com/NVME-git/rocky/releases) and downlo
 
 **Linux / macOS:**
 ```bash
-# Move it somewhere on your PATH and make it executable
 chmod +x rocky
 mv rocky ~/.local/bin/rocky
 ```
 
-**Windows:**
+**Windows:** Move `rocky.exe` somewhere and add that folder to your PATH.
 
-Move `rocky.exe` somewhere and add that folder to your PATH.
+---
 
 ## Setting up your API key
 
@@ -41,12 +40,14 @@ Rocky needs to call an AI model to analyse topics and generate questions.
 ### Using Anthropic (Claude)
 
 1. Get an API key from [console.anthropic.com](https://console.anthropic.com)
-2. Create a file called `.env` in any project folder you work in, or set it globally:
+2. Set it in your environment:
 
 ```bash
-# Add to ~/.bashrc or ~/.zshrc for it to be available everywhere
+# Add to ~/.bashrc or ~/.zshrc
 export ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
+
+Or create a `.env` file in your project directory.
 
 ### Using Ollama (free, runs locally)
 
@@ -55,35 +56,87 @@ export ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```bash
 ollama pull qwen2.5-coder:7b
 ```
-3. Create a config file at `~/.rocky/.rocky.toml`:
+3. Create `~/.rocky/.rocky.toml`:
 ```toml
 [llm]
 provider = "ollama"
 model = "qwen2.5-coder:7b"
 ```
 
-See the [Configuration](configuration.md) page for more options.
+See the [Configuration](configuration.md) page for model recommendations by GPU VRAM.
+
+---
 
 ## Verify the installation
 
-Run this to check everything is working:
-
 ```bash
-rocky --stats
+rocky stats
 ```
 
-You should see something like:
+You should see:
 
 ```
- Rocky
- ─────────────────────────────
+  ♫  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
 
   Total topics:  0
   Known:         0
   Fading:        0
   Gaps/weak:     0
 
-  Quiz budget: 3/3 remaining today
+  Quiz budget: 3/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
+
+  ♫ PKG is empty. Let us begin science, question?
 ```
 
-You're ready to go.
+---
+
+## Set up the git hook
+
+In your project directory, run:
+
+```bash
+rocky install
+```
+
+You'll see:
+
+```
+   ♫           ♪          ♫
+
+     __|__
+    /◉   ◉\         R  O  C  K  Y
+    \ ─── /         Personal Knowledge Graph
+     \_↑_/
+    /|||||\          Stay sharp. Stay human.
+
+
+  ✓ git post-commit hook installed — .rocky added to .gitignore
+
+  Rocky will run after every commit in this repo.
+  Use  rocky quiz  for an on-demand session anytime.
+```
+
+From now on, every `git commit` will trigger `rocky diff` automatically.
+
+---
+
+## Set up the Claude Code hook (optional)
+
+If you use Claude Code, Rocky can silently log your prompts so `rocky quiz` has data to review. Add this to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "command": "rocky hook" }
+    ]
+  }
+}
+```
+
+This is silent — it won't interrupt your workflow.
+
+---
+
+You're ready. Head to [Quick Start](quickstart.md) for your first session.
