@@ -478,7 +478,6 @@ class StyledMarkdown extends StatelessWidget {
         ),
         tableHeadAlign: TextAlign.left,
         tableCellsPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        tableHeadDecoration: const BoxDecoration(color: AppColors.codeBg),
       ),
     );
   }
