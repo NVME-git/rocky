@@ -152,17 +152,32 @@ Columns:
 
 ## `rocky install` / `rocky uninstall`
 
-Install or remove the git post-commit hook.
+Install or remove hooks. Both commands default to `git` if no subcommand is given.
+
+### Git hook (default)
+
+Runs `rocky diff` automatically after every `git commit` in the current repo.
 
 ```bash
-# Install — Rocky runs after every commit in this repo
-rocky install
+rocky install          # same as: rocky install git
+rocky install git
 
-# Remove
-rocky uninstall
+rocky uninstall        # same as: rocky uninstall git
+rocky uninstall git
 ```
 
-`rocky install` also adds `.rocky` to `.gitignore` so your local prompt log isn't committed.
+`rocky install git` also adds `.rocky` to `.gitignore` so your local prompt log isn't committed.
+
+### Claude Code hook
+
+Silently logs every prompt you send to Claude Code so `rocky quiz` has data to review. Writes the hook entry to `~/.claude/settings.json`.
+
+```bash
+rocky install claude
+rocky uninstall claude
+```
+
+After installing, every Claude Code prompt in any project is logged. Run `rocky quiz` at any time to review what topics came up.
 
 ---
 

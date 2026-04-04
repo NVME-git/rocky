@@ -96,7 +96,7 @@ You should see:
 In your project directory, run:
 
 ```bash
-rocky install
+rocky install        # or: rocky install git
 ```
 
 You'll see:
@@ -123,19 +123,13 @@ From now on, every `git commit` will trigger `rocky diff` automatically.
 
 ## Set up the Claude Code hook (optional)
 
-If you use Claude Code, Rocky can silently log your prompts so `rocky quiz` has data to review. Add this to `~/.claude/settings.json`:
+If you use Claude Code, Rocky can silently log your prompts so `rocky quiz` has data to review:
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "command": "rocky hook" }
-    ]
-  }
-}
+```bash
+rocky install claude
 ```
 
-This is silent — it won't interrupt your workflow.
+This writes the hook entry to `~/.claude/settings.json` automatically. It's silent — it won't interrupt your workflow.
 
 ---
 

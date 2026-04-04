@@ -77,8 +77,10 @@ rocky install
 | `rocky quiz <topic>` | Search and quiz on specific topics |
 | `rocky ls` | Full topic list with recall, stability, difficulty |
 | `rocky stats` | PKG summary (known / fading / gaps) |
-| `rocky install` | Install git post-commit hook |
-| `rocky uninstall` | Remove the hook |
+| `rocky install` | Install git post-commit hook (default) |
+| `rocky install claude` | Install Claude Code hook |
+| `rocky uninstall` | Remove git post-commit hook |
+| `rocky uninstall claude` | Remove Claude Code hook |
 | `rocky export` | Write PKG to Markdown files |
 | `rocky classify` | Assign taxonomy domains to existing topics |
 | `rocky sync` | Commit PKG changes to git |
@@ -186,15 +188,11 @@ Full reference at [nvme-git.github.io/rocky/configuration.html](https://nvme-git
 
 Log every prompt you send to Claude Code so `rocky quiz` has data to work with:
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [{ "command": "rocky hook" }]
-  }
-}
+```bash
+rocky install claude
 ```
 
-Add this to `~/.claude/settings.json`.
+This writes the hook entry to `~/.claude/settings.json` automatically. Remove it with `rocky uninstall claude`.
 
 ---
 

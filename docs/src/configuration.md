@@ -148,19 +148,19 @@ rocky restore
 
 ## Claude Code hook
 
-To make Rocky log your AI prompts automatically, add this to `~/.claude/settings.json`:
+To make Rocky log your AI prompts automatically:
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {"command": "rocky hook"}
-    ]
-  }
-}
+```bash
+rocky install claude
 ```
 
-Every prompt is silently logged to `./.rocky` in your project folder (only if `rocky install` was run there). Run `rocky quiz` at any time to review topics from recent prompts.
+This writes the hook entry to `~/.claude/settings.json`. Every prompt is silently logged — run `rocky quiz` at any time to review topics from recent sessions.
+
+To remove:
+
+```bash
+rocky uninstall claude
+```
 
 ---
 

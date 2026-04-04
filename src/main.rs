@@ -49,10 +49,16 @@ enum Cmd {
     /// List all topics in your PKG
     #[command(alias = "ls")]
     List,
-    /// Install git post-commit hook
-    Install,
-    /// Remove git post-commit hook
-    Uninstall,
+    /// Install a hook (git post-commit by default)
+    Install {
+        #[command(subcommand)]
+        target: Option<HookTarget>,
+    },
+    /// Remove a hook (git post-commit by default)
+    Uninstall {
+        #[command(subcommand)]
+        target: Option<HookTarget>,
+    },
     /// Show active configuration
     Config,
     /// On-demand quiz — general review, or search for specific topics
@@ -101,6 +107,14 @@ enum Cmd {
     Classify,
 }
 
+#[derive(Subcommand)]
+enum HookTarget {
+    /// Git post-commit hook — runs `rocky diff` after every commit (default)
+    Git,
+    /// Claude Code hook — logs prompts to `.rocky` for `rocky quiz` to review
+    Claude,
+}
+
 // ── entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
@@ -125,24 +139,52 @@ fn run() -> Result<()> {
     let p = personality::Personality::new(cfg.personality);
 
     match cli.subcommand {
-        Some(Cmd::Install) => {
-            let (ok, msg) = install_git_hook()?;
-            if ok {
-                p.banner();
-                println!("  {} {msg}", "✓".green());
-                println!();
-                println!("  {}", "Rocky will run after every commit in this repo.".dimmed());
-                println!("  {}", "Use  rocky quiz  for an on-demand session anytime.".dimmed());
-            } else {
-                println!("  {} {msg}", "✗".red());
+        Some(Cmd::Install { target }) => {
+            match target.unwrap_or(HookTarget::Git) {
+                HookTarget::Git => {
+                    let (ok, msg) = install_git_hook()?;
+                    if ok {
+                        p.banner();
+                        println!("  {} {msg}", "✓".green());
+                        println!();
+                        println!("  {}", "Rocky will run after every commit in this repo.".dimmed());
+                        println!("  {}", "Use  rocky quiz  for an on-demand session anytime.".dimmed());
+                    } else {
+                        println!("  {} {msg}", "✗".red());
+                    }
+                }
+                HookTarget::Claude => {
+                    let (ok, msg) = install_claude_hook()?;
+                    if ok {
+                        p.banner();
+                        println!("  {} {msg}", "✓".green());
+                        println!();
+                        println!("  {}", "Rocky will silently log every Claude Code prompt.".dimmed());
+                        println!("  {}", "Run  rocky quiz  to review topics from recent sessions.".dimmed());
+                    } else {
+                        println!("  {} {msg}", "✗".red());
+                    }
+                }
             }
         }
-        Some(Cmd::Uninstall) => {
-            let (ok, msg) = uninstall_git_hook()?;
-            if ok {
-                println!("  {} {msg}", "✓".green());
-            } else {
-                println!("  {} {msg}", "✗".red());
+        Some(Cmd::Uninstall { target }) => {
+            match target.unwrap_or(HookTarget::Git) {
+                HookTarget::Git => {
+                    let (ok, msg) = uninstall_git_hook()?;
+                    if ok {
+                        println!("  {} {msg}", "✓".green());
+                    } else {
+                        println!("  {} {msg}", "✗".red());
+                    }
+                }
+                HookTarget::Claude => {
+                    let (ok, msg) = uninstall_claude_hook()?;
+                    if ok {
+                        println!("  {} {msg}", "✓".green());
+                    } else {
+                        println!("  {} {msg}", "✗".red());
+                    }
+                }
             }
         }
         Some(Cmd::Config) => cfg.show(),
@@ -1270,6 +1312,84 @@ fn uninstall_git_hook() -> Result<(bool, String)> {
         std::fs::write(hook_path, cleaned)?;
     }
     Ok((true, "git post-commit hook removed".into()))
+}
+
+fn claude_settings_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|h| h.join(".claude").join("settings.json"))
+}
+
+fn install_claude_hook() -> Result<(bool, String)> {
+    let path = claude_settings_path()
+        .ok_or_else(|| anyhow::anyhow!("could not locate home directory"))?;
+
+    let mut settings: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path)?;
+        serde_json::from_str(&text).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let hooks = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings.json is not a JSON object"))?
+        .entry("hooks")
+        .or_insert(serde_json::json!({}));
+
+    let submit = hooks
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("hooks is not a JSON object"))?
+        .entry("UserPromptSubmit")
+        .or_insert(serde_json::json!([]));
+
+    let arr = submit
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("UserPromptSubmit is not an array"))?;
+
+    let entry = serde_json::json!({"command": "rocky hook"});
+    if arr.iter().any(|v| v == &entry) {
+        return Ok((false, "Claude Code hook already installed".into()));
+    }
+
+    arr.push(entry);
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&settings)?)?;
+    Ok((true, format!("Claude Code hook installed — added to {}", path.display())))
+}
+
+fn uninstall_claude_hook() -> Result<(bool, String)> {
+    let path = claude_settings_path()
+        .ok_or_else(|| anyhow::anyhow!("could not locate home directory"))?;
+
+    if !path.exists() {
+        return Ok((false, "~/.claude/settings.json not found".into()));
+    }
+
+    let text = std::fs::read_to_string(&path)?;
+    let mut settings: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or(serde_json::json!({}));
+
+    let entry = serde_json::json!({"command": "rocky hook"});
+    let removed = if let Some(arr) = settings
+        .get_mut("hooks")
+        .and_then(|h| h.get_mut("UserPromptSubmit"))
+        .and_then(|v| v.as_array_mut())
+    {
+        let before = arr.len();
+        arr.retain(|v| v != &entry);
+        arr.len() < before
+    } else {
+        false
+    };
+
+    if !removed {
+        return Ok((false, "Claude Code hook not found in settings.json".into()));
+    }
+
+    std::fs::write(&path, serde_json::to_string_pretty(&settings)?)?;
+    Ok((true, "Claude Code hook removed".into()))
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

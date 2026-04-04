@@ -99,7 +99,7 @@ This makes Rocky automatically run after every commit, analysing the actual code
 
 ```bash
 cd your-project
-rocky install
+rocky install        # installs the git hook (default)
 ```
 
 From now on, every `git commit` triggers `rocky diff` automatically.
