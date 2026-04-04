@@ -146,7 +146,7 @@ class _DocsShellState extends State<DocsShell> {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 24),
             child: Text(
-              'Stay sharp. Stay human.',
+              'You Observe. Question?',
               style: TextStyle(
                 color: AppColors.textMuted,
                 fontSize: 12,
@@ -255,7 +255,7 @@ class _LogoRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Center(
-              child: Text('♫',
+              child: Text('🪨',
                   style: TextStyle(fontSize: 16, color: Colors.black)),
             ),
           ),
