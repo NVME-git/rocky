@@ -1,3 +1,9 @@
 target/
 .env
 docs/book/
+docs/build/
+docs/.dart_tool/
+docs/.packages
+docs/.flutter-plugins
+docs/.flutter-plugins-dependencies
+docs/pubspec.lock
