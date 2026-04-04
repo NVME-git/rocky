@@ -31,6 +31,31 @@ impl std::fmt::Display for Kind {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kind_round_trips() {
+        for s in ["concept", "pattern", "implementation"] {
+            assert_eq!(Kind::from_str(s).as_str(), s);
+        }
+    }
+
+    #[test]
+    fn kind_from_str_defaults_to_concept() {
+        assert_eq!(Kind::from_str("unknown"), Kind::Concept);
+        assert_eq!(Kind::from_str(""),        Kind::Concept);
+    }
+
+    #[test]
+    fn kind_display_matches_as_str() {
+        for kind in [Kind::Concept, Kind::Pattern, Kind::Implementation] {
+            assert_eq!(format!("{kind}"), kind.as_str());
+        }
+    }
+}
+
 /// The 13 fixed taxonomy domains Rocky uses to group topics.
 #[allow(dead_code)]
 pub const DOMAINS: &[&str] = &[

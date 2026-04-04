@@ -416,3 +416,133 @@ impl NodeExport {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn open_temp_db() -> (Db, tempfile::TempDir) {
+        let dir = tempdir().unwrap();
+        let db = Db::open(&dir.path().join("test.db"), dir.path()).unwrap();
+        (db, dir)
+    }
+
+    #[test]
+    fn add_and_retrieve_node() {
+        let (db, _dir) = open_temp_db();
+        db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
+            "Stateless token auth", "test task", None).unwrap();
+
+        let node = db.get_node("JWT authentication").unwrap().unwrap();
+        assert_eq!(node.topic, "JWT authentication");
+        assert_eq!(node.kind, Kind::Pattern);
+        assert_eq!(node.domain, "Auth");
+        assert_eq!(node.review_count, 1);
+    }
+
+    #[test]
+    fn node_id_is_slugified() {
+        let (db, _dir) = open_temp_db();
+        db.add_or_update("Redis TTL expiry", 0.8, &Kind::Implementation, "Database",
+            "desc", "ctx", None).unwrap();
+
+        // Lookup by original topic name should find it
+        let node = db.get_node("Redis TTL expiry").unwrap().unwrap();
+        assert_eq!(node.id, "redis-ttl-expiry");
+    }
+
+    #[test]
+    fn repeated_review_increments_count() {
+        let (db, _dir) = open_temp_db();
+        for _ in 0..3 {
+            db.add_or_update("SQL indexes", 0.9, &Kind::Concept, "Database",
+                "desc", "ctx", None).unwrap();
+        }
+        let node = db.get_node("SQL indexes").unwrap().unwrap();
+        assert_eq!(node.review_count, 3);
+    }
+
+    #[test]
+    fn search_finds_substring_match() {
+        let (db, _dir) = open_temp_db();
+        db.add_or_update("Redis TTL expiry", 0.8, &Kind::Concept, "Database",
+            "desc", "ctx", None).unwrap();
+        db.add_or_update("Redis pub/sub", 0.8, &Kind::Concept, "Database",
+            "desc", "ctx", None).unwrap();
+        db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
+            "desc", "ctx", None).unwrap();
+
+        let results = db.search_nodes("redis").unwrap();
+        assert_eq!(results.len(), 2);
+
+        let results = db.search_nodes("jwt").unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn delete_removes_node() {
+        let (db, _dir) = open_temp_db();
+        db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
+            "desc", "ctx", None).unwrap();
+
+        db.delete_node("jwt-authentication").unwrap();
+        assert!(db.get_node("JWT authentication").unwrap().is_none());
+    }
+
+    #[test]
+    fn summary_counts_correctly() {
+        let (db, _dir) = open_temp_db();
+        // Add one topic reviewed today — will be "known"
+        db.add_or_update("fresh topic", 0.9, &Kind::Concept, "Other",
+            "desc", "ctx", None).unwrap();
+
+        let (total, known, _stale, _gaps) = db.summary().unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(known, 1);
+    }
+
+    #[test]
+    fn session_get_set_round_trips() {
+        let (db, _dir) = open_temp_db();
+        assert!(db.session_get("missing_key").unwrap().is_none());
+
+        db.session_set("quiz_streak", "5").unwrap();
+        assert_eq!(db.session_get("quiz_streak").unwrap().as_deref(), Some("5"));
+
+        db.session_set("quiz_streak", "6").unwrap();
+        assert_eq!(db.session_get("quiz_streak").unwrap().as_deref(), Some("6"));
+    }
+
+    #[test]
+    fn pkg_json_export_import_round_trip() {
+        let (db, dir) = open_temp_db();
+        db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
+            "Token auth", "test task", None).unwrap();
+        db.add_or_update("SQL indexes", 0.7, &Kind::Concept, "Database",
+            "Index desc", "other task", None).unwrap();
+
+        let json_path = dir.path().join("pkg.json");
+        db.export_pkg_json(&json_path).unwrap();
+        assert!(json_path.exists());
+
+        // Import into a fresh DB
+        let (db2, _dir2) = open_temp_db();
+        let count = db2.import_pkg_json(&json_path).unwrap();
+        assert_eq!(count, 2);
+
+        let node = db2.get_node("JWT authentication").unwrap().unwrap();
+        assert_eq!(node.domain, "Auth");
+    }
+
+    #[test]
+    fn set_domain_updates_existing_node() {
+        let (db, _dir) = open_temp_db();
+        db.add_or_update("some topic", 0.8, &Kind::Concept, "",
+            "desc", "ctx", None).unwrap();
+
+        db.set_domain("some-topic", "Language").unwrap();
+        let node = db.get_node("some topic").unwrap().unwrap();
+        assert_eq!(node.domain, "Language");
+    }
+}

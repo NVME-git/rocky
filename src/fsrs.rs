@@ -57,3 +57,85 @@ pub fn update_after_review(stability: f64, difficulty: f64, r: f64, score: f64) 
         (new_s, new_d)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Local, Duration};
+
+    fn today() -> chrono::NaiveDate { Local::now().date_naive() }
+
+    #[test]
+    fn retrievability_is_one_when_reviewed_today() {
+        assert_eq!(retrievability(4.0, today()), 1.0);
+    }
+
+    #[test]
+    fn retrievability_decays_over_time() {
+        let r_1d = retrievability(4.0, today() - Duration::days(1));
+        let r_7d = retrievability(4.0, today() - Duration::days(7));
+        assert!(r_1d < 1.0, "should decay after 1 day");
+        assert!(r_7d < r_1d, "should decay faster at 7 days");
+    }
+
+    #[test]
+    fn retrievability_is_one_for_future_date() {
+        // elapsed <= 0 branch
+        let r = retrievability(4.0, today() + Duration::days(1));
+        assert_eq!(r, 1.0);
+    }
+
+    #[test]
+    fn classify_thresholds() {
+        assert_eq!(classify(0.95), "known");
+        assert_eq!(classify(0.90), "known");
+        assert_eq!(classify(0.80), "stale");
+        assert_eq!(classify(0.70), "stale");
+        assert_eq!(classify(0.69), "new");
+        assert_eq!(classify(0.0),  "new");
+    }
+
+    #[test]
+    fn initial_stability_differs_by_kind() {
+        assert!(initial_stability(&Kind::Concept) > initial_stability(&Kind::Pattern));
+        assert!(initial_stability(&Kind::Pattern) > initial_stability(&Kind::Implementation));
+    }
+
+    #[test]
+    fn perfect_score_increases_stability() {
+        let (new_s, new_d) = update_after_review(4.0, 0.3, 0.8, 1.0);
+        assert!(new_s > 4.0, "stability should increase on perfect score");
+        assert!(new_d < 0.3, "difficulty should decrease on perfect score");
+    }
+
+    #[test]
+    fn failed_score_reduces_stability() {
+        let (new_s, _) = update_after_review(4.0, 0.3, 0.8, 0.0);
+        assert!(new_s < 4.0, "stability should decrease on failed score");
+    }
+
+    #[test]
+    fn failed_score_never_drops_below_one() {
+        let (new_s, _) = update_after_review(1.0, 0.5, 0.5, 0.0);
+        assert!(new_s >= 1.0, "stability floor is 1.0");
+    }
+
+    #[test]
+    fn difficulty_clamped_between_bounds() {
+        // Max difficulty clamp — keep failing should not exceed 0.9
+        let mut d = 0.85;
+        for _ in 0..20 {
+            let (_, new_d) = update_after_review(1.0, d, 0.5, 0.0);
+            d = new_d;
+        }
+        assert!(d <= 0.9, "difficulty capped at 0.9, got {d}");
+
+        // Min difficulty clamp — keep acing should not drop below 0.1
+        let mut d = 0.15;
+        for _ in 0..20 {
+            let (_, new_d) = update_after_review(4.0, d, 0.5, 1.0);
+            d = new_d;
+        }
+        assert!(d >= 0.1, "difficulty floored at 0.1, got {d}");
+    }
+}

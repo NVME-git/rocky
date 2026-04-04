@@ -256,3 +256,41 @@ impl Personality {
         format!("{trimmed}, question?")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_question_appends_rocky_suffix() {
+        let p = Personality::new(true);
+        let q = p.format_question("What is a database index?");
+        assert!(q.ends_with(", question?"), "got: {q}");
+        assert!(!q.contains("??"), "should not double punctuate: {q}");
+    }
+
+    #[test]
+    fn format_question_passthrough_when_disabled() {
+        let p = Personality::new(false);
+        let original = "What is a database index?";
+        assert_eq!(p.format_question(original), original);
+    }
+
+    #[test]
+    fn pkg_mood_empty_pkg() {
+        assert!(pkg_mood(0, 0).contains("empty"));
+    }
+
+    #[test]
+    fn pkg_mood_strong_pkg() {
+        assert!(pkg_mood(9, 10).contains("strong") || pkg_mood(9, 10).contains("please"));
+    }
+
+    #[test]
+    fn milestone_phrase_known_values() {
+        assert!(milestone_phrase(1).is_some());
+        assert!(milestone_phrase(10).is_some());
+        assert!(milestone_phrase(100).is_some());
+        assert!(milestone_phrase(7).is_none());
+    }
+}
