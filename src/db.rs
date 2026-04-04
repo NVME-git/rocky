@@ -42,15 +42,15 @@ CREATE TABLE IF NOT EXISTS contexts (
 
 pub struct Db {
     path: PathBuf,
-    pub vault_dir: PathBuf,
+    pub pkg_dir: PathBuf,
 }
 
 impl Db {
-    pub fn open(path: &Path, vault_dir: &Path) -> Result<Self> {
+    pub fn open(path: &Path, pkg_dir: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let db = Self { path: path.to_path_buf(), vault_dir: vault_dir.to_path_buf() };
+        let db = Self { path: path.to_path_buf(), pkg_dir: pkg_dir.to_path_buf() };
         db.init()?;
         Ok(db)
     }
@@ -214,9 +214,9 @@ impl Db {
             )?;
         }
 
-        // Write Obsidian vault file (best-effort — never block on failure)
+        // Write Obsidian PKG file (best-effort — never block on failure)
         if let Ok(Some(node)) = self.get_node(topic) {
-            obsidian::write_node(&node, &self.vault_dir).ok();
+            obsidian::write_node(&node, &self.pkg_dir).ok();
         }
 
         Ok(())

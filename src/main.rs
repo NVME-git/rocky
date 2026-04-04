@@ -77,13 +77,13 @@ enum Cmd {
         /// Search query (substring match on topic name and description)
         query: String,
     },
-    /// Export all PKG topics to your Obsidian vault
+    /// Export all PKG topics to your PKG directory (Obsidian-compatible markdown)
     Export,
     /// Show recent prompts logged in this project
     Logs,
     /// Claude Code hook — reads JSON from stdin, logs prompt (non-blocking)
     Hook,
-    /// Commit vault + pkg.json to git; optionally push or initialise the repo
+    /// Commit PKG + pkg.json to git; optionally push or initialise the repo
     Sync {
         /// Initialise git repo and optionally set a remote URL
         #[arg(long, value_name = "REMOTE_URL")]
@@ -91,11 +91,11 @@ enum Cmd {
         /// Commit pending changes and push to configured remote
         #[arg(long)]
         push: bool,
-        /// Show vault git status
+        /// Show PKG git status
         #[arg(long)]
         status: bool,
     },
-    /// Rebuild graph.db from vault/pkg.json (use after cloning on a new machine)
+    /// Rebuild graph.db from pkg/pkg.json (use after cloning on a new machine)
     Restore,
     /// Assign taxonomy domains to existing undomained topics via LLM
     Classify,
@@ -121,7 +121,7 @@ fn run() -> Result<()> {
     }
 
     let cfg = Config::load()?;
-    let db = Db::open(&cfg.db_path, &cfg.obsidian_vault)?;
+    let db = Db::open(&cfg.db_path, &cfg.pkg_dir)?;
     let p = personality::Personality::new(cfg.personality);
 
     match cli.subcommand {
@@ -149,7 +149,7 @@ fn run() -> Result<()> {
         Some(Cmd::Quiz { topic, hours }) => {
             let teacher = make_teacher(&cfg)?;
             let session = Session::new(
-                Db::open(&cfg.db_path, &cfg.obsidian_vault)?,
+                Db::open(&cfg.db_path, &cfg.pkg_dir)?,
                 cfg.daily_budget,
                 cfg.min_gap_minutes,
             );
@@ -162,13 +162,13 @@ fn run() -> Result<()> {
         }
         Some(Cmd::Stats) => show_stats(&db, &cfg, &p)?,
         Some(Cmd::List) => list_topics(&db)?,
-        Some(Cmd::Delete { query }) => delete_topics(&db, &cfg.obsidian_vault, &query)?,
+        Some(Cmd::Delete { query }) => delete_topics(&db, &cfg.pkg_dir, &query)?,
         Some(Cmd::Export) => run_export(&db, &cfg)?,
         Some(Cmd::Logs) => run_logs()?,
         Some(Cmd::Diff { git_ref, staged }) => {
             let teacher = make_teacher(&cfg)?;
             let session = Session::new(
-                Db::open(&cfg.db_path, &cfg.obsidian_vault)?,
+                Db::open(&cfg.db_path, &cfg.pkg_dir)?,
                 cfg.daily_budget,
                 cfg.min_gap_minutes,
             );
@@ -180,10 +180,10 @@ fn run() -> Result<()> {
             run_sync(&db, &cfg, init, push, status)?;
         }
         Some(Cmd::Restore) => {
-            let pkg_json = cfg.obsidian_vault.join("pkg.json");
+            let pkg_json = cfg.pkg_dir.join("pkg.json");
             let count = db.import_pkg_json(&pkg_json)?;
             println!("  {} Restored {count} topics from {}", "✓".green(), pkg_json.display());
-            println!("  {}", "Run  to sync vault files.".dimmed());
+            println!("  {}", "Run  rocky export  to sync PKG files.".dimmed());
         }
         Some(Cmd::Classify) => {
             run_classify(&db, &make_teacher(&cfg)?)?;
@@ -192,7 +192,7 @@ fn run() -> Result<()> {
             if let Some(msg) = cli.after {
                 let teacher = make_teacher(&cfg)?;
                 let session = Session::new(
-                    Db::open(&cfg.db_path, &cfg.obsidian_vault)?,
+                    Db::open(&cfg.db_path, &cfg.pkg_dir)?,
                     cfg.daily_budget,
                     cfg.min_gap_minutes,
                 );
@@ -201,7 +201,7 @@ fn run() -> Result<()> {
             } else if let Some(task) = cli.task {
                 let teacher = make_teacher(&cfg)?;
                 let session = Session::new(
-                    Db::open(&cfg.db_path, &cfg.obsidian_vault)?,
+                    Db::open(&cfg.db_path, &cfg.pkg_dir)?,
                     cfg.daily_budget,
                     cfg.min_gap_minutes,
                 );
@@ -239,7 +239,7 @@ fn show_stats(db: &Db, cfg: &Config, p: &personality::Personality) -> Result<()>
     println!("  {}", format!("Gaps/weak:     {gaps}").red());
 
     let session = Session::new(
-        Db::open(&cfg.db_path, &cfg.obsidian_vault)?,
+        Db::open(&cfg.db_path, &cfg.pkg_dir)?,
         cfg.daily_budget,
         cfg.min_gap_minutes,
     );
@@ -884,7 +884,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
     Ok(())
 }
 
-fn delete_topics(db: &Db, vault_dir: &std::path::Path, query: &str) -> Result<()> {
+fn delete_topics(db: &Db, pkg_dir: &std::path::Path, query: &str) -> Result<()> {
     let matches = db.search_nodes(query)?;
 
     if matches.is_empty() {
@@ -948,7 +948,7 @@ fn delete_topics(db: &Db, vault_dir: &std::path::Path, query: &str) -> Result<()
 
     for node in &to_delete {
         db.delete_node(&node.id)?;
-        obsidian::delete_node(&node.id, &node.domain, vault_dir);
+        obsidian::delete_node(&node.id, &node.domain, pkg_dir);
         println!("  {} Deleted \"{}\".", "✓".green(), node.topic);
     }
 
@@ -1155,21 +1155,21 @@ fn run_export(db: &Db, cfg: &Config) -> Result<()> {
     let nodes = db.all_nodes()?;
     if nodes.is_empty() {
         // Still write dashboard pages so user can see empty-state queries
-        obsidian::write_dashboard_pages(&cfg.obsidian_vault)?;
+        obsidian::write_dashboard_pages(&cfg.pkg_dir)?;
         println!("  PKG is empty — no topic files to export.");
         println!(
             "  {} Dashboard pages written to {}",
             "✓".green(),
-            cfg.obsidian_vault.display()
+            cfg.pkg_dir.display()
         );
         return Ok(());
     }
-    let count = obsidian::write_all(&nodes, &cfg.obsidian_vault)?;
+    let count = obsidian::write_all(&nodes, &cfg.pkg_dir)?;
     println!(
         "  {} Exported {count} topic{} + dashboard to {}",
         "✓".green(),
         if count == 1 { "" } else { "s" },
-        cfg.obsidian_vault.display()
+        cfg.pkg_dir.display()
     );
     println!(
         "  {}",
@@ -1323,8 +1323,8 @@ fn run_sync(db: &Db, cfg: &Config, init: Option<Option<String>>, push: bool, sta
 
     // Write pkg.json then commit
     let nodes = db.all_nodes()?;
-    obsidian::write_all(&nodes, &cfg.obsidian_vault)?;
-    db.export_pkg_json(&cfg.obsidian_vault.join("pkg.json"))?;
+    obsidian::write_all(&nodes, &cfg.pkg_dir)?;
+    db.export_pkg_json(&cfg.pkg_dir.join("pkg.json"))?;
 
     let msg = build_commit_message(db);
     match sync::commit(rocky_dir, &msg)? {
@@ -1357,18 +1357,18 @@ fn run_classify(db: &Db, teacher: &Teacher) -> Result<()> {
         db.set_domain(&node_id, domain)?;
         println!("  {} {} → {}", "✓".green(), topic, domain.cyan());
     }
-    println!("  {} Run `rocky export` to update vault files.", "·".dimmed());
+    println!("  {} Run `rocky export` to update PKG files.", "·".dimmed());
     Ok(())
 }
 
-/// Auto-sync after a session: export vault, write pkg.json, commit if configured.
+/// Auto-sync after a session: export PKG, write pkg.json, commit if configured.
 fn auto_sync(db: &Db, cfg: &Config) {
     if !cfg.sync.enabled || !cfg.sync.auto_commit { return; }
     if !sync::is_git_repo(&cfg.rocky_dir) { return; }
 
     let nodes = match db.all_nodes() { Ok(n) => n, Err(_) => return };
-    obsidian::write_all(&nodes, &cfg.obsidian_vault).ok();
-    db.export_pkg_json(&cfg.obsidian_vault.join("pkg.json")).ok();
+    obsidian::write_all(&nodes, &cfg.pkg_dir).ok();
+    db.export_pkg_json(&cfg.pkg_dir.join("pkg.json")).ok();
 
     let msg = build_commit_message(db);
     match sync::commit(&cfg.rocky_dir, &msg) {

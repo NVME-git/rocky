@@ -1,13 +1,13 @@
-/// Obsidian vault exporter.
+/// Obsidian PKG exporter.
 ///
 /// File layout:
-///   vault/{Domain}/topic-id.md   — one file per PKG node
-///   vault/pkg.json               — full PKG backup for cross-machine restore
-///   vault/Rocky Dashboard.md     — Dataview dashboard
-///   vault/Rocky Review Queue.md  — review queue
+///   pkg/{Domain}/topic-id.md   — one file per PKG node
+///   pkg/pkg.json               — full PKG backup for cross-machine restore
+///   pkg/Rocky Dashboard.md     — Dataview dashboard
+///   pkg/Rocky Review Queue.md  — review queue
 ///
-/// Nodes with no domain (empty string) are written to vault root for
-/// backwards compatibility; run `rocky export --classify` to migrate them.
+/// Nodes with no domain (empty string) are written to pkg root for
+/// backwards compatibility; run `rocky classify` then `rocky export` to migrate them.
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -18,33 +18,33 @@ use crate::node::Node;
 
 // ── File path helpers ─────────────────────────────────────────────────────────
 
-fn node_path(node: &Node, vault_dir: &Path) -> PathBuf {
+fn node_path(node: &Node, pkg_dir: &Path) -> PathBuf {
     if node.domain.is_empty() {
-        vault_dir.join(format!("{}.md", node.id))
+        pkg_dir.join(format!("{}.md", node.id))
     } else {
-        vault_dir.join(&node.domain).join(format!("{}.md", node.id))
+        pkg_dir.join(&node.domain).join(format!("{}.md", node.id))
     }
 }
 
 // ── Write a single node ───────────────────────────────────────────────────────
 
-pub fn write_node(node: &Node, vault_dir: &Path) -> Result<()> {
-    write_node_inner(node, vault_dir, &[])
+pub fn write_node(node: &Node, pkg_dir: &Path) -> Result<()> {
+    write_node_inner(node, pkg_dir, &[])
 }
 
-pub fn write_node_with_links(node: &Node, vault_dir: &Path, related_ids: &[String]) -> Result<()> {
-    write_node_inner(node, vault_dir, related_ids)
+pub fn write_node_with_links(node: &Node, pkg_dir: &Path, related_ids: &[String]) -> Result<()> {
+    write_node_inner(node, pkg_dir, related_ids)
 }
 
-fn write_node_inner(node: &Node, vault_dir: &Path, related_ids: &[String]) -> Result<()> {
-    let path = node_path(node, vault_dir);
+fn write_node_inner(node: &Node, pkg_dir: &Path, related_ids: &[String]) -> Result<()> {
+    let path = node_path(node, pkg_dir);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
     // If the node was previously written at a different location (e.g. root
     // before domain was assigned), remove the stale file.
-    let root_path = vault_dir.join(format!("{}.md", node.id));
+    let root_path = pkg_dir.join(format!("{}.md", node.id));
     if root_path != path && root_path.exists() {
         std::fs::remove_file(&root_path).ok();
     }
@@ -100,20 +100,20 @@ fn write_node_inner(node: &Node, vault_dir: &Path, related_ids: &[String]) -> Re
     Ok(())
 }
 
-// ── Delete a node's vault file ────────────────────────────────────────────────
+// ── Delete a node's PKG file ─────────────────────────────────────────────────
 
-pub fn delete_node(node_id: &str, domain: &str, vault_dir: &Path) {
+pub fn delete_node(node_id: &str, domain: &str, pkg_dir: &Path) {
     // Try both domain subfolder and root (covers migration edge cases)
     if !domain.is_empty() {
-        std::fs::remove_file(vault_dir.join(domain).join(format!("{node_id}.md"))).ok();
+        std::fs::remove_file(pkg_dir.join(domain).join(format!("{node_id}.md"))).ok();
     }
-    std::fs::remove_file(vault_dir.join(format!("{node_id}.md"))).ok();
+    std::fs::remove_file(pkg_dir.join(format!("{node_id}.md"))).ok();
 }
 
 // ── Export all nodes ──────────────────────────────────────────────────────────
 
-pub fn write_all(nodes: &[Node], vault_dir: &Path) -> Result<usize> {
-    std::fs::create_dir_all(vault_dir)?;
+pub fn write_all(nodes: &[Node], pkg_dir: &Path) -> Result<usize> {
+    std::fs::create_dir_all(pkg_dir)?;
 
     // Pre-compute wikilinks: for each node, find others whose topic ID shares
     // a meaningful keyword (word >3 chars from the ID slug)
@@ -121,10 +121,10 @@ pub fn write_all(nodes: &[Node], vault_dir: &Path) -> Result<usize> {
 
     for node in nodes {
         let related = find_related_ids(node, &all_ids);
-        write_node_with_links(node, vault_dir, &related)?;
+        write_node_with_links(node, pkg_dir, &related)?;
     }
 
-    write_dashboard_pages(vault_dir)?;
+    write_dashboard_pages(pkg_dir)?;
     Ok(nodes.len())
 }
 
@@ -144,10 +144,10 @@ fn find_related_ids(node: &Node, all_ids: &[&str]) -> Vec<String> {
 
 // ── Dashboard pages ───────────────────────────────────────────────────────────
 
-pub fn write_dashboard_pages(vault_dir: &Path) -> Result<()> {
-    std::fs::create_dir_all(vault_dir)?;
-    std::fs::write(vault_dir.join("Rocky Dashboard.md"), DASHBOARD)?;
-    std::fs::write(vault_dir.join("Rocky Review Queue.md"), REVIEW_QUEUE)?;
+pub fn write_dashboard_pages(pkg_dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(pkg_dir)?;
+    std::fs::write(pkg_dir.join("Rocky Dashboard.md"), DASHBOARD)?;
+    std::fs::write(pkg_dir.join("Rocky Review Queue.md"), REVIEW_QUEUE)?;
     Ok(())
 }
 
@@ -160,7 +160,7 @@ tags: [rocky/meta]
 # Rocky — Knowledge Dashboard
 
 > This file is managed by Rocky. Run `rocky export` to refresh node files.
-> Dashboard queries are live — they always reflect the current state of your vault.
+> Dashboard queries are live — they always reflect the current state of your PKG.
 
 ---
 
@@ -309,7 +309,7 @@ tags: [rocky/meta]
 # Rocky — Review Queue
 
 > Run `rocky quiz` to work through this list interactively.
-> This page auto-updates whenever Rocky writes to the vault.
+> This page auto-updates whenever Rocky writes to the PKG.
 
 ---
 

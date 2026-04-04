@@ -33,7 +33,7 @@ struct SessionSection {
 
 #[derive(Debug, Deserialize)]
 struct ExportSection {
-    obsidian_vault: Option<String>,
+    pkg_dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,7 +71,7 @@ pub struct Config {
     pub ollama_base_url: String,
     pub daily_budget: u32,
     pub min_gap_minutes: u32,
-    pub obsidian_vault: PathBuf,
+    pub pkg_dir: PathBuf,
     pub db_path: PathBuf,
     pub rocky_dir: PathBuf,
     pub personality: bool,
@@ -87,7 +87,7 @@ impl Default for Config {
             ollama_base_url: "http://localhost:11434".into(),
             daily_budget: 3,
             min_gap_minutes: 120,
-            obsidian_vault: rocky_dir.join("vault"),
+            pkg_dir: rocky_dir.join("pkg"),
             db_path: rocky_dir.join("graph.db"),
             rocky_dir: rocky_dir.clone(),
             personality: true,
@@ -136,10 +136,10 @@ impl Config {
             if let Some(v) = s.min_gap_minutes { self.min_gap_minutes = v; }
         }
         if let Some(e) = file.export {
-            if let Some(v) = e.obsidian_vault {
+            if let Some(v) = e.pkg_dir {
                 let expanded = v.replacen("~/", &format!("{}/", dirs::home_dir()
                     .unwrap_or_default().display()), 1);
-                self.obsidian_vault = PathBuf::from(expanded);
+                self.pkg_dir = PathBuf::from(expanded);
             }
         }
         if let Some(ui) = file.ui {
@@ -170,7 +170,7 @@ impl Config {
         println!("    daily_budget     = {}", self.daily_budget);
         println!("    min_gap_minutes  = {}", self.min_gap_minutes);
         println!("\n  [export]");
-        println!("    obsidian_vault   = {}", self.obsidian_vault.display());
+        println!("    pkg_dir          = {}", self.pkg_dir.display());
         println!("\n  [ui]");
         println!("    personality      = {}", self.personality);
         println!("\n  [sync]");

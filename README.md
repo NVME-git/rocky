@@ -79,12 +79,12 @@ rocky install
 | `rocky stats` | PKG summary (known / fading / gaps) |
 | `rocky install` | Install git post-commit hook |
 | `rocky uninstall` | Remove the hook |
-| `rocky export` | Write PKG to Obsidian vault |
+| `rocky export` | Write PKG to Markdown files |
 | `rocky classify` | Assign taxonomy domains to existing topics |
-| `rocky sync` | Commit vault changes to git |
+| `rocky sync` | Commit PKG changes to git |
 | `rocky sync --push` | Commit and push to remote |
-| `rocky sync --init [url]` | Initialise vault git repo |
-| `rocky restore` | Rebuild PKG from vault/pkg.json |
+| `rocky sync --init [url]` | Initialise PKG git repo |
+| `rocky restore` | Rebuild PKG from pkg/pkg.json |
 | `rocky config` | Show active configuration |
 | `rocky delete "query"` | Remove topics from PKG |
 
@@ -131,13 +131,13 @@ Rocky can version-control your PKG and sync it across machines:
 enabled = true
 
 # Init the git repo and set a remote
-rocky sync --init https://github.com/you/rocky-vault.git
+rocky sync --init https://github.com/you/rocky-pkg.git
 
 # Rocky auto-commits after each session. Push when ready:
 rocky sync --push
 
 # On a new machine:
-git clone https://github.com/you/rocky-vault.git ~/.rocky
+git clone https://github.com/you/rocky-pkg.git ~/.rocky
 rocky restore
 ```
 
@@ -149,7 +149,7 @@ rocky restore
 rocky export
 ```
 
-Writes one Markdown note per topic into your Obsidian vault, grouped by domain (`Language/`, `Database/`, `Auth/`, etc.). Rocky auto-creates dashboard pages with Dataview queries and wikilinks between related topics.
+Writes one Markdown note per topic into your PKG directory, grouped by domain (`Language/`, `Database/`, `Auth/`, etc.). Rocky auto-creates dashboard pages with Dataview queries and wikilinks between related topics. Point `pkg_dir` at your Obsidian vault to view everything there.
 
 ---
 
@@ -167,7 +167,7 @@ daily_budget    = 3          # max auto-triggered quizzes per day
 min_gap_minutes = 120        # minimum gap between auto sessions
 
 [export]
-obsidian_vault = "~/Documents/Obsidian/MyVault/rocky"
+pkg_dir = "~/Documents/Obsidian/MyVault/rocky"
 
 [ui]
 personality = true           # Rocky's voice and ASCII art

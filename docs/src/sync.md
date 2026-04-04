@@ -1,6 +1,6 @@
-# Vault Sync & Backup
+# PKG Sync & Backup
 
-Rocky can version-control your knowledge vault using git, giving you backup, history, and cross-machine sync.
+Rocky can version-control your PKG using git, giving you backup, history, and cross-machine sync.
 
 ---
 
@@ -8,7 +8,7 @@ Rocky can version-control your knowledge vault using git, giving you backup, his
 
 ```
 ~/.rocky/
-  vault/                  ← tracked by git
+  pkg/                    ← tracked by git
     pkg.json              ← full PKG backup (nodes + session state)
     Rocky Dashboard.md    ← Dataview dashboard
     Rocky Review Queue.md ← review queue
@@ -22,7 +22,7 @@ Rocky can version-control your knowledge vault using git, giving you backup, his
   .gitignore              ← auto-created by Rocky
 ```
 
-`graph.db` is the live runtime database. It's a binary file, bad for git, and always rebuildable from `pkg.json`. The vault is the human-readable, git-friendly projection of your knowledge.
+`graph.db` is the live runtime database. It's a binary file, bad for git, and always rebuildable from `pkg.json`. The PKG directory is the human-readable, git-friendly projection of your knowledge.
 
 ---
 
@@ -36,7 +36,7 @@ enabled = true
 # Initialise git repo + set a remote
 rocky sync --init https://github.com/you/rocky-pkg.git
 
-# Run some quizzes — vault commits automatically after each session
+# Run some quizzes — PKG commits automatically after each session
 rocky quiz
 
 # Push when ready
@@ -49,7 +49,7 @@ rocky sync --push
 
 ### `rocky sync`
 
-Commit any pending vault changes. Shows what changed.
+Commit any pending PKG changes. Shows what changed.
 
 ```bash
 rocky sync
@@ -75,21 +75,21 @@ Show how many files changed since the last commit and how many commits are ahead
 
 ### `rocky restore`
 
-Rebuild `graph.db` from `vault/pkg.json`. Use this when setting up Rocky on a new machine after cloning your vault.
+Rebuild `graph.db` from `pkg/pkg.json`. Use this when setting up Rocky on a new machine after cloning your PKG.
 
 ```bash
 git clone https://github.com/you/rocky-pkg.git ~/.rocky
 rocky restore
-# ✓ Restored 42 topics from ~/.rocky/vault/pkg.json
+# ✓ Restored 42 topics from ~/.rocky/pkg/pkg.json
 ```
 
 ### `rocky backup`
 
-Write `vault/pkg.json` without committing. Useful for a quick snapshot before making changes.
+Write `pkg/pkg.json` without committing. Useful for a quick snapshot before making changes.
 
 ---
 
-## Topic domains and vault structure
+## Topic domains and PKG structure
 
 Rocky classifies every topic into one of 13 domains:
 
@@ -109,7 +109,7 @@ Rocky classifies every topic into one of 13 domains:
 | Data | Algorithms, data structures, ML concepts |
 | Other | Anything that doesn't fit above |
 
-The domain becomes the subfolder in the vault, which Obsidian uses for graph view grouping. Topics also link to related notes via `See also:` wikilinks, forming a web of connections in the graph view.
+The domain becomes the subfolder in the PKG, which Obsidian uses for graph view grouping. Topics also link to related notes via `See also:` wikilinks, forming a web of connections in the graph view.
 
 To assign domains to existing topics that predate this feature:
 
@@ -119,7 +119,7 @@ rocky classify
 # ✓ Redis TTL expiry → Database
 # ✓ Rust ownership model → Language
 # ...
-# · Run `rocky export` to update vault files.
+# · Run `rocky export` to update PKG files.
 ```
 
 ---
@@ -136,7 +136,7 @@ rocky sync --push
 **Machine B** (new machine):
 ```bash
 git clone https://github.com/you/rocky-pkg.git ~/.rocky
-rocky restore          # rebuilds graph.db from vault/pkg.json
+rocky restore          # rebuilds graph.db from pkg/pkg.json
 rocky stats            # all your topics are back
 ```
 

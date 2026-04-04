@@ -1,19 +1,19 @@
 # Obsidian Integration
 
-Rocky can write your entire knowledge graph into an [Obsidian](https://obsidian.md) vault as markdown files. Each topic becomes a note with metadata that Obsidian's Dataview plugin can query and visualise.
+Rocky writes your entire knowledge graph as Markdown files into a PKG directory. Each topic becomes a note with metadata that Obsidian's Dataview plugin can query and visualise.
 
 ## Setup
 
-### 1. Tell Rocky where your vault is
+### 1. Tell Rocky where your PKG directory is
 
 In `~/.rocky/.rocky.toml`:
 
 ```toml
 [export]
-obsidian_vault = "~/Documents/Obsidian/MyVault/rocky"
+pkg_dir = "~/Documents/Obsidian/MyVault/rocky"
 ```
 
-Rocky will create the `rocky/` subfolder inside your vault and write everything there.
+Rocky will write all files directly into the path you set. If pointing to an Obsidian vault, set it to a subfolder like `~/Documents/Obsidian/MyVault/rocky`.
 
 ### 2. Export your topics
 
@@ -21,7 +21,7 @@ Rocky will create the `rocky/` subfolder inside your vault and write everything 
 rocky export
 ```
 
-This writes one `.md` file per topic, grouped by domain into subfolders. Rocky also exports automatically every time a topic is updated, so your vault stays in sync.
+This writes one `.md` file per topic, grouped by domain into subfolders. Rocky also exports automatically every time a topic is updated, so your PKG stays in sync.
 
 ### 3. Install the Dataview plugin in Obsidian
 
@@ -36,7 +36,7 @@ This writes one `.md` file per topic, grouped by domain into subfolders. Rocky a
 Topics are grouped by domain into subfolders:
 
 ```
-vault/
+pkg/
   Rocky Dashboard.md       ← auto-created overview dashboard
   Rocky Review Queue.md    ← auto-created review queue
   pkg.json                 ← full PKG backup (for sync/restore)

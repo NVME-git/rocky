@@ -139,7 +139,7 @@ Higher stability means the topic decays slower — if you've demonstrated solid 
 
 ## Domain taxonomy
 
-Every topic is assigned to one of 13 domains when it's first extracted. Domains group topics in the vault into subfolders and are used for Obsidian graph view clustering.
+Every topic is assigned to one of 13 domains when it's first extracted. Domains group topics in the PKG into subfolders and are used for Obsidian graph view clustering.
 
 | Domain | Examples |
 |---|---|

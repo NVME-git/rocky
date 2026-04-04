@@ -168,7 +168,7 @@ rocky uninstall
 
 ## `rocky export`
 
-Write all PKG topics to your Obsidian vault as Markdown files.
+Write all PKG topics to your Obsidian PKG as Markdown files.
 
 ```bash
 rocky export
@@ -189,7 +189,7 @@ rocky classify
 # ✓ Rust ownership model → Language
 # ✓ JWT authentication → Auth
 # ...
-# Run  rocky export  to update vault files.
+# Run  rocky export  to update PKG files.
 ```
 
 The 13 domains Rocky uses: Language, Database, Auth, API, Frontend, DevOps, Architecture, Performance, Security, Testing, Tooling, Data, Other.
@@ -198,7 +198,7 @@ The 13 domains Rocky uses: Language, Database, Auth, API, Frontend, DevOps, Arch
 
 ## `rocky sync`
 
-Commit any pending vault changes to git. Shows what changed.
+Commit any pending PKG changes to git. Shows what changed.
 
 ```bash
 rocky sync
@@ -211,9 +211,9 @@ rocky sync --push
 
 # Initialise git repo (optionally set a remote at the same time)
 rocky sync --init
-rocky sync --init https://github.com/you/rocky-vault.git
+rocky sync --init https://github.com/you/rocky-pkg.git
 
-# Show vault git status
+# Show PKG git status
 rocky sync --status
 ```
 
@@ -223,12 +223,12 @@ See [Vault Sync & Backup](sync.md) for full setup guide.
 
 ## `rocky restore`
 
-Rebuild `graph.db` from `vault/pkg.json`. Use this when setting up Rocky on a new machine after cloning your vault.
+Rebuild `graph.db` from `pkg/pkg.json`. Use this when setting up Rocky on a new machine after cloning your PKG.
 
 ```bash
-git clone https://github.com/you/rocky-vault.git ~/.rocky
+git clone https://github.com/you/rocky-pkg.git ~/.rocky
 rocky restore
-# ✓ Restored 42 topics from ~/.rocky/vault/pkg.json
+# ✓ Restored 42 topics from ~/.rocky/pkg/pkg.json
 ```
 
 ---
@@ -242,7 +242,7 @@ rocky delete "jwt"
 rocky delete "react hooks"
 ```
 
-Rocky shows all matching topics and asks you to confirm before deleting. The corresponding vault file is also removed.
+Rocky shows all matching topics and asks you to confirm before deleting. The corresponding PKG file is also removed.
 
 ---
 

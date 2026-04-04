@@ -22,13 +22,13 @@ daily_budget = 3
 min_gap_minutes = 120
 
 [export]
-obsidian_vault = "~/Documents/Obsidian/MyVault/rocky"
+pkg_dir = "~/Documents/Obsidian/MyVault/rocky"
 
 [ui]
 personality = true           # Rocky's voice and ASCII art (default: true)
 
 [sync]
-enabled = false              # opt-in — enable vault version control
+enabled = false              # opt-in — enable PKG version control
 auto_commit = true           # commit after each quiz/task/diff session
 commit_visible = true        # print what was committed (set false to silence)
 remote = "origin"
@@ -85,6 +85,21 @@ These only apply to automatic triggers (git hooks, Claude Code hook). Manual `ro
 
 ---
 
+## Export settings
+
+| Setting | Default | What it does |
+|---|---|---|
+| `pkg_dir` | `~/.rocky/pkg/` | Where Rocky writes Markdown notes and `pkg.json` |
+
+If you use Obsidian, set `pkg_dir` to a folder inside your Obsidian vault:
+
+```toml
+[export]
+pkg_dir = "~/Documents/Obsidian/MyVault/rocky"
+```
+
+---
+
 ## UI settings
 
 | Setting | Default | What it does |
@@ -97,11 +112,11 @@ Set `personality = false` for plain, quiet output.
 
 ## Sync settings
 
-Rocky can version-control your vault and `pkg.json` as a git repo. Disabled by default — opt in when ready.
+Rocky can version-control your PKG and `pkg.json` as a git repo. Disabled by default — opt in when ready.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `enabled` | `false` | Enable vault git tracking |
+| `enabled` | `false` | Enable PKG git tracking |
 | `auto_commit` | `true` | Auto-commit after each session (when enabled) |
 | `commit_visible` | `true` | Print `✓ Rocky: ...` after auto-commit |
 | `remote` | `"origin"` | Git remote name |
@@ -155,8 +170,8 @@ Every prompt is silently logged to `./.rocky` in your project folder (only if `r
 |---|---|
 | `~/.rocky/graph.db` | Your PKG — all topics, recall scores, review history |
 | `~/.rocky/.rocky.toml` | Your global config |
-| `~/.rocky/vault/` | Obsidian markdown files + `pkg.json` backup |
-| `~/.rocky/vault/pkg.json` | Full PKG export for backup and cross-machine restore |
+| `~/.rocky/pkg/` | Markdown notes + `pkg.json` backup |
+| `~/.rocky/pkg/pkg.json` | Full PKG export for backup and cross-machine restore |
 | `./.rocky` | Per-project prompt log (only in hooked projects) |
 
-`graph.db` is never tracked by git. Everything in `vault/` is tracked when sync is enabled.
+`graph.db` is never tracked by git. Everything in `pkg/` is tracked when sync is enabled.

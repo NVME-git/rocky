@@ -1,7 +1,7 @@
-/// Vault version control and push reminder.
+/// PKG version control and push reminder.
 ///
-/// Rocky tracks the vault directory as a git repo. The DB is excluded via
-/// .gitignore. pkg.json (inside the vault) is the machine-readable backup.
+/// Rocky tracks the PKG directory as a git repo. The DB is excluded via
+/// .gitignore. pkg.json (inside the PKG dir) is the machine-readable backup.
 use std::path::Path;
 use std::process::Command;
 
@@ -94,7 +94,7 @@ pub fn status_summary(rocky_dir: &Path) -> String {
     let status = git_ok(rocky_dir, &["status", "--porcelain"])
         .unwrap_or_default();
     if status.is_empty() {
-        return "vault up to date".to_string();
+        return "PKG up to date".to_string();
     }
     let changed = status.lines().count();
     format!("{changed} file{} changed since last commit", if changed == 1 { "" } else { "s" })
