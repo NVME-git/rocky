@@ -333,7 +333,7 @@ impl Db {
         let conn = self.connect()?;
         let pattern = format!("%{}%", query.to_lowercase());
         let mut stmt = conn.prepare(
-            "SELECT * FROM nodes WHERE LOWER(topic) LIKE ? OR LOWER(description) LIKE ? ORDER BY topic",
+            "SELECT * FROM nodes WHERE kind != 'domain' AND (LOWER(topic) LIKE ? OR LOWER(description) LIKE ?) ORDER BY topic",
         )?;
         let nodes = stmt
             .query_map(params![pattern, pattern], |row| Self::row_to_node(&conn, row))?
@@ -560,6 +560,8 @@ impl Db {
 
     pub fn summary(&self) -> Result<(usize, usize, usize, usize)> {
         let nodes = self.all_nodes()?;
+        // Exclude taxonomy skeleton nodes from all user-facing counts
+        let nodes: Vec<_> = nodes.into_iter().filter(|n| !n.kind.is_domain()).collect();
         let total = nodes.len();
         let known = nodes
             .iter()
@@ -571,6 +573,45 @@ impl Db {
             .count();
         let gaps = total - known - stale;
         Ok((total, known, stale, gaps))
+    }
+
+    /// Seed the 13 taxonomy domain nodes if they don't already exist.
+    /// These act as the structural skeleton — every topic gets a free `part_of` edge to its domain.
+    pub fn ensure_taxonomy_skeleton(&self) -> Result<()> {
+        const DOMAINS: &[(&str, &str)] = &[
+            ("Language",     "Programming languages, syntax, type systems, and language-specific patterns and idioms."),
+            ("Database",     "Databases, query languages, schema design, indexing, transactions, and data persistence."),
+            ("Auth",         "Authentication, authorisation, identity management, tokens, sessions, and access control."),
+            ("API",          "API design, REST, GraphQL, WebSockets, RPC, and service interfaces."),
+            ("Frontend",     "UI frameworks, DOM, CSS, browser APIs, rendering, and client-side patterns."),
+            ("DevOps",       "CI/CD pipelines, containers, infrastructure, deployment strategies, and operations."),
+            ("Architecture", "System design, scalability patterns, distributed systems, and architectural trade-offs."),
+            ("Performance",  "Optimisation, profiling, caching strategies, latency, and throughput."),
+            ("Security",     "Vulnerabilities, encryption, input validation, threat modelling, and secure coding practices."),
+            ("Testing",      "Unit tests, integration tests, mocking, test strategy, and quality assurance."),
+            ("Tooling",      "Build systems, package managers, editors, linters, and developer productivity tools."),
+            ("Data",         "Algorithms, data structures, machine learning, and data processing pipelines."),
+            ("Other",        "Topics that span multiple domains or don't fit a single category."),
+        ];
+
+        for (domain, description) in DOMAINS {
+            let node_id = Self::node_id(domain);
+            let conn = self.connect()?;
+            let exists: bool = conn
+                .query_row("SELECT 1 FROM nodes WHERE id = ?", params![node_id], |_| Ok(()))
+                .is_ok();
+            if !exists {
+                let today = Self::today();
+                conn.execute(
+                    "INSERT INTO nodes
+                        (id, topic, kind, domain, description, difficulty, stability,
+                         last_reviewed, last_encountered, review_count, created_at)
+                     VALUES (?1, ?2, 'domain', ?3, ?4, 0.0, 999.0, ?5, ?6, 0, ?7)",
+                    params![node_id, domain, domain, description, today, today, today],
+                )?;
+            }
+        }
+        Ok(())
     }
 }
 

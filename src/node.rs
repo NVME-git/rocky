@@ -5,6 +5,8 @@ pub enum Kind {
     Concept,
     Pattern,
     Implementation,
+    /// Taxonomy skeleton node — never quizzed, excluded from counts and ls.
+    Domain,
 }
 
 impl Kind {
@@ -12,6 +14,7 @@ impl Kind {
         match s {
             "pattern" => Self::Pattern,
             "implementation" => Self::Implementation,
+            "domain" => Self::Domain,
             _ => Self::Concept,
         }
     }
@@ -21,7 +24,12 @@ impl Kind {
             Self::Concept => "concept",
             Self::Pattern => "pattern",
             Self::Implementation => "implementation",
+            Self::Domain => "domain",
         }
+    }
+
+    pub fn is_domain(&self) -> bool {
+        matches!(self, Self::Domain)
     }
 }
 

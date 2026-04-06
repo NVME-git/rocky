@@ -366,7 +366,7 @@ fn show_stats(db: &Db, cfg: &Config, p: &personality::Personality) -> Result<()>
 
 fn list_topics(db: &Db) -> Result<()> {
     print_header();
-    let nodes = db.all_nodes()?;
+    let nodes: Vec<_> = db.all_nodes()?.into_iter().filter(|n| !n.kind.is_domain()).collect();
     if nodes.is_empty() {
         println!("\n  PKG is empty. Run a task to populate it.");
         return Ok(());
@@ -422,12 +422,24 @@ fn list_topics(db: &Db) -> Result<()> {
     Ok(())
 }
 
+// Smaller diff limit for backfill — keeps LLM requests fast and avoids timeouts
+const MAX_BACKFILL_DIFF_CHARS: usize = 6_000;
+// Pause between commits to avoid overwhelming a local Ollama instance
+const BACKFILL_COMMIT_DELAY_MS: u64 = 1_000;
+// Pause between edge-generation calls after all nodes are added
+const BACKFILL_EDGE_DELAY_MS: u64 = 800;
+
 fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usize>) -> Result<()> {
     use std::process::Command;
 
     print_header();
 
-    // Resolve author filter
+    // ── Seed taxonomy skeleton ────────────────────────────────────────────────
+    db.ensure_taxonomy_skeleton()
+        .context("Failed to seed taxonomy skeleton")?;
+    println!("\n  {}", "Taxonomy skeleton ready.".dimmed());
+
+    // ── Resolve author filter ─────────────────────────────────────────────────
     let author_email = if all_authors {
         None
     } else {
@@ -440,7 +452,7 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
         Some(email)
     };
 
-    // Get commit SHAs (oldest first so PKG builds chronologically)
+    // ── Get commit SHAs (oldest first) ────────────────────────────────────────
     let mut log_args = vec!["log", "--pretty=format:%H", "--reverse"];
     let author_arg;
     if let Some(ref email) = author_email {
@@ -473,53 +485,70 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
         (None, None) => "all commits".to_string(),
     };
 
-    println!("\n  Scanning {scope_desc} ({} commits)…\n", shas.len());
+    println!("  Scanning {scope_desc} ({} commits)…\n", shas.len());
 
+    // Snapshot existing node IDs (excluding skeleton) so we know what's truly new
     let existing_ids: std::collections::HashSet<String> = db
         .all_nodes()?
         .into_iter()
+        .filter(|n| !n.kind.is_domain())
         .map(|n| Db::node_id_static(&n.topic))
         .collect();
 
     let mut added = 0usize;
     let mut skipped = 0usize;
-    let mut _empty = 0usize;
+    let mut newly_added: Vec<(String, String)> = Vec::new();
 
+    // ── Process commits ───────────────────────────────────────────────────────
     for (i, sha) in shas.iter().enumerate() {
+        if i > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(BACKFILL_COMMIT_DELAY_MS));
+        }
+
         let short = &sha[..7];
 
-        // Commit message
         let msg_out = Command::new("git")
             .args(["log", "-1", "--pretty=%B", sha])
             .output()?;
         let commit_msg = String::from_utf8_lossy(&msg_out.stdout).trim().to_string();
+        let commit_label = commit_msg.lines().next().unwrap_or(short).to_string();
 
-        // Diff for this commit (parent^..sha; handle root commit)
-        let diff_out = Command::new("git")
-            .args(["diff", &format!("{sha}^"), sha, "--"])
-            .output()?;
-        let diff = if diff_out.status.success() {
-            truncate_diff(&String::from_utf8_lossy(&diff_out.stdout))
-        } else {
-            // Root commit — show the tree as a diff
-            let show_out = Command::new("git")
-                .args(["show", "--format=", sha])
+        // Diff (smaller limit to keep Ollama requests fast)
+        let raw_diff = {
+            let diff_out = Command::new("git")
+                .args(["diff", &format!("{sha}^"), sha, "--"])
                 .output()?;
-            truncate_diff(&String::from_utf8_lossy(&show_out.stdout))
+            if diff_out.status.success() {
+                String::from_utf8_lossy(&diff_out.stdout).to_string()
+            } else {
+                let show_out = Command::new("git")
+                    .args(["show", "--format=", sha])
+                    .output()?;
+                String::from_utf8_lossy(&show_out.stdout).to_string()
+            }
         };
 
-        if diff.trim().is_empty() {
-            _empty += 1;
+        if raw_diff.trim().is_empty() {
             continue;
         }
 
-        print!("  [{}/{}] {short} {}", i + 1, shas.len(), commit_msg.lines().next().unwrap_or("").dimmed());
+        let diff = truncate_to(raw_diff.trim(), MAX_BACKFILL_DIFF_CHARS);
 
+        print!("  [{}/{}] {short} {}", i + 1, shas.len(), commit_label.dimmed());
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+
+        // Extract topics — retry once on failure after a short pause
         let topics = match teacher.extract_topics_from_diff(&commit_msg, &diff) {
             Ok(t) => t,
-            Err(e) => {
-                eprintln!(" — extract failed: {e}");
-                continue;
+            Err(_) => {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                match teacher.extract_topics_from_diff(&commit_msg, &diff) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!(" — failed: {e}");
+                        continue;
+                    }
+                }
             }
         };
 
@@ -537,20 +566,27 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
         println!(" — {} new", new_topics.len());
 
         for t in &new_topics {
-            // Score 0.5: seen but never tested — surfaces in quiz soon
             db.add_or_update(
                 &t.topic,
                 0.5,
                 &Kind::from_str(&t.kind),
                 &t.domain,
                 &t.description,
-                &commit_msg.lines().next().unwrap_or(short).to_string(),
+                &commit_label,
                 None,
             )?;
             println!("    {} {}", "+".green(), t.topic);
+            newly_added.push((t.topic.clone(), t.description.clone()));
             added += 1;
         }
         skipped += topics.len() - new_topics.len();
+    }
+
+    // ── Generate edges for all new nodes ─────────────────────────────────────
+    if !newly_added.is_empty() {
+        println!("\n  {} Generating edges for {} new topic{}…",
+            "◈".cyan(), newly_added.len(), if newly_added.len() == 1 { "" } else { "s" });
+        generate_edges_for_new_nodes(db, teacher, &newly_added, BACKFILL_EDGE_DELAY_MS);
     }
 
     println!();
@@ -568,10 +604,19 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
     Ok(())
 }
 
+fn truncate_to(s: &str, max_chars: usize) -> String {
+    if s.len() <= max_chars {
+        return s.to_string();
+    }
+    let truncated = &s[..max_chars];
+    let end = truncated.rfind('\n').unwrap_or(max_chars);
+    format!("{}\n\n[... truncated ...]", &s[..end])
+}
+
 fn run_view(db: &Db, cfg: &Config) -> Result<()> {
     use serde_json::{json, Value};
 
-    let nodes = db.all_nodes()?;
+    let nodes: Vec<_> = db.all_nodes()?.into_iter().filter(|n| !n.kind.is_domain()).collect();
     let edges = db.get_all_edges()?;
 
     if nodes.is_empty() {
@@ -637,7 +682,7 @@ fn build_view_html(data_json: &str) -> String {
 
 /// Called after all user-facing Q&A is done — generates implication edges silently.
 /// Errors are logged as warnings; they never surface to the user or abort anything.
-fn generate_edges_for_new_nodes(db: &Db, teacher: &Teacher, new_topics: &[(String, String)]) {
+fn generate_edges_for_new_nodes(db: &Db, teacher: &Teacher, new_topics: &[(String, String)], delay_ms: u64) {
     use db::{Edge, EdgeKind};
 
     let existing = match db.all_nodes() {
@@ -645,15 +690,47 @@ fn generate_edges_for_new_nodes(db: &Db, teacher: &Teacher, new_topics: &[(Strin
         Err(_) => return,
     };
 
-    // Build the existing-node list, excluding whatever we just added
+    // Build the existing-node list: exclude newly added topics and domain skeleton nodes —
+    // domain edges are created deterministically below, not via LLM
     let existing_summaries: Vec<(String, String)> = existing
         .iter()
+        .filter(|n| !n.kind.is_domain())
         .filter(|n| !new_topics.iter().any(|(t, _)| t == &n.topic))
         .take(30)
         .map(|n| (n.topic.clone(), n.description.clone()))
         .collect();
 
-    for (topic, description) in new_topics {
+    for (i, (topic, description)) in new_topics.iter().enumerate() {
+        if delay_ms > 0 && i > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+        }
+
+        // ── Free edge: topic → its domain skeleton node ───────────────────────
+        if let Ok(Some(topic_node)) = db.get_node(topic) {
+            if !topic_node.domain.is_empty() {
+                if let Ok(Some(domain_node)) = db.get_node(&topic_node.domain) {
+                    if domain_node.kind.is_domain() {
+                        let kind = db::EdgeKind::PartOf;
+                        if !db.edge_exists(&topic_node.id, &domain_node.id, &kind).unwrap_or(true) {
+                            let edge_id = format!("{}-{}-part_of", topic_node.id, domain_node.id);
+                            let _ = db.insert_edge(&Edge {
+                                id: edge_id,
+                                source_id: topic_node.id.clone(),
+                                target_id: domain_node.id.clone(),
+                                kind,
+                                description: format!("{topic} is a topic within the {d} domain.", d = topic_node.domain),
+                                strength: 1.0,
+                                created_at: chrono::Local::now().naive_local().to_string(),
+                                last_fired: None,
+                                last_fired_session: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── LLM edges: cross-topic relationships ──────────────────────────────
         let generated = match teacher.generate_edges(topic, description, &existing_summaries) {
             Ok(edges) => edges,
             Err(e) => {
@@ -921,7 +998,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
 
     // Generate edges for newly added nodes (after all user interaction is done)
     if !newly_added.is_empty() {
-        generate_edges_for_new_nodes(db, teacher, &newly_added);
+        generate_edges_for_new_nodes(db, teacher, &newly_added, 0);
     }
 
     println!();
@@ -1299,7 +1376,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
         .unwrap_or_default();
 
     // ── Step 2: PKG stale/gap topics ──────────────────────────────────────────
-    let all_nodes = db.all_nodes()?;
+    let all_nodes: Vec<_> = db.all_nodes()?.into_iter().filter(|n| !n.kind.is_domain()).collect();
     let mut due: Vec<_> = all_nodes
         .iter()
         .filter(|n| {
@@ -1696,7 +1773,7 @@ fn run_diff(
     }
 
     if !newly_added.is_empty() {
-        generate_edges_for_new_nodes(db, teacher, &newly_added);
+        generate_edges_for_new_nodes(db, teacher, &newly_added, 0);
     }
 
     println!();

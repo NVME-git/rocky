@@ -35,6 +35,7 @@ pub fn initial_stability(kind: &Kind) -> f64 {
         Kind::Concept => 4.0,
         Kind::Pattern => 2.5,
         Kind::Implementation => 1.5,
+        Kind::Domain => 999.0, // skeleton nodes never decay
     }
 }
 
