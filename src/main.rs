@@ -111,6 +111,8 @@ enum Cmd {
         #[arg(long)]
         stats: bool,
     },
+    /// Open interactive knowledge graph in the browser
+    View,
 }
 
 #[derive(Subcommand)]
@@ -238,6 +240,9 @@ fn run() -> Result<()> {
         }
         Some(Cmd::Edges { stats }) => {
             show_edges(&db, stats)?;
+        }
+        Some(Cmd::View) => {
+            run_view(&db, &cfg)?;
         }
         None => {
             if let Some(msg) = cli.after {
@@ -371,6 +376,73 @@ fn list_topics(db: &Db) -> Result<()> {
     );
     println!();
     Ok(())
+}
+
+fn run_view(db: &Db, cfg: &Config) -> Result<()> {
+    use serde_json::{json, Value};
+
+    let nodes = db.all_nodes()?;
+    let edges = db.get_all_edges()?;
+
+    if nodes.is_empty() {
+        println!("  PKG is empty — add some topics first with  rocky \"<task>\"");
+        return Ok(());
+    }
+
+    // Serialise nodes
+    let nodes_json: Vec<Value> = nodes.iter().map(|n| {
+        let r = fsrs::retrievability(n.stability, n.last_reviewed);
+        let cls = fsrs::classify(r);
+        json!({
+            "id": n.id,
+            "topic": n.topic,
+            "kind": n.kind.as_str(),
+            "domain": n.domain,
+            "description": n.description,
+            "stability": n.stability,
+            "difficulty": n.difficulty,
+            "retrievability": r,
+            "classification": cls,
+            "last_reviewed": n.last_reviewed.to_string(),
+            "review_count": n.review_count,
+            "created_at": n.created_at.to_string(),
+        })
+    }).collect();
+
+    // Serialise edges
+    let edges_json: Vec<Value> = edges.iter().map(|e| {
+        json!({
+            "id": e.id,
+            "source": e.source_id,
+            "target": e.target_id,
+            "kind": e.kind.as_str(),
+            "description": e.description,
+            "strength": e.strength,
+        })
+    }).collect();
+
+    let data = json!({ "nodes": nodes_json, "edges": edges_json });
+    let data_str = serde_json::to_string(&data)?;
+
+    let html = build_view_html(&data_str);
+
+    let out_path = cfg.rocky_dir.join("view.html");
+    std::fs::write(&out_path, &html)?;
+
+    println!("  {} Written to {}", "✓".green(), out_path.display());
+    println!("  {} Opening in browser...", "→".cyan());
+
+    // Open in default browser (Linux: xdg-open, macOS: open)
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(&out_path).spawn();
+    #[cfg(not(target_os = "macos"))]
+    let _ = std::process::Command::new("xdg-open").arg(&out_path).spawn();
+
+    Ok(())
+}
+
+fn build_view_html(data_json: &str) -> String {
+    include_str!("view.html").replace("__DATA_JSON__", data_json)
 }
 
 /// Called after all user-facing Q&A is done — generates implication edges silently.
