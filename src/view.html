@@ -82,16 +82,15 @@ svg#graph { width: 100%; height: 100%; }
 
 /* ── graph elements ── */
 .link { stroke-opacity: 0.6; transition: stroke-opacity 0.25s; }
-.link.dimmed { stroke-opacity: 0.04; }
-.node circle { cursor: pointer; }
-.node circle { transition: opacity 0.35s; }
+.link.dimmed { stroke-opacity: 0.05; }
+.node circle { cursor: pointer; transition: opacity 0.35s; }
 .node text   { transition: opacity 0.35s; }
 .node circle:hover { stroke: #F59E0B !important; stroke-width: 2px; }
 .node.selected circle { stroke: #F59E0B !important; stroke-width: 2.5px; }
-.node.dimmed circle { opacity: 0.08; }
-.node.dimmed text { opacity: 0.05; }
+.node.dimmed circle { opacity: 0.18; }
+.node.dimmed text   { opacity: 0.12; }
 .node.highlighted circle { stroke: #F59E0B; stroke-width: 2px; }
-.node text { pointer-events: none; font-size: 11px; fill: #CBD5E1; text-anchor: middle; }
+.node text { pointer-events: none; font-size: 13px; fill: #CBD5E1; text-anchor: middle; }
 
 .legend { position: absolute; bottom: 16px; left: 16px; background: rgba(7,11,20,0.85);
           border: 1px solid #1E293B; border-radius: 6px; padding: 10px 14px; }
@@ -261,7 +260,7 @@ function applyFilters() {
       // Domain and user nodes are always visible
       .filter(n => n.kind === 'domain' || n.kind === 'user' ||
         ((!scrubberCutoff || n.created_at <= scrubberCutoff) &&
-         (activeDomains.size === 0 || activeDomains.has(n.domain || 'Other')) &&
+         (activeDomains.size > 0 && activeDomains.has(n.domain || 'Other')) &&
          (!searchTerm || n.topic.toLowerCase().includes(searchTerm))))
       .map(n => n.id)
   );
@@ -290,7 +289,7 @@ const defs = svg.append('defs');
 const arrowColors = { implies: '#06B6D4', depends_on: '#F59E0B', conflicts_with: '#E24B4A', part_of: '#1D9E75' };
 ['implies','depends_on','conflicts_with','part_of'].forEach(k => {
   defs.append('marker').attr('id', 'arrow-' + k)
-    .attr('viewBox', '0 -5 10 10').attr('refX', 20).attr('refY', 0)
+    .attr('viewBox', '0 -5 10 10').attr('refX', 0).attr('refY', 0)
     .attr('markerWidth', 6).attr('markerHeight', 6).attr('orient', 'auto')
     .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', arrowColors[k]);
 });
@@ -341,15 +340,29 @@ node.append('circle')
   .attr('stroke-width', d => nodeStrokeWidth(d));
 
 node.append('text')
-  .attr('dy', d => nodeRadius(d) + 12)
-  .style('font-size', d => d.kind === 'user' ? '13px' : d.kind === 'domain' ? '11px' : '11px')
-  .style('font-weight', d => (d.kind === 'user' || d.kind === 'domain') ? '600' : 'normal')
-  .style('fill', d => d.kind === 'user' ? '#F59E0B' : d.kind === 'domain' ? '#94A3B8' : '#CBD5E1')
-  .text(d => d.topic.length > 22 ? d.topic.slice(0, 20) + '…' : d.topic);
+  .attr('dy', d => (d.kind === 'domain' || d.kind === 'user') ? '0' : nodeRadius(d) + 14)
+  .attr('alignment-baseline', d => (d.kind === 'domain' || d.kind === 'user') ? 'middle' : null)
+  .style('dominant-baseline', d => (d.kind === 'domain' || d.kind === 'user') ? 'central' : 'auto')
+  .style('font-size', d => d.kind === 'user' ? '11px' : d.kind === 'domain' ? '9px' : '11px')
+  .style('font-weight', d => (d.kind === 'user' || d.kind === 'domain') ? '700' : 'normal')
+  .style('fill', d => d.kind === 'user' ? '#0A0E1A' : d.kind === 'domain' ? '#F1F5F9' : '#CBD5E1')
+  .text(d => {
+    const maxLen = d.kind === 'user' ? 10 : d.kind === 'domain' ? 7 : 22;
+    return d.topic.length > maxLen ? d.topic.slice(0, maxLen - 1) + '…' : d.topic;
+  });
 
 simulation.on('tick', () => {
-  link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  link.each(function(d) {
+    const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+    const srcR = nodeRadius(d.source) + 4;
+    const tgtR = nodeRadius(d.target) + 10;
+    d3.select(this)
+      .attr('x1', d.source.x + dx/dist * srcR)
+      .attr('y1', d.source.y + dy/dist * srcR)
+      .attr('x2', d.target.x - dx/dist * tgtR)
+      .attr('y2', d.target.y - dy/dist * tgtR);
+  });
   node.attr('transform', d => `translate(${d.x},${d.y})`);
 });
 
