@@ -340,7 +340,7 @@ Edge kinds: `implies`, `depends_on`, `conflicts_with`, `part_of`.
 
 ### `rocky view`
 
-Open an interactive knowledge graph in your default browser. Nodes are coloured by knowledge state (known/fading/gap) and grouped by domain. Click a node to see its edges and details.
+Open an interactive knowledge graph in your default browser. Nodes are colored by knowledge state (known/fading/gap) and grouped by domain. Click a node to see its edges and details.
 
 ```bash
 rocky view
