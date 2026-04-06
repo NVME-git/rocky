@@ -313,6 +313,17 @@ fn show_stats(db: &Db, cfg: &Config, p: &personality::Personality) -> Result<()>
             .dimmed()
         );
     }
+    let (edge_total, most_connected, most_count, _) = db.edge_stats()?;
+    if edge_total > 0 {
+        println!(
+            "  {}",
+            format!(
+                "Edges: {edge_total} total  ·  Most connected: {most_connected} ({most_count} edges)"
+            )
+            .dimmed()
+        );
+    }
+
     if let Some(mood) = p.pkg_mood(known, total) {
         println!("\n  {mood}");
     }
@@ -523,29 +534,41 @@ fn show_edges(db: &Db, stats: bool) -> Result<()> {
     print_header();
 
     if stats {
-        let (total, most_connected) = db.edge_stats()?;
+        let (total, most_connected, most_count, avg_strength) = db.edge_stats()?;
         println!("\n  {} Edge Stats\n", "◈".bold().cyan());
-        println!("  {:<20} {}", "Total edges:".dimmed(), total.to_string().bold());
+        println!("  {:<22} {}", "Total edges:".dimmed(), total.to_string().bold());
+        if total > 0 {
+            println!("  {:<22} {}", "Avg strength:".dimmed(), format!("{avg_strength:.2}").bold());
+        }
         if !most_connected.is_empty() {
-            println!("  {:<20} {}", "Most connected:".dimmed(), most_connected.bold().yellow());
+            println!(
+                "  {:<22} {} {}",
+                "Most connected:".dimmed(),
+                most_connected.bold().yellow(),
+                format!("({most_count} edges)").dimmed()
+            );
         }
 
         // Breakdown by kind
         let edges = db.get_all_edges()?;
-        let mut by_kind: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut by_kind: std::collections::HashMap<String, (usize, f64)> = std::collections::HashMap::new();
         for e in &edges {
-            *by_kind.entry(e.kind.as_str().to_string()).or_insert(0) += 1;
+            let entry = by_kind.entry(e.kind.as_str().to_string()).or_insert((0, 0.0));
+            entry.0 += 1;
+            entry.1 += e.strength;
         }
         println!("\n  {}", "By kind:".dimmed());
+        println!("  {:<22} {:<8} {}", "".dimmed(), "count".dimmed(), "avg str".dimmed());
         for kind_str in &["implies", "depends_on", "conflicts_with", "part_of"] {
-            let count = by_kind.get(*kind_str).copied().unwrap_or(0);
+            let (count, strength_sum) = by_kind.get(*kind_str).copied().unwrap_or((0, 0.0));
+            let avg = if count > 0 { strength_sum / count as f64 } else { 0.0 };
             let colored_kind = match EdgeKind::from_str(kind_str) {
                 EdgeKind::Implies       => kind_str.cyan(),
                 EdgeKind::DependsOn     => kind_str.yellow(),
                 EdgeKind::ConflictsWith => kind_str.red(),
                 EdgeKind::PartOf        => kind_str.green(),
             };
-            println!("    {:<20} {}", colored_kind, count);
+            println!("    {:<20} {:<8} {}", colored_kind, count, if count > 0 { format!("{avg:.2}") } else { String::new() });
         }
         println!();
         return Ok(());

@@ -448,26 +448,31 @@ impl Db {
         Ok(count > 0)
     }
 
-    pub fn edge_stats(&self) -> Result<(usize, String)> {
+    /// Returns (total, most_connected_topic, most_connected_count, avg_strength).
+    pub fn edge_stats(&self) -> Result<(usize, String, usize, f64)> {
         let edges = self.get_all_edges()?;
         let total = edges.len();
         if total == 0 {
-            return Ok((0, String::new()));
+            return Ok((0, String::new(), 0, 0.0));
         }
+        let avg_strength = edges.iter().map(|e| e.strength).sum::<f64>() / total as f64;
         // Find node with most connections
         let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
         for e in &edges {
             *counts.entry(&e.source_id).or_insert(0) += 1;
             *counts.entry(&e.target_id).or_insert(0) += 1;
         }
-        let most_connected_id = counts.into_iter().max_by_key(|(_, c)| *c).map(|(id, _)| id).unwrap_or("");
-        // Resolve to topic name
+        let (most_connected_id, most_count) = counts
+            .into_iter()
+            .max_by_key(|(_, c)| *c)
+            .map(|(id, c)| (id, c))
+            .unwrap_or(("", 0));
         let topic = if let Ok(Some(node)) = self.get_node(most_connected_id) {
             node.topic
         } else {
             most_connected_id.to_string()
         };
-        Ok((total, topic))
+        Ok((total, topic, most_count, avg_strength))
     }
 
     /// Set the domain on an undomained node (used by classify command).
