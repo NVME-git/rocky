@@ -130,6 +130,8 @@ enum HookTarget {
     Git,
     /// Claude Code hook — logs prompts to `.rocky` for `rocky quiz` to review
     Claude,
+    /// Enable prompt logging for this project without the git hook
+    Prompt,
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -177,7 +179,18 @@ fn run() -> Result<()> {
                         println!("  {} {msg}", "✓".green());
                         println!();
                         println!("  {}", "Rocky will silently log every Claude Code prompt.".dimmed());
+                        println!("  {}", "Run  rocky install prompt  in each project to enable logging there.".dimmed());
                         println!("  {}", "Run  rocky quiz  to review topics from recent sessions.".dimmed());
+                    } else {
+                        println!("  {} {msg}", "✗".red());
+                    }
+                }
+                HookTarget::Prompt => {
+                    let (ok, msg) = local_log::install_prompt_marker()?;
+                    if ok {
+                        println!("  {} {msg}", "✓".green());
+                        println!("  {}", "Prompt logging enabled for this project.".dimmed());
+                        println!("  {}", "Run  rocky quiz  after a Claude Code session to review topics.".dimmed());
                     } else {
                         println!("  {} {msg}", "✗".red());
                     }
@@ -196,6 +209,14 @@ fn run() -> Result<()> {
                 }
                 HookTarget::Claude => {
                     let (ok, msg) = uninstall_claude_hook()?;
+                    if ok {
+                        println!("  {} {msg}", "✓".green());
+                    } else {
+                        println!("  {} {msg}", "✗".red());
+                    }
+                }
+                HookTarget::Prompt => {
+                    let (ok, msg) = local_log::uninstall_prompt_marker()?;
                     if ok {
                         println!("  {} {msg}", "✓".green());
                     } else {

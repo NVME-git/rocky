@@ -1,4 +1,5 @@
 target/
+NOTES.md
 .env
 docs/book/
 docs/build/
@@ -7,3 +8,5 @@ docs/.packages
 docs/.flutter-plugins
 docs/.flutter-plugins-dependencies
 docs/pubspec.lock
+.rocky
+.rocky-project

@@ -117,8 +117,14 @@ impl LocalLog {
     }
 }
 
-/// Returns true if `.git/hooks/post-commit` exists and contains "rocky".
+const PROMPT_MARKER: &str = ".rocky-project";
+
+/// Returns true if this project has opted in to Rocky prompt logging.
+/// Either via the git post-commit hook or via the lightweight `.rocky-project` marker.
 pub fn is_hook_installed() -> bool {
+    if Path::new(PROMPT_MARKER).exists() {
+        return true;
+    }
     let hook = Path::new(".git/hooks/post-commit");
     if !hook.exists() {
         return false;
@@ -126,6 +132,42 @@ pub fn is_hook_installed() -> bool {
     std::fs::read_to_string(hook)
         .map(|s| s.contains("rocky"))
         .unwrap_or(false)
+}
+
+/// Create `.rocky-project` marker to opt this project in to prompt logging.
+pub fn install_prompt_marker() -> anyhow::Result<(bool, String)> {
+    if Path::new(PROMPT_MARKER).exists() {
+        return Ok((false, "prompt logging already enabled for this project".into()));
+    }
+    std::fs::write(PROMPT_MARKER, "")?;
+    ensure_gitignored()?;
+    ensure_marker_gitignored()?;
+    Ok((true, "prompt logging enabled for this project".into()))
+}
+
+/// Remove `.rocky-project` marker.
+pub fn uninstall_prompt_marker() -> anyhow::Result<(bool, String)> {
+    let path = Path::new(PROMPT_MARKER);
+    if !path.exists() {
+        return Ok((false, "prompt logging not enabled for this project".into()));
+    }
+    std::fs::remove_file(path)?;
+    Ok((true, "prompt logging disabled for this project".into()))
+}
+
+fn ensure_marker_gitignored() -> anyhow::Result<()> {
+    let gitignore = Path::new(".gitignore");
+    if gitignore.exists() {
+        let content = std::fs::read_to_string(gitignore)?;
+        if content.lines().any(|l| l.trim() == PROMPT_MARKER) {
+            return Ok(());
+        }
+        let updated = format!("{}\n{PROMPT_MARKER}\n", content.trim_end());
+        std::fs::write(gitignore, updated)?;
+    } else {
+        std::fs::write(gitignore, format!("{PROMPT_MARKER}\n"))?;
+    }
+    Ok(())
 }
 
 /// Ensures `.rocky` is listed in `.gitignore`. Creates `.gitignore` if absent.
