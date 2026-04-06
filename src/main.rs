@@ -384,10 +384,10 @@ fn list_topics(db: &Db) -> Result<()> {
     }
 
     println!(
-        "\n  {:<35} {:<14} {:<14} {:<7} {:<7} {:<7} {}",
-        "Topic", "Kind", "Recall", "Stab", "Diff", "Reviews", "Last Reviewed"
+        "\n  {:<35} {:<14} {:<14} {:<14} {:<7} {:<7} {:<7} {}",
+        "Topic", "Domain", "Kind", "Recall", "Stab", "Diff", "Reviews", "Last Reviewed"
     );
-    println!("  {}", "─".repeat(100).dimmed());
+    println!("  {}", "─".repeat(115).dimmed());
 
     let mut sorted = nodes;
     sorted.sort_by(|a, b| {
@@ -402,13 +402,14 @@ fn list_topics(db: &Db) -> Result<()> {
         let filled = (r * 10.0) as usize;
         let bar = format!("{}{}", "█".repeat(filled), "░".repeat(10 - filled));
         let topic_str = &node.topic[..node.topic.len().min(34)];
-        // Stability: shown as days (how long until recall would hit 90%)
+        let domain_str = if node.domain.is_empty() { "—" } else { &node.domain };
+        let domain_str = &domain_str[..domain_str.len().min(13)];
         let stab_str = format!("{:.1}d", node.stability);
-        // Difficulty: 0.0–1.0, lower is easier
         let diff_str = format!("{:.2}", node.difficulty);
         let line = format!(
-            "  {:<35} {:<14} {} {:.0}%  {:<7} {:<7} {:<7} {}",
+            "  {:<35} {:<14} {:<14} {} {:.0}%  {:<7} {:<7} {:<7} {}",
             topic_str,
+            domain_str,
             node.kind.as_str(),
             bar,
             r * 100.0,
