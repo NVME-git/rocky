@@ -91,6 +91,8 @@ enum Cmd {
     },
     /// Export all PKG topics to your PKG directory (Obsidian-compatible markdown)
     Export,
+    /// Show topics queued in this project (skipped during sessions, not yet in PKG)
+    Queue,
     /// Show recent prompts logged in this project
     Logs,
     /// Claude Code hook — reads JSON from stdin, logs prompt (non-blocking)
@@ -252,6 +254,7 @@ fn run() -> Result<()> {
             delete_topics(&db, &cfg.pkg_dir, query.as_deref(), since.as_deref(), before.as_deref())?;
         }
         Some(Cmd::Export) => run_export(&db, &cfg)?,
+        Some(Cmd::Queue) => run_queue()?,
         Some(Cmd::Logs) => run_logs()?,
         Some(Cmd::Diff { git_ref, staged }) => {
             let teacher = make_teacher(&cfg)?;
@@ -1892,6 +1895,39 @@ fn run_hook() -> Result<()> {
     Ok(())
 }
 
+fn run_queue() -> Result<()> {
+    print_header();
+    match local_log::LocalLog::open_existing() {
+        None => {
+            println!("\n  No queue found for this project.");
+            println!("  {}", "Run `rocky install` or `rocky install prompt` to enable logging here.".dimmed());
+        }
+        Some(log) => {
+            let topics = log.get_queued_topics()?;
+            if topics.is_empty() {
+                println!("{}", "\n  No topics queued — queue is clear.".dimmed());
+            } else {
+                println!(
+                    "\n  {} queued topic{} (not yet in PKG):\n",
+                    topics.len(),
+                    if topics.len() == 1 { "" } else { "s" }
+                );
+                for (topic, kind, description, context) in &topics {
+                    println!("  {} {}", "·".yellow(), topic.bold());
+                    println!("    {} · {}", kind.dimmed(), description.dimmed());
+                    if !context.is_empty() {
+                        println!("    {}", format!("from: {context}").dimmed());
+                    }
+                    println!();
+                }
+                println!("  {}", "Run  rocky quiz  to work through the queue.".dimmed());
+            }
+        }
+    }
+    println!();
+    Ok(())
+}
+
 fn run_logs() -> Result<()> {
     print_header();
     match local_log::LocalLog::open_existing() {
@@ -1995,8 +2031,21 @@ fn install_claude_hook() -> Result<(bool, String)> {
         .as_array_mut()
         .ok_or_else(|| anyhow::anyhow!("UserPromptSubmit is not an array"))?;
 
-    let entry = serde_json::json!({"command": "rocky hook"});
-    if arr.iter().any(|v| v == &entry) {
+    // Use the resolved binary path so the hook works regardless of shell PATH
+    let rocky_bin = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "rocky".to_string());
+    let cmd = format!("{rocky_bin} hook");
+    let entry = serde_json::json!({"command": cmd});
+
+    // Also accept the old "rocky hook" entry as already-installed
+    let already = arr.iter().any(|v| {
+        v.get("command").and_then(|c| c.as_str())
+            .map(|c| c == cmd || c == "rocky hook")
+            .unwrap_or(false)
+    });
+    if already {
         return Ok((false, "Claude Code hook already installed".into()));
     }
 
@@ -2021,14 +2070,19 @@ fn uninstall_claude_hook() -> Result<(bool, String)> {
     let mut settings: serde_json::Value = serde_json::from_str(&text)
         .unwrap_or(serde_json::json!({}));
 
-    let entry = serde_json::json!({"command": "rocky hook"});
     let removed = if let Some(arr) = settings
         .get_mut("hooks")
         .and_then(|h| h.get_mut("UserPromptSubmit"))
         .and_then(|v| v.as_array_mut())
     {
         let before = arr.len();
-        arr.retain(|v| v != &entry);
+        // Remove any entry whose command ends with "rocky hook" (handles full path or plain)
+        arr.retain(|v| {
+            !v.get("command")
+                .and_then(|c| c.as_str())
+                .map(|c| c == "rocky hook" || c.ends_with("/rocky hook"))
+                .unwrap_or(false)
+        });
         arr.len() < before
     } else {
         false
