@@ -629,7 +629,11 @@ fn run_view(db: &Db, cfg: &Config) -> Result<()> {
     use serde_json::{json, Value};
 
     let nodes: Vec<_> = db.all_nodes()?.into_iter().filter(|n| !n.kind.is_domain()).collect();
-    let edges = db.get_all_edges()?;
+    let node_ids: std::collections::HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+    // Only include edges where both endpoints are visible (non-domain) nodes
+    let edges: Vec<_> = db.get_all_edges()?.into_iter()
+        .filter(|e| node_ids.contains(e.source_id.as_str()) && node_ids.contains(e.target_id.as_str()))
+        .collect();
 
     if nodes.is_empty() {
         println!("  PKG is empty — add some topics first with  rocky \"<task>\"");
