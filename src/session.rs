@@ -37,6 +37,7 @@ impl Session {
             .unwrap_or(0);
         self.db.session_set("budget_used", &(used + 1).to_string())?;
         self.db.session_set("last_quiz_at", &Local::now().naive_local().to_string())?;
+        self.db.increment_total_quizzes()?;
         Ok(())
     }
 

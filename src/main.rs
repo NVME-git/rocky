@@ -202,9 +202,9 @@ fn run() -> Result<()> {
                 cfg.min_gap_minutes,
             );
             if let Some(query) = topic {
-                run_quiz_topic(&db, &teacher, &session, &p, &query)?;
+                run_quiz_topic(&db, &teacher, &session, &p, &query, &cfg.edge_reuse)?;
             } else {
-                run_quiz(&db, &teacher, &session, &p, hours)?;
+                run_quiz(&db, &teacher, &session, &p, hours, &cfg.edge_reuse)?;
             }
             auto_sync(&db, &cfg);
         }
@@ -220,7 +220,7 @@ fn run() -> Result<()> {
                 cfg.daily_budget,
                 cfg.min_gap_minutes,
             );
-            run_diff(&db, &teacher, &session, &p, git_ref.as_deref(), staged)?;
+            run_diff(&db, &teacher, &session, &p, git_ref.as_deref(), staged, &cfg.edge_reuse)?;
             auto_sync(&db, &cfg);
         }
         Some(Cmd::Hook) => unreachable!(),
@@ -247,7 +247,7 @@ fn run() -> Result<()> {
                     cfg.daily_budget,
                     cfg.min_gap_minutes,
                 );
-                run_task(&db, &teacher, &session, &p, &msg, "after")?;
+                run_task(&db, &teacher, &session, &p, &msg, "after", &cfg.edge_reuse)?;
                 auto_sync(&db, &cfg);
             } else if let Some(task) = cli.task {
                 let teacher = make_teacher(&cfg)?;
@@ -256,7 +256,7 @@ fn run() -> Result<()> {
                     cfg.daily_budget,
                     cfg.min_gap_minutes,
                 );
-                run_task(&db, &teacher, &session, &p, &task, "manual")?;
+                run_task(&db, &teacher, &session, &p, &task, "manual", &cfg.edge_reuse)?;
                 auto_sync(&db, &cfg);
             } else {
                 use clap::CommandFactory;
@@ -436,6 +436,7 @@ fn generate_edges_for_new_nodes(db: &Db, teacher: &Teacher, new_topics: &[(Strin
                 strength: edge.strength.clamp(0.1, 1.0),
                 created_at: chrono::Local::now().naive_local().to_string(),
                 last_fired: None,
+                last_fired_session: None,
             };
 
             if let Err(err) = db.insert_edge(&e) {
@@ -532,7 +533,7 @@ fn show_edges(db: &Db, stats: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, task: &str, mode: &str) -> Result<()> {
+fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, task: &str, mode: &str, edge_reuse: &config::EdgeReuse) -> Result<()> {
     print_header();
     println!("\n{} {task}\n", "Task:".bold());
 
@@ -628,7 +629,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p)?;
+                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -681,6 +682,7 @@ fn run_socratic_loop(
     task: &str,
     known_topics: &[String],
     p: &personality::Personality,
+    edge_reuse: &config::EdgeReuse,
 ) -> Result<(bool, bool)> {
     let topic = &topic_info.topic;
     println!("\n{} New topic — {topic}", "Rocky:".cyan().bold());
@@ -698,7 +700,6 @@ fn run_socratic_loop(
     let mut question = 'q: {
         if let Ok(Some(node)) = db.get_node(topic) {
             if let Ok(edges) = db.get_edges_for_node(&node.id) {
-                let cutoff = chrono::Local::now().date_naive() - chrono::Duration::days(14);
                 for edge in &edges {
                     // Find the peer node (the one that isn't the current topic)
                     let peer_id = if edge.source_id == node.id {
@@ -715,12 +716,27 @@ fn run_socratic_loop(
                     if peer_recall < 0.65 {
                         continue;
                     }
-                    // Edge must not have been fired within the last 14 days
-                    let recently_fired = edge.last_fired.as_deref().map(|s| {
-                        chrono::NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d")
-                            .map(|d| d > cutoff)
-                            .unwrap_or(false)
-                    }).unwrap_or(false);
+                    // Edge must not have been fired too recently (per config)
+                    let recently_fired = match edge_reuse {
+                        config::EdgeReuse::Off => false, // always eligible
+                        config::EdgeReuse::Days(n) => {
+                            let cutoff = chrono::Local::now().date_naive()
+                                - chrono::Duration::days(*n as i64);
+                            edge.last_fired.as_deref().map(|s| {
+                                chrono::NaiveDate::parse_from_str(&s[..10.min(s.len())], "%Y-%m-%d")
+                                    .map(|d| d > cutoff)
+                                    .unwrap_or(false)
+                            }).unwrap_or(false)
+                        }
+                        config::EdgeReuse::Sessions(n) => {
+                            if let Some(fired_at) = edge.last_fired_session {
+                                let current = db.total_quizzes().unwrap_or(0);
+                                (current - fired_at) < *n as i64
+                            } else {
+                                false
+                            }
+                        }
+                    };
                     if recently_fired {
                         continue;
                     }
@@ -894,7 +910,7 @@ fn run_socratic_loop(
     Ok((true, true))
 }
 
-fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, query: &str) -> Result<()> {
+fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, query: &str, edge_reuse: &config::EdgeReuse) -> Result<()> {
     print_header();
     p.print_rocky(false);
 
@@ -973,7 +989,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
             description: node.description.clone(),
         };
         let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
-        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
+        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse)?;
         if completed {
             session.record_quiz()?;
         }
@@ -990,7 +1006,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
     Ok(())
 }
 
-fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, hours: u32) -> Result<()> {
+fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, hours: u32, edge_reuse: &config::EdgeReuse) -> Result<()> {
     print_header();
     p.print_rocky(false);
 
@@ -1070,7 +1086,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 domain: String::new(),
                 description: description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse)?;
             if completed {
                 session.record_quiz()?;
                 // Remove from queue now that it has been properly reviewed
@@ -1117,7 +1133,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             domain: node.domain.clone(),
                 description: node.description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -1136,7 +1152,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             .collect();
 
         for topic_info in new_from_prompts {
-            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p)?;
+            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -1292,6 +1308,7 @@ fn run_diff(
     p: &personality::Personality,
     git_ref: Option<&str>,
     staged: bool,
+    edge_reuse: &config::EdgeReuse,
 ) -> Result<()> {
     print_header();
 
@@ -1388,7 +1405,7 @@ fn run_diff(
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p)?;
+                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;

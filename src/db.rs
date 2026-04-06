@@ -58,6 +58,7 @@ pub struct Edge {
     pub strength: f64,
     pub created_at: String,
     pub last_fired: Option<String>,
+    pub last_fired_session: Option<i64>,
 }
 
 const SCHEMA: &str = "
@@ -134,6 +135,8 @@ impl Db {
             "ALTER TABLE nodes ADD COLUMN domain TEXT NOT NULL DEFAULT ''",
             [],
         );
+        // Migration: add last_fired_session column to edges
+        let _ = conn.execute("ALTER TABLE edges ADD COLUMN last_fired_session INTEGER", []);
         Ok(())
     }
 
@@ -363,7 +366,7 @@ impl Db {
     pub fn get_edges_for_node(&self, node_id: &str) -> Result<Vec<Edge>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
-            "SELECT id, source_id, target_id, kind, description, strength, created_at, last_fired
+            "SELECT id, source_id, target_id, kind, description, strength, created_at, last_fired, last_fired_session
              FROM edges WHERE source_id = ?1 OR target_id = ?1
              ORDER BY strength DESC",
         )?;
@@ -378,6 +381,7 @@ impl Db {
                     strength: row.get(5)?,
                     created_at: row.get(6)?,
                     last_fired: row.get(7)?,
+                    last_fired_session: row.get(8)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -388,7 +392,7 @@ impl Db {
     pub fn get_all_edges(&self) -> Result<Vec<Edge>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
-            "SELECT id, source_id, target_id, kind, description, strength, created_at, last_fired
+            "SELECT id, source_id, target_id, kind, description, strength, created_at, last_fired, last_fired_session
              FROM edges ORDER BY strength DESC",
         )?;
         let edges = stmt
@@ -402,6 +406,7 @@ impl Db {
                     strength: row.get(5)?,
                     created_at: row.get(6)?,
                     last_fired: row.get(7)?,
+                    last_fired_session: row.get(8)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -411,12 +416,23 @@ impl Db {
 
     #[allow(dead_code)]
     pub fn fire_edge(&self, edge_id: &str) -> Result<()> {
+        let session_count = self.total_quizzes()?;
         let conn = self.connect()?;
         conn.execute(
-            "UPDATE edges SET last_fired = ?1 WHERE id = ?2",
-            params![Local::now().naive_local().to_string(), edge_id],
+            "UPDATE edges SET last_fired = ?1, last_fired_session = ?2 WHERE id = ?3",
+            params![Local::now().naive_local().to_string(), session_count, edge_id],
         )?;
         Ok(())
+    }
+
+    pub fn total_quizzes(&self) -> Result<i64> {
+        let v = self.session_get("total_quizzes")?;
+        Ok(v.unwrap_or_default().parse().unwrap_or(0))
+    }
+
+    pub fn increment_total_quizzes(&self) -> Result<()> {
+        let count = self.total_quizzes()?;
+        self.session_set("total_quizzes", &(count + 1).to_string())
     }
 
     #[allow(dead_code)]

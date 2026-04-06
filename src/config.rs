@@ -9,6 +9,34 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde::Deserialize;
 
+/// How long before a cross-concept edge can fire again.
+#[derive(Debug, Clone)]
+pub enum EdgeReuse {
+    /// Always fire the edge if a qualifying one exists.
+    Off,
+    /// Only reuse an edge after N days.
+    Days(u32),
+    /// Only reuse an edge after N quiz events.
+    Sessions(u32),
+}
+
+impl EdgeReuse {
+    /// Parse "off", "14d", "5s" etc.
+    fn parse(s: &str) -> Option<Self> {
+        let s = s.trim();
+        if s.eq_ignore_ascii_case("off") {
+            return Some(Self::Off);
+        }
+        if let Some(n) = s.strip_suffix('d').or_else(|| s.strip_suffix('D')) {
+            return n.parse::<u32>().ok().map(Self::Days);
+        }
+        if let Some(n) = s.strip_suffix('s').or_else(|| s.strip_suffix('S')) {
+            return n.parse::<u32>().ok().map(Self::Sessions);
+        }
+        None
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct TomlFile {
     llm: Option<LlmSection>,
@@ -16,6 +44,12 @@ struct TomlFile {
     export: Option<ExportSection>,
     ui: Option<UiSection>,
     sync: Option<SyncSection>,
+    edges: Option<EdgesSection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EdgesSection {
+    reuse: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +110,7 @@ pub struct Config {
     pub rocky_dir: PathBuf,
     pub personality: bool,
     pub sync: SyncConfig,
+    pub edge_reuse: EdgeReuse,
 }
 
 impl Default for Config {
@@ -91,6 +126,7 @@ impl Default for Config {
             db_path: rocky_dir.join("graph.db"),
             rocky_dir: rocky_dir.clone(),
             personality: true,
+            edge_reuse: EdgeReuse::Off,
             sync: SyncConfig {
                 enabled: false,
                 auto_commit: true,
@@ -145,6 +181,13 @@ impl Config {
         if let Some(ui) = file.ui {
             if let Some(v) = ui.personality { self.personality = v; }
         }
+        if let Some(e) = file.edges {
+            if let Some(v) = e.reuse {
+                if let Some(r) = EdgeReuse::parse(&v) {
+                    self.edge_reuse = r;
+                }
+            }
+        }
         if let Some(s) = file.sync {
             if let Some(v) = s.enabled { self.sync.enabled = v; }
             if let Some(v) = s.auto_commit { self.sync.auto_commit = v; }
@@ -171,6 +214,13 @@ impl Config {
         println!("    min_gap_minutes  = {}", self.min_gap_minutes);
         println!("\n  [export]");
         println!("    pkg_dir          = {}", self.pkg_dir.display());
+        println!("\n  [edges]");
+        let reuse_str = match &self.edge_reuse {
+            EdgeReuse::Off => "off (always use edge if available)".to_string(),
+            EdgeReuse::Days(n) => format!("{n}d"),
+            EdgeReuse::Sessions(n) => format!("{n}s"),
+        };
+        println!("    reuse            = {reuse_str}");
         println!("\n  [ui]");
         println!("    personality      = {}", self.personality);
         println!("\n  [sync]");
