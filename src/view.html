@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rocky — Knowledge Graph</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -22,13 +23,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 .stat-fading span { color: #EF9F27; }
 .stat-gap span { color: #E24B4A; }
 
-#controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* ── tab bar ── */
+#tabbar { display: flex; gap: 4px; align-items: center; }
+.tab { background: none; border: none; color: #64748B; font-size: 13px; font-weight: 500;
+       padding: 4px 14px; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+.tab:hover { color: #CBD5E1; background: #111827; }
+.tab.active { color: #F59E0B; background: rgba(245,158,11,0.12); }
+#tab-divider { width: 1px; height: 18px; background: #1E293B; margin: 0 4px; }
+
+/* ── graph controls ── */
+#graph-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #search { background: #111827; border: 1px solid #1E293B; border-radius: 6px;
-          color: #F1F5F9; padding: 4px 10px; font-size: 12px; width: 180px;
-          outline: none; }
+          color: #F1F5F9; padding: 4px 10px; font-size: 12px; width: 180px; outline: none; }
 #search:focus { border-color: #F59E0B; }
 #search::placeholder { color: #64748B; }
-
 .domain-btn { background: #111827; border: 1px solid #1E293B; border-radius: 4px;
               color: #94A3B8; padding: 3px 8px; font-size: 11px; cursor: pointer;
               transition: all 0.15s; white-space: nowrap; }
@@ -37,10 +45,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 .domain-btn.all-btn { border-color: #334155; color: #CBD5E1; }
 .domain-btn.all-btn.active { background: rgba(203,213,225,0.1); border-color: #CBD5E1; color: #CBD5E1; }
 
-/* ── main area ── */
+/* ── views ── */
 #main { display: flex; flex: 1; overflow: hidden; }
+
+/* graph view */
+#graph-view { display: flex; flex: 1; overflow: hidden; }
 #graph-container { flex: 1; position: relative; overflow: hidden; }
-svg { width: 100%; height: 100%; }
+svg#graph { width: 100%; height: 100%; }
 
 /* ── side panel ── */
 #panel { width: 300px; background: #070B14; border-left: 1px solid #1E293B;
@@ -56,7 +67,6 @@ svg { width: 100%; height: 100%; }
 .panel-desc { font-size: 13px; color: #94A3B8; line-height: 1.5; margin-bottom: 16px; }
 .panel-row { display: flex; justify-content: space-between; font-size: 12px;
              padding: 5px 0; border-bottom: 1px solid #1E293B; }
-.panel-row:last-of-type { border-bottom: none; }
 .panel-label { color: #64748B; }
 .panel-value { color: #F1F5F9; font-weight: 500; }
 .panel-section { margin-top: 16px; }
@@ -72,23 +82,41 @@ svg { width: 100%; height: 100%; }
 .edge-kind.part_of        { background: rgba(29,158,117,0.15); color: #1D9E75; }
 .edge-peer { color: #CBD5E1; }
 
-/* ── graph elements ── */
+/* ── graph decorations ── */
 .link { stroke-opacity: 0.6; }
 .node circle { cursor: pointer; transition: r 0.15s; }
 .node circle:hover { stroke: #F59E0B !important; stroke-width: 2px; }
 .node.selected circle { stroke: #F59E0B !important; stroke-width: 2.5px; }
-.node.dimmed circle { opacity: 0.15; }
-.node.dimmed text { opacity: 0.1; }
+.node.dimmed circle { opacity: 0.12; }
+.node.dimmed text { opacity: 0.08; }
 .node.highlighted circle { stroke: #F59E0B; stroke-width: 2px; }
-.node text { pointer-events: none; font-size: 11px; fill: #CBD5E1;
-             text-anchor: middle; }
-.link.dimmed { stroke-opacity: 0.05; }
+.node text { pointer-events: none; font-size: 11px; fill: #CBD5E1; text-anchor: middle; }
+.link.dimmed { stroke-opacity: 0.04; }
 
 .legend { position: absolute; bottom: 16px; left: 16px; background: rgba(7,11,20,0.85);
           border: 1px solid #1E293B; border-radius: 6px; padding: 10px 14px; }
 .legend-title { font-size: 10px; color: #64748B; margin-bottom: 6px; text-transform: uppercase; }
 .legend-row { display: flex; align-items: center; gap: 8px; font-size: 11px;
               color: #94A3B8; margin-bottom: 4px; }
+
+/* ── timeline view ── */
+#timeline-view { display: none; flex: 1; flex-direction: column; padding: 32px 40px 0;
+                 overflow: hidden; }
+#timeline-view.active { display: flex; }
+
+#tl-header { margin-bottom: 24px; }
+#tl-header h2 { font-size: 18px; font-weight: 700; color: #F1F5F9; margin-bottom: 4px; }
+#tl-header p { font-size: 13px; color: #64748B; }
+
+#tl-chart-wrap { flex: 1; min-height: 0; margin-bottom: 0; }
+#tl-chart-wrap canvas { max-height: 100%; }
+
+#tl-scrubber-section { padding: 20px 0 24px; flex-shrink: 0; }
+#tl-scrubber-label { font-size: 12px; color: #64748B; margin-bottom: 10px;
+                     display: flex; justify-content: space-between; }
+#tl-scrubber-label span { color: #F59E0B; font-weight: 600; }
+#tl-scrubber { width: 100%; accent-color: #F59E0B; cursor: pointer; height: 4px; }
+#tl-caption { font-size: 12px; color: #94A3B8; margin-top: 8px; text-align: center; }
 </style>
 </head>
 <body>
@@ -100,52 +128,80 @@ svg { width: 100%; height: 100%; }
     <div class="stat stat-gap">Gap: <span id="s-gap"></span></div>
     <div class="stat">Edges: <span id="s-edges"></span></div>
   </div>
-  <div id="controls">
-    <input id="search" type="text" placeholder="Search topics…">
-    <div id="domain-filters"></div>
+  <div id="tabbar">
+    <button class="tab active" id="tab-graph" onclick="switchTab('graph')">Graph</button>
+    <button class="tab" id="tab-timeline" onclick="switchTab('timeline')">Timeline</button>
+    <div id="tab-divider"></div>
+    <div id="graph-controls">
+      <input id="search" type="text" placeholder="Search topics…">
+      <div id="domain-filters"></div>
+    </div>
   </div>
 </div>
+
 <div id="main">
-  <div id="graph-container">
-    <svg id="graph"></svg>
-    <div class="legend">
-      <div class="legend-title">Edge types</div>
-      <div class="legend-row">
-        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#06B6D4" stroke-width="1.5"/></svg>
-        implies
+  <!-- ── graph view ── -->
+  <div id="graph-view">
+    <div id="graph-container">
+      <svg id="graph"></svg>
+      <div class="legend">
+        <div class="legend-title">Edge types</div>
+        <div class="legend-row">
+          <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#06B6D4" stroke-width="1.5"/></svg>
+          implies
+        </div>
+        <div class="legend-row">
+          <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="6,3"/></svg>
+          depends on
+        </div>
+        <div class="legend-row">
+          <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="2,4"/></svg>
+          part of
+        </div>
+        <div class="legend-row">
+          <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#E24B4A" stroke-width="1.5" stroke-dasharray="2,2"/></svg>
+          conflicts
+        </div>
       </div>
-      <div class="legend-row">
-        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="6,3"/></svg>
-        depends on
-      </div>
-      <div class="legend-row">
-        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="2,4"/></svg>
-        part of
-      </div>
-      <div class="legend-row">
-        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#E24B4A" stroke-width="1.5" stroke-dasharray="2,2"/></svg>
-        conflicts
+    </div>
+    <div id="panel">
+      <button id="panel-close">✕</button>
+      <div id="panel-inner">
+        <div class="panel-topic" id="p-topic"></div>
+        <div class="panel-domain" id="p-domain"></div>
+        <div class="panel-desc" id="p-desc"></div>
+        <div class="panel-row"><span class="panel-label">Retrievability</span><span class="panel-value" id="p-recall"></span></div>
+        <div class="panel-row"><span class="panel-label">Stability</span><span class="panel-value" id="p-stab"></span></div>
+        <div class="panel-row"><span class="panel-label">Last reviewed</span><span class="panel-value" id="p-reviewed"></span></div>
+        <div class="panel-row"><span class="panel-label">Reviews</span><span class="panel-value" id="p-count"></span></div>
+        <div class="panel-row"><span class="panel-label">Kind</span><span class="panel-value" id="p-kind"></span></div>
+        <div class="panel-section">
+          <div class="panel-section-title">Edges</div>
+          <div id="p-edges"></div>
+        </div>
       </div>
     </div>
   </div>
-  <div id="panel">
-    <button id="panel-close">✕</button>
-    <div id="panel-inner">
-      <div class="panel-topic" id="p-topic"></div>
-      <div class="panel-domain" id="p-domain"></div>
-      <div class="panel-desc" id="p-desc"></div>
-      <div class="panel-row"><span class="panel-label">Retrievability</span><span class="panel-value" id="p-recall"></span></div>
-      <div class="panel-row"><span class="panel-label">Stability</span><span class="panel-value" id="p-stab"></span></div>
-      <div class="panel-row"><span class="panel-label">Last reviewed</span><span class="panel-value" id="p-reviewed"></span></div>
-      <div class="panel-row"><span class="panel-label">Reviews</span><span class="panel-value" id="p-count"></span></div>
-      <div class="panel-row"><span class="panel-label">Kind</span><span class="panel-value" id="p-kind"></span></div>
-      <div class="panel-section">
-        <div class="panel-section-title">Edges</div>
-        <div id="p-edges"></div>
+
+  <!-- ── timeline view ── -->
+  <div id="timeline-view">
+    <div id="tl-header">
+      <h2>Knowledge Growth Timeline</h2>
+      <p>Topics added to your PKG week by week. Drag the scrubber to watch your graph grow.</p>
+    </div>
+    <div id="tl-chart-wrap">
+      <canvas id="tl-chart"></canvas>
+    </div>
+    <div id="tl-scrubber-section">
+      <div id="tl-scrubber-label">
+        Showing graph as of: <span id="tl-date-label">today</span>
       </div>
+      <input id="tl-scrubber" type="range" min="0" max="100" value="100">
+      <div id="tl-caption"></div>
     </div>
   </div>
 </div>
+
 <script>
 const PKG = __DATA_JSON__;
 
@@ -172,11 +228,24 @@ document.getElementById('s-fading').textContent = nodes.filter(n => n.classifica
 document.getElementById('s-gap').textContent = nodes.filter(n => n.classification === 'gap').length;
 document.getElementById('s-edges').textContent = edges.length;
 
+// ── tab switching ───────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById('tab-graph').classList.toggle('active', tab === 'graph');
+  document.getElementById('tab-timeline').classList.toggle('active', tab === 'timeline');
+  document.getElementById('graph-view').style.display = tab === 'graph' ? 'flex' : 'none';
+  document.getElementById('timeline-view').classList.toggle('active', tab === 'timeline');
+  document.getElementById('graph-controls').style.display = tab === 'graph' ? 'flex' : 'none';
+  if (tab === 'timeline') initTimeline();
+}
+switchTab('graph'); // start on graph tab
+
 // ── domain filter ───────────────────────────────────────────────────────────
 const domains = [...new Set(nodes.map(n => n.domain || 'Other'))].sort();
 let activeDomains = new Set(domains);
-const filterEl = document.getElementById('domain-filters');
+// Time scrubber cutoff — null means no restriction (show all)
+let scrubberCutoff = null;
 
+const filterEl = document.getElementById('domain-filters');
 const allBtn = document.createElement('button');
 allBtn.className = 'domain-btn all-btn active';
 allBtn.textContent = 'All';
@@ -187,12 +256,10 @@ allBtn.onclick = () => {
   applyFilters();
 };
 filterEl.appendChild(allBtn);
-
 domains.forEach(d => {
   const btn = document.createElement('button');
   btn.className = 'domain-btn active';
   btn.textContent = d;
-  btn.dataset.domain = d;
   btn.onclick = () => {
     if (activeDomains.has(d)) { activeDomains.delete(d); btn.classList.remove('active'); }
     else { activeDomains.add(d); btn.classList.add('active'); }
@@ -212,6 +279,7 @@ document.getElementById('search').addEventListener('input', e => {
 function applyFilters() {
   const visible = new Set(
     nodes
+      .filter(n => !scrubberCutoff || n.created_at <= scrubberCutoff)
       .filter(n => activeDomains.has(n.domain || 'Other'))
       .filter(n => !searchTerm || n.topic.toLowerCase().includes(searchTerm))
       .map(n => n.id)
@@ -222,10 +290,11 @@ function applyFilters() {
       .classed('dimmed', !show)
       .classed('highlighted', show && !!searchTerm);
   });
-  linkGroup.selectAll('.link').classed('dimmed', d =>
-    !visible.has(typeof d.source === 'object' ? d.source.id : d.source) ||
-    !visible.has(typeof d.target === 'object' ? d.target.id : d.target)
-  );
+  linkGroup.selectAll('.link').classed('dimmed', d => {
+    const src = typeof d.source === 'object' ? d.source.id : d.source;
+    const tgt = typeof d.target === 'object' ? d.target.id : d.target;
+    return !visible.has(src) || !visible.has(tgt);
+  });
 }
 
 // ── D3 force graph ──────────────────────────────────────────────────────────
@@ -314,7 +383,6 @@ const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
 function selectNode(d) {
   selectedId = d.id;
   node.classed('selected', n => n.id === d.id);
-
   document.getElementById('p-topic').textContent = d.topic;
   document.getElementById('p-domain').textContent = d.domain || 'Other';
   document.getElementById('p-desc').textContent = d.description;
@@ -335,7 +403,6 @@ function selectNode(d) {
       return `<div class="edge-item"><span class="edge-kind ${e.kind}">${e.kind.replace(/_/g,' ')}</span><span class="edge-peer">${label}</span></div>`;
     }).join('');
   }
-
   document.getElementById('panel').classList.add('open');
 }
 
@@ -344,8 +411,151 @@ function closePanel() {
   node.classed('selected', false);
   selectedId = null;
 }
-
 document.getElementById('panel-close').onclick = closePanel;
+
+// ── timeline ────────────────────────────────────────────────────────────────
+let tlChart = null;
+let weekBuckets = [];   // [{label, date, count, cumulative}]
+let scrubberDates = []; // ISO date strings, one per scrubber step
+
+function initTimeline() {
+  if (tlChart) return; // already built
+
+  // Group nodes by ISO week (Monday-based)
+  const weekMap = {};
+  nodes.forEach(n => {
+    const d = new Date(n.created_at);
+    // Get Monday of the week
+    const day = d.getDay();
+    const diff = (day === 0 ? -6 : 1) - day;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + diff);
+    const key = monday.toISOString().slice(0, 10);
+    weekMap[key] = (weekMap[key] || 0) + 1;
+  });
+
+  const sortedWeeks = Object.keys(weekMap).sort();
+  if (sortedWeeks.length === 0) return;
+
+  let cumulative = 0;
+  weekBuckets = sortedWeeks.map(w => {
+    cumulative += weekMap[w];
+    return { label: w, date: w, count: weekMap[w], cumulative };
+  });
+
+  // Scrubber: one position per week + a "today" position at the end
+  scrubberDates = weekBuckets.map(b => b.date);
+  scrubberDates.push('9999-99-99'); // sentinel = show all
+
+  const scrubber = document.getElementById('tl-scrubber');
+  scrubber.max = scrubberDates.length - 1;
+  scrubber.value = scrubberDates.length - 1;
+
+  // Build Chart.js bar chart
+  const ctx = document.getElementById('tl-chart').getContext('2d');
+  tlChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: weekBuckets.map(b => b.label),
+      datasets: [
+        {
+          label: 'Topics added',
+          data: weekBuckets.map(b => b.count),
+          backgroundColor: 'rgba(245,158,11,0.5)',
+          borderColor: '#F59E0B',
+          borderWidth: 1,
+          borderRadius: 3,
+          order: 1,
+        },
+        {
+          label: 'Total',
+          data: weekBuckets.map(b => b.cumulative),
+          type: 'line',
+          borderColor: '#06B6D4',
+          backgroundColor: 'rgba(6,182,212,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#06B6D4',
+          fill: true,
+          tension: 0.3,
+          order: 0,
+          yAxisID: 'y2',
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: '#94A3B8', font: { size: 12 } }
+        },
+        tooltip: {
+          backgroundColor: '#111827',
+          borderColor: '#1E293B',
+          borderWidth: 1,
+          titleColor: '#F1F5F9',
+          bodyColor: '#94A3B8',
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#64748B', font: { size: 11 }, maxRotation: 45 },
+          grid: { color: '#1E293B' }
+        },
+        y: {
+          ticks: { color: '#64748B', font: { size: 11 } },
+          grid: { color: '#1E293B' },
+          title: { display: true, text: 'Added this week', color: '#64748B', font: { size: 11 } }
+        },
+        y2: {
+          position: 'right',
+          ticks: { color: '#06B6D4', font: { size: 11 } },
+          grid: { display: false },
+          title: { display: true, text: 'Cumulative total', color: '#06B6D4', font: { size: 11 } }
+        }
+      }
+    }
+  });
+
+  // Scrubber interaction
+  scrubber.addEventListener('input', onScrub);
+  onScrub(); // set initial state
+}
+
+function onScrub() {
+  const scrubber = document.getElementById('tl-scrubber');
+  const idx = parseInt(scrubber.value);
+  const cutoffDate = scrubberDates[idx];
+  const isToday = idx === scrubberDates.length - 1;
+
+  // Update graph filter
+  scrubberCutoff = isToday ? null : cutoffDate;
+  applyFilters();
+
+  // Update label
+  const visibleCount = isToday
+    ? nodes.length
+    : nodes.filter(n => n.created_at <= cutoffDate).length;
+
+  document.getElementById('tl-date-label').textContent =
+    isToday ? `today (${nodes.length} topics)` : `${cutoffDate} (${visibleCount} topics)`;
+
+  document.getElementById('tl-caption').textContent =
+    isToday
+      ? 'Showing your full knowledge graph'
+      : `Graph shows ${visibleCount} topic${visibleCount !== 1 ? 's' : ''} that existed on ${cutoffDate}`;
+
+  // Highlight the active bar in the chart
+  if (!tlChart) return;
+  const barIdx = isToday ? weekBuckets.length - 1 : weekBuckets.findLastIndex(b => b.date <= cutoffDate);
+  tlChart.data.datasets[0].backgroundColor = weekBuckets.map((_, i) =>
+    i === barIdx ? '#F59E0B' : 'rgba(245,158,11,0.35)'
+  );
+  tlChart.update('none');
+}
 </script>
 </body>
 </html>
