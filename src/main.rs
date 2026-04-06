@@ -105,6 +105,12 @@ enum Cmd {
     Restore,
     /// Assign taxonomy domains to existing undomained topics via LLM
     Classify,
+    /// List all edges in the PKG (implication graph)
+    Edges {
+        /// Show edge stats summary instead of full list
+        #[arg(long)]
+        stats: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -229,6 +235,9 @@ fn run() -> Result<()> {
         }
         Some(Cmd::Classify) => {
             run_classify(&db, &make_teacher(&cfg)?)?;
+        }
+        Some(Cmd::Edges { stats }) => {
+            show_edges(&db, stats)?;
         }
         None => {
             if let Some(msg) = cli.after {
@@ -364,6 +373,165 @@ fn list_topics(db: &Db) -> Result<()> {
     Ok(())
 }
 
+/// Called after all user-facing Q&A is done — generates implication edges silently.
+/// Errors are logged as warnings; they never surface to the user or abort anything.
+fn generate_edges_for_new_nodes(db: &Db, teacher: &Teacher, new_topics: &[(String, String)]) {
+    use db::{Edge, EdgeKind};
+
+    let existing = match db.all_nodes() {
+        Ok(nodes) => nodes,
+        Err(_) => return,
+    };
+
+    // Build the existing-node list, excluding whatever we just added
+    let existing_summaries: Vec<(String, String)> = existing
+        .iter()
+        .filter(|n| !new_topics.iter().any(|(t, _)| t == &n.topic))
+        .take(30)
+        .map(|n| (n.topic.clone(), n.description.clone()))
+        .collect();
+
+    for (topic, description) in new_topics {
+        let generated = match teacher.generate_edges(topic, description, &existing_summaries) {
+            Ok(edges) => edges,
+            Err(e) => {
+                eprintln!("  [rocky] edge generation warning: {e}");
+                continue;
+            }
+        };
+
+        // Resolve source node ID
+        let source_id = match db.get_node(topic) {
+            Ok(Some(n)) => n.id,
+            _ => continue,
+        };
+
+        for edge in generated.iter().take(4) {
+            // Match target topic name to a node in the DB
+            let target_node = match db.get_node(&edge.target) {
+                Ok(Some(n)) => n,
+                _ => continue,
+            };
+
+            let kind = EdgeKind::from_str(&edge.kind);
+
+            // Dedup: skip if this pair+kind already exists
+            if db.edge_exists(&source_id, &target_node.id, &kind).unwrap_or(true) {
+                continue;
+            }
+
+            let edge_id = format!(
+                "{}-{}-{}",
+                source_id.replace(' ', "-"),
+                target_node.id.replace(' ', "-"),
+                kind.as_str()
+            );
+
+            let e = Edge {
+                id: edge_id,
+                source_id: source_id.clone(),
+                target_id: target_node.id.clone(),
+                kind,
+                description: edge.description.clone(),
+                strength: edge.strength.clamp(0.1, 1.0),
+                created_at: chrono::Local::now().naive_local().to_string(),
+                last_fired: None,
+            };
+
+            if let Err(err) = db.insert_edge(&e) {
+                eprintln!("  [rocky] failed to insert edge: {err}");
+            }
+        }
+    }
+}
+
+fn show_edges(db: &Db, stats: bool) -> Result<()> {
+    use db::EdgeKind;
+    print_header();
+
+    if stats {
+        let (total, most_connected) = db.edge_stats()?;
+        println!("\n  {} Edge Stats\n", "◈".bold().cyan());
+        println!("  {:<20} {}", "Total edges:".dimmed(), total.to_string().bold());
+        if !most_connected.is_empty() {
+            println!("  {:<20} {}", "Most connected:".dimmed(), most_connected.bold().yellow());
+        }
+
+        // Breakdown by kind
+        let edges = db.get_all_edges()?;
+        let mut by_kind: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for e in &edges {
+            *by_kind.entry(e.kind.as_str().to_string()).or_insert(0) += 1;
+        }
+        println!("\n  {}", "By kind:".dimmed());
+        for kind_str in &["implies", "depends_on", "conflicts_with", "part_of"] {
+            let count = by_kind.get(*kind_str).copied().unwrap_or(0);
+            let colored_kind = match EdgeKind::from_str(kind_str) {
+                EdgeKind::Implies       => kind_str.cyan(),
+                EdgeKind::DependsOn     => kind_str.yellow(),
+                EdgeKind::ConflictsWith => kind_str.red(),
+                EdgeKind::PartOf        => kind_str.green(),
+            };
+            println!("    {:<20} {}", colored_kind, count);
+        }
+        println!();
+        return Ok(());
+    }
+
+    let edges = db.get_all_edges()?;
+
+    if edges.is_empty() {
+        println!(
+            "\n  {}\n",
+            "No edges yet. Rocky will build the implication graph as you add topics.".dimmed()
+        );
+        return Ok(());
+    }
+
+    println!(
+        "\n  {:<30} {:<30} {:<16} {:<6}  {}",
+        "SOURCE".dimmed(),
+        "TARGET".dimmed(),
+        "KIND".dimmed(),
+        "STR".dimmed(),
+        "DESCRIPTION".dimmed(),
+    );
+    println!("  {}", "─".repeat(110).dimmed());
+
+    for e in &edges {
+        // Resolve node IDs to topic names
+        let src = db.get_node(&e.source_id)?
+            .map(|n| n.topic)
+            .unwrap_or_else(|| e.source_id.clone());
+        let tgt = db.get_node(&e.target_id)?
+            .map(|n| n.topic)
+            .unwrap_or_else(|| e.target_id.clone());
+
+        let src_str = &src[..src.len().min(28)];
+        let tgt_str = &tgt[..tgt.len().min(28)];
+        let desc_str = &e.description[..e.description.len().min(48)];
+
+        let kind_colored = match e.kind {
+            EdgeKind::Implies       => e.kind.as_str().cyan().to_string(),
+            EdgeKind::DependsOn     => e.kind.as_str().yellow().to_string(),
+            EdgeKind::ConflictsWith => e.kind.as_str().red().to_string(),
+            EdgeKind::PartOf        => e.kind.as_str().green().to_string(),
+        };
+
+        println!(
+            "  {:<30} {:<30} {:<25} {:.2}   {}",
+            src_str,
+            tgt_str,
+            kind_colored,
+            e.strength,
+            desc_str.dimmed(),
+        );
+    }
+
+    println!("\n  {} edges total\n", edges.len().to_string().bold());
+    Ok(())
+}
+
 fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, task: &str, mode: &str) -> Result<()> {
     print_header();
     println!("\n{} {task}\n", "Task:".bold());
@@ -404,6 +572,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
     let mut queued: Vec<String> = Vec::new();
     let mut new_count = 0u32;
     let mut stale_count = 0u32;
+    let mut newly_added: Vec<(String, String)> = Vec::new(); // (topic, description)
 
     for topic_info in &topics {
         let topic = &topic_info.topic;
@@ -458,11 +627,14 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             _ => {
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
-                    let completed =
+                    let (completed, node_added) =
                         run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
+                    }
+                    if node_added {
+                        newly_added.push((topic.clone(), topic_info.description.clone()));
                     }
                 } else {
                     queued.push(topic.clone());
@@ -470,6 +642,11 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 }
             }
         }
+    }
+
+    // Generate edges for newly added nodes (after all user interaction is done)
+    if !newly_added.is_empty() {
+        generate_edges_for_new_nodes(db, teacher, &newly_added);
     }
 
     println!();
@@ -496,6 +673,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
     Ok(())
 }
 
+/// Returns `(quiz_counted, node_added)`.
 fn run_socratic_loop(
     db: &Db,
     teacher: &Teacher,
@@ -503,7 +681,7 @@ fn run_socratic_loop(
     task: &str,
     known_topics: &[String],
     p: &personality::Personality,
-) -> Result<bool> {
+) -> Result<(bool, bool)> {
     let topic = &topic_info.topic;
     println!("\n{} New topic — {topic}", "Rocky:".cyan().bold());
     println!("{}", format!("  {}", topic_info.description).dimmed());
@@ -513,13 +691,58 @@ fn run_socratic_loop(
     let mut questions_asked = 0u32;
     let mut last_question = String::new();
     let mut last_answer = String::new();
-    let mut question = teacher.generate_question(
-        topic,
-        &topic_info.description,
-        task,
-        known_topics,
-        1,
-    )?;
+    let mut fired_edge_id: Option<String> = None;
+
+    // Edge-aware question: if this node has an edge to a well-known concept
+    // that hasn't been cross-quizzed recently, use a cross-concept question.
+    let mut question = 'q: {
+        if let Ok(Some(node)) = db.get_node(topic) {
+            if let Ok(edges) = db.get_edges_for_node(&node.id) {
+                let cutoff = chrono::Local::now().date_naive() - chrono::Duration::days(14);
+                for edge in &edges {
+                    // Find the peer node (the one that isn't the current topic)
+                    let peer_id = if edge.source_id == node.id {
+                        &edge.target_id
+                    } else {
+                        &edge.source_id
+                    };
+                    // Peer must be well-recalled (> 0.65)
+                    let peer_node = match db.get_node(peer_id) {
+                        Ok(Some(n)) => n,
+                        _ => continue,
+                    };
+                    let peer_recall = fsrs::retrievability(peer_node.stability, peer_node.last_reviewed);
+                    if peer_recall < 0.65 {
+                        continue;
+                    }
+                    // Edge must not have been fired within the last 14 days
+                    let recently_fired = edge.last_fired.as_deref().map(|s| {
+                        chrono::NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d")
+                            .map(|d| d > cutoff)
+                            .unwrap_or(false)
+                    }).unwrap_or(false);
+                    if recently_fired {
+                        continue;
+                    }
+                    // Qualifying edge found — generate cross-concept question
+                    if let Ok(q) = teacher.generate_cross_concept_question(
+                        topic,
+                        &topic_info.description,
+                        &peer_node.topic,
+                        &peer_node.description,
+                        edge.kind.as_str(),
+                        &edge.description,
+                        task,
+                    ) {
+                        fired_edge_id = Some(edge.id.clone());
+                        break 'q q;
+                    }
+                }
+            }
+        }
+        // Fall back to standard single-concept question
+        teacher.generate_question(topic, &topic_info.description, task, known_topics, 1)?
+    };
 
     while questions_asked < MAX_QUESTIONS {
         questions_asked += 1;
@@ -547,14 +770,19 @@ fn run_socratic_loop(
             if let Some(msg) = p.skipped() { println!("   {msg}"); }
             else { println!("{}", "   Skipped — topic queued for next session.".yellow()); }
             queue_for_later(topic, topic_info.kind.as_str(), &topic_info.description, task);
-            return Ok(true);
+            return Ok((true, false));
         }
 
         // Ignore — LLM hallucinated or topic is irrelevant, discard silently
         if answer.eq_ignore_ascii_case("i") {
             if let Some(msg) = p.ignored() { println!("   {msg}"); }
             else { println!("{}", "   Ignored — not added to PKG.".dimmed()); }
-            return Ok(false);
+            return Ok((false, false));
+        }
+
+        // Fire the cross-concept edge (if any) the first time the user gives a real answer
+        if let Some(edge_id) = fired_edge_id.take() {
+            db.fire_edge(&edge_id).ok();
         }
 
         // Too easy — self-report high confidence
@@ -571,7 +799,7 @@ fn run_socratic_loop(
             if let Some(msg) = p.too_easy() { println!("   {msg}"); }
             else { println!("{}", "   Marked as known.".green()); }
             print_milestone(db, p, topic);
-            return Ok(true);
+            return Ok((true, true));
         }
 
         // Explain it — show explanation, mark with low confidence
@@ -595,7 +823,7 @@ fn run_socratic_loop(
                 task,
                 None,
             )?;
-            return Ok(true);
+            return Ok((true, true));
         }
 
         // Normal answer — evaluate it
@@ -622,7 +850,7 @@ fn run_socratic_loop(
             if let Some(msg) = p.correct() { println!("   {msg}"); }
             else { println!("{}", "   Added to your PKG.".green()); }
             print_milestone(db, p, topic);
-            return Ok(true);
+            return Ok((true, true));
         }
 
         if let Some(followup) = result.followup {
@@ -663,7 +891,7 @@ fn run_socratic_loop(
         task,
         None,
     )?;
-    Ok(true)
+    Ok((true, true))
 }
 
 fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, query: &str) -> Result<()> {
@@ -745,7 +973,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
             description: node.description.clone(),
         };
         let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
-        let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
+        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
         if completed {
             session.record_quiz()?;
         }
@@ -842,7 +1070,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 domain: String::new(),
                 description: description.clone(),
             };
-            let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
             if completed {
                 session.record_quiz()?;
                 // Remove from queue now that it has been properly reviewed
@@ -889,7 +1117,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             domain: node.domain.clone(),
                 description: node.description.clone(),
             };
-            let completed = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -908,7 +1136,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             .collect();
 
         for topic_info in new_from_prompts {
-            let completed = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p)?;
+            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -1104,6 +1332,7 @@ fn run_diff(
     let mut queued: Vec<String> = Vec::new();
     let mut new_count = 0u32;
     let mut stale_count = 0u32;
+    let mut newly_added: Vec<(String, String)> = Vec::new();
 
     for topic_info in &topics {
         let topic = &topic_info.topic;
@@ -1158,11 +1387,14 @@ fn run_diff(
             _ => {
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
-                    let completed =
+                    let (completed, node_added) =
                         run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
+                    }
+                    if node_added {
+                        newly_added.push((topic.clone(), topic_info.description.clone()));
                     }
                 } else {
                     queued.push(topic.clone());
@@ -1170,6 +1402,10 @@ fn run_diff(
                 }
             }
         }
+    }
+
+    if !newly_added.is_empty() {
+        generate_edges_for_new_nodes(db, teacher, &newly_added);
     }
 
     println!();

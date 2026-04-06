@@ -10,6 +10,56 @@ use crate::fsrs;
 use crate::node::{Kind, Node};
 use crate::obsidian;
 
+// ── Edge types ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EdgeKind {
+    Implies,
+    DependsOn,
+    ConflictsWith,
+    PartOf,
+}
+
+impl EdgeKind {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "implies"        => Self::Implies,
+            "depends_on"     => Self::DependsOn,
+            "conflicts_with" => Self::ConflictsWith,
+            "part_of"        => Self::PartOf,
+            _                => Self::Implies,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Implies        => "implies",
+            Self::DependsOn      => "depends_on",
+            Self::ConflictsWith  => "conflicts_with",
+            Self::PartOf         => "part_of",
+        }
+    }
+}
+
+impl std::fmt::Display for EdgeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct Edge {
+    pub id: String,
+    pub source_id: String,
+    pub target_id: String,
+    pub kind: EdgeKind,
+    pub description: String,
+    pub strength: f64,
+    pub created_at: String,
+    pub last_fired: Option<String>,
+}
+
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS session_state (
     key        TEXT PRIMARY KEY,
@@ -38,6 +88,20 @@ CREATE TABLE IF NOT EXISTS contexts (
     PRIMARY KEY (node_id, context),
     FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS edges (
+    id          TEXT PRIMARY KEY,
+    source_id   TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    target_id   TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    description TEXT NOT NULL,
+    strength    REAL NOT NULL DEFAULT 0.5,
+    created_at  TEXT NOT NULL,
+    last_fired  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS edges_source ON edges(source_id);
+CREATE INDEX IF NOT EXISTS edges_target ON edges(target_id);
 ";
 
 pub struct Db {
@@ -275,6 +339,119 @@ impl Db {
         let conn = self.connect()?;
         conn.execute("DELETE FROM nodes WHERE id = ?", params![node_id])?;
         Ok(())
+    }
+
+    // ── edges ─────────────────────────────────────────────────────────────────
+
+    #[allow(dead_code)]
+    pub fn insert_edge(&self, edge: &Edge) -> Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "INSERT OR IGNORE INTO edges
+             (id, source_id, target_id, kind, description, strength, created_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                edge.id, edge.source_id, edge.target_id, edge.kind.as_str(),
+                edge.description, edge.strength,
+                Local::now().naive_local().to_string()
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn get_edges_for_node(&self, node_id: &str) -> Result<Vec<Edge>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, source_id, target_id, kind, description, strength, created_at, last_fired
+             FROM edges WHERE source_id = ?1 OR target_id = ?1
+             ORDER BY strength DESC",
+        )?;
+        let edges = stmt
+            .query_map(params![node_id], |row| {
+                Ok(Edge {
+                    id: row.get(0)?,
+                    source_id: row.get(1)?,
+                    target_id: row.get(2)?,
+                    kind: EdgeKind::from_str(&row.get::<_, String>(3)?),
+                    description: row.get(4)?,
+                    strength: row.get(5)?,
+                    created_at: row.get(6)?,
+                    last_fired: row.get(7)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(edges)
+    }
+
+    pub fn get_all_edges(&self) -> Result<Vec<Edge>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, source_id, target_id, kind, description, strength, created_at, last_fired
+             FROM edges ORDER BY strength DESC",
+        )?;
+        let edges = stmt
+            .query_map([], |row| {
+                Ok(Edge {
+                    id: row.get(0)?,
+                    source_id: row.get(1)?,
+                    target_id: row.get(2)?,
+                    kind: EdgeKind::from_str(&row.get::<_, String>(3)?),
+                    description: row.get(4)?,
+                    strength: row.get(5)?,
+                    created_at: row.get(6)?,
+                    last_fired: row.get(7)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(edges)
+    }
+
+    #[allow(dead_code)]
+    pub fn fire_edge(&self, edge_id: &str) -> Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE edges SET last_fired = ?1 WHERE id = ?2",
+            params![Local::now().naive_local().to_string(), edge_id],
+        )?;
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn edge_exists(&self, source_id: &str, target_id: &str, kind: &EdgeKind) -> Result<bool> {
+        let conn = self.connect()?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM edges
+             WHERE ((source_id = ?1 AND target_id = ?2) OR (source_id = ?2 AND target_id = ?1))
+             AND kind = ?3",
+            params![source_id, target_id, kind.as_str()],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn edge_stats(&self) -> Result<(usize, String)> {
+        let edges = self.get_all_edges()?;
+        let total = edges.len();
+        if total == 0 {
+            return Ok((0, String::new()));
+        }
+        // Find node with most connections
+        let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        for e in &edges {
+            *counts.entry(&e.source_id).or_insert(0) += 1;
+            *counts.entry(&e.target_id).or_insert(0) += 1;
+        }
+        let most_connected_id = counts.into_iter().max_by_key(|(_, c)| *c).map(|(id, _)| id).unwrap_or("");
+        // Resolve to topic name
+        let topic = if let Ok(Some(node)) = self.get_node(most_connected_id) {
+            node.topic
+        } else {
+            most_connected_id.to_string()
+        };
+        Ok((total, topic))
     }
 
     /// Set the domain on an undomained node (used by classify command).

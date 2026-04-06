@@ -8,6 +8,14 @@ use serde_json::{json, Value};
 use crate::node::Node;
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct GeneratedEdge {
+    pub target: String,
+    pub kind: String,
+    pub description: String,
+    pub strength: f64,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct TopicInfo {
     pub topic: String,
     pub kind: String,
@@ -292,6 +300,77 @@ Use the exact topic string provided, unchanged."#;
             let domain = v["domain"].as_str()?.to_string();
             Some((topic, domain))
         }).collect())
+    }
+
+    /// Generate a cross-concept question that asks how two connected topics interact.
+    pub fn generate_cross_concept_question(
+        &self,
+        topic_a: &str,
+        desc_a: &str,
+        topic_b: &str,
+        desc_b: &str,
+        edge_kind: &str,
+        edge_description: &str,
+        task_context: &str,
+    ) -> Result<String> {
+        let system = r#"You are a Socratic technical mentor. Two concepts in a developer's knowledge graph are connected.
+Generate ONE question that forces them to reason about how these two concepts interact in practice.
+
+Rules:
+- Ask about a real scenario where understanding both concepts together matters
+- Focus on what breaks, changes, or must be considered when using one alongside the other
+- The question must reference both concepts explicitly
+- Keep it to 1-2 sentences
+- Return ONLY the question, no preamble"#;
+
+        let user = format!(
+            "Concept A: {topic_a} — {desc_a}\nConcept B: {topic_b} — {desc_b}\nRelationship: {edge_kind} ({edge_description})\nTask context: {task_context}"
+        );
+
+        self.ask(system, &user)
+    }
+
+    /// Generate implication edges between a newly added topic and existing PKG nodes.
+    /// Returns up to 4 edges. Fails silently — never blocks the quiz flow.
+    pub fn generate_edges(
+        &self,
+        new_topic: &str,
+        new_description: &str,
+        existing: &[(String, String)], // (topic, description)
+    ) -> Result<Vec<GeneratedEdge>> {
+        if existing.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let system = r#"You are building an implication graph for a personal knowledge graph.
+A new topic has just been added. Identify at most 4 meaningful relationships between it and the existing topics.
+
+Relationship kinds:
+- "implies": understanding the new topic strongly implies you should also understand the target
+- "depends_on": the new topic requires understanding the target as a prerequisite
+- "conflicts_with": these topics involve genuine trade-offs or contradictory approaches
+- "part_of": the new topic is a specific instance, specialisation, or subcomponent of the target
+
+Only create relationships where there is a genuine, non-obvious conceptual link. Ignore trivial connections.
+strength: 0.3 (tangential) → 0.7 (closely related) → 1.0 (foundational dependency).
+
+Return ONLY valid JSON array using the exact topic strings from the existing list:
+[{"target": "<exact topic>", "kind": "implies"|"depends_on"|"conflicts_with"|"part_of", "description": "<one sentence>", "strength": <0.3–1.0>}]
+If no meaningful relationships exist return: []"#;
+
+        let existing_list = existing
+            .iter()
+            .map(|(t, d)| format!("- {t}: {d}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let user = format!(
+            "New topic: {new_topic}\nDescription: {new_description}\n\nExisting topics:\n{existing_list}"
+        );
+
+        let raw = self.ask(system, &user)?;
+        let cleaned = strip_code_fence(&raw);
+        Ok(serde_json::from_str(cleaned).unwrap_or_default())
     }
 }
 
