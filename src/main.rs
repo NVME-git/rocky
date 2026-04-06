@@ -2166,23 +2166,73 @@ fn run_sync(db: &Db, cfg: &Config, init: Option<Option<String>>, push: bool, sta
 }
 
 fn run_classify(db: &Db, teacher: &Teacher) -> Result<()> {
+    // ── Step 1: Assign domains to any undomained nodes ────────────────────────
     let undomained = db.undomained_nodes()?;
-    if undomained.is_empty() {
+    if !undomained.is_empty() {
+        println!("  Classifying {} topic{} into domains...", undomained.len(), if undomained.len() == 1 { "" } else { "s" });
+        let pairs: Vec<(String, String)> = undomained.iter()
+            .map(|n| (n.topic.clone(), n.description.clone()))
+            .collect();
+        let results = teacher.classify_domains(&pairs)?;
+        for (topic, domain) in &results {
+            let node_id = topic.to_lowercase().trim().replace(' ', "-");
+            db.set_domain(&node_id, domain)?;
+            println!("  {} {} → {}", "✓".green(), topic, domain.cyan());
+        }
+    } else {
         println!("  {} All topics already have a domain.", "✓".green());
-        return Ok(());
     }
-    println!("  Classifying {} topic{} into domains...", undomained.len(), if undomained.len() == 1 { "" } else { "s" });
-    let pairs: Vec<(String, String)> = undomained.iter()
-        .map(|n| (n.topic.clone(), n.description.clone()))
-        .collect();
-    let results = teacher.classify_domains(&pairs)?;
-    for (topic, domain) in &results {
-        let node_id = topic.to_lowercase().trim().replace(' ', "-");
-        db.set_domain(&node_id, domain)?;
-        println!("  {} {} → {}", "✓".green(), topic, domain.cyan());
+
+    // ── Step 2: Ensure taxonomy skeleton exists ───────────────────────────────
+    db.ensure_taxonomy_skeleton()?;
+
+    // ── Step 3: Link all nodes to their domain skeleton node ─────────────────
+    let linked = link_all_to_taxonomy(db)?;
+    if linked > 0 {
+        println!("  {} Linked {} topic{} to taxonomy skeleton.", "✓".green(), linked, if linked == 1 { "" } else { "s" });
+    } else {
+        println!("  {} All topics already linked to taxonomy.", "✓".green());
     }
-    println!("  {} Run `rocky export` to update PKG files.", "·".dimmed());
+
+    if !undomained.is_empty() {
+        println!("  {} Run `rocky export` to update PKG files.", "·".dimmed());
+    }
     Ok(())
+}
+
+fn link_all_to_taxonomy(db: &Db) -> Result<usize> {
+    use db::{Edge, EdgeKind};
+
+    let nodes = db.all_nodes()?;
+    let mut linked = 0;
+
+    for node in nodes.iter().filter(|n| !n.kind.is_domain() && !n.domain.is_empty()) {
+        let domain_node = match db.get_node(&node.domain)? {
+            Some(n) if n.kind.is_domain() => n,
+            _ => continue,
+        };
+
+        let kind = EdgeKind::PartOf;
+        if db.edge_exists(&node.id, &domain_node.id, &kind).unwrap_or(true) {
+            continue;
+        }
+
+        let edge_id = format!("{}-{}-part_of", node.id, domain_node.id);
+        db.insert_edge(&Edge {
+            id: edge_id,
+            source_id: node.id.clone(),
+            target_id: domain_node.id.clone(),
+            kind,
+            description: format!("{} is a topic within the {} domain.", node.topic, node.domain),
+            strength: 1.0,
+            created_at: chrono::Local::now().naive_local().to_string(),
+            last_fired: None,
+            last_fired_session: None,
+        })?;
+        linked += 1;
+    }
+
+    Ok(linked)
 }
 
 /// Auto-sync after a session: export PKG, write pkg.json, commit if configured.
