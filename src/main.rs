@@ -113,6 +113,15 @@ enum Cmd {
     },
     /// Open interactive knowledge graph in the browser
     View,
+    /// Scan git history and add topics to your PKG without interactive Q&A
+    Backfill {
+        /// Include commits from all authors (default: current user only)
+        #[arg(long)]
+        all_authors: bool,
+        /// Maximum number of commits to scan (default: all)
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -243,6 +252,9 @@ fn run() -> Result<()> {
         }
         Some(Cmd::View) => {
             run_view(&db, &cfg)?;
+        }
+        Some(Cmd::Backfill { all_authors, limit }) => {
+            run_backfill(&db, &make_teacher(&cfg)?, all_authors, limit)?;
         }
         None => {
             if let Some(msg) = cli.after {
@@ -386,6 +398,152 @@ fn list_topics(db: &Db) -> Result<()> {
         "Stab = days until recall hits 90%  ·  Diff = topic difficulty for you (0=easy, 1=hard)  ·  Reviews = times quizzed".dimmed()
     );
     println!();
+    Ok(())
+}
+
+fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usize>) -> Result<()> {
+    use std::process::Command;
+
+    print_header();
+
+    // Resolve author filter
+    let author_email = if all_authors {
+        None
+    } else {
+        let out = Command::new("git").args(["config", "user.email"]).output()?;
+        let email = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if email.is_empty() {
+            eprintln!("  {} Could not read git user.email — use --all-authors to skip filtering.", "!".yellow());
+            return Ok(());
+        }
+        Some(email)
+    };
+
+    // Get commit SHAs (oldest first so PKG builds chronologically)
+    let mut log_args = vec!["log", "--pretty=format:%H", "--reverse"];
+    let author_arg;
+    if let Some(ref email) = author_email {
+        author_arg = format!("--author={email}");
+        log_args.push(&author_arg);
+    }
+    let log_out = Command::new("git").args(&log_args).output()
+        .context("Failed to run git log — are you in a git repository?")?;
+    let all_shas: Vec<String> = String::from_utf8_lossy(&log_out.stdout)
+        .lines()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if all_shas.is_empty() {
+        let scope = author_email.as_deref().unwrap_or("all authors");
+        println!("  No commits found for {scope}.");
+        return Ok(());
+    }
+
+    let shas: Vec<String> = match limit {
+        Some(n) => all_shas.into_iter().rev().take(n).collect::<Vec<_>>().into_iter().rev().collect(),
+        None => all_shas,
+    };
+
+    let scope_desc = match (&author_email, limit) {
+        (Some(e), Some(n)) => format!("last {n} commits by {e}"),
+        (Some(e), None) => format!("all commits by {e}"),
+        (None, Some(n)) => format!("last {n} commits"),
+        (None, None) => "all commits".to_string(),
+    };
+
+    println!("\n  Scanning {scope_desc} ({} commits)…\n", shas.len());
+
+    let existing_ids: std::collections::HashSet<String> = db
+        .all_nodes()?
+        .into_iter()
+        .map(|n| Db::node_id_static(&n.topic))
+        .collect();
+
+    let mut added = 0usize;
+    let mut skipped = 0usize;
+    let mut _empty = 0usize;
+
+    for (i, sha) in shas.iter().enumerate() {
+        let short = &sha[..7];
+
+        // Commit message
+        let msg_out = Command::new("git")
+            .args(["log", "-1", "--pretty=%B", sha])
+            .output()?;
+        let commit_msg = String::from_utf8_lossy(&msg_out.stdout).trim().to_string();
+
+        // Diff for this commit (parent^..sha; handle root commit)
+        let diff_out = Command::new("git")
+            .args(["diff", &format!("{sha}^"), sha, "--"])
+            .output()?;
+        let diff = if diff_out.status.success() {
+            truncate_diff(&String::from_utf8_lossy(&diff_out.stdout))
+        } else {
+            // Root commit — show the tree as a diff
+            let show_out = Command::new("git")
+                .args(["show", "--format=", sha])
+                .output()?;
+            truncate_diff(&String::from_utf8_lossy(&show_out.stdout))
+        };
+
+        if diff.trim().is_empty() {
+            _empty += 1;
+            continue;
+        }
+
+        print!("  [{}/{}] {short} {}", i + 1, shas.len(), commit_msg.lines().next().unwrap_or("").dimmed());
+
+        let topics = match teacher.extract_topics_from_diff(&commit_msg, &diff) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!(" — extract failed: {e}");
+                continue;
+            }
+        };
+
+        let new_topics: Vec<_> = topics
+            .iter()
+            .filter(|t| !existing_ids.contains(&Db::node_id_static(&t.topic)))
+            .collect();
+
+        if new_topics.is_empty() {
+            println!(" {}", "— no new topics".dimmed());
+            skipped += topics.len();
+            continue;
+        }
+
+        println!(" — {} new", new_topics.len());
+
+        for t in &new_topics {
+            // Score 0.5: seen but never tested — surfaces in quiz soon
+            db.add_or_update(
+                &t.topic,
+                0.5,
+                &Kind::from_str(&t.kind),
+                &t.domain,
+                &t.description,
+                &commit_msg.lines().next().unwrap_or(short).to_string(),
+                None,
+            )?;
+            println!("    {} {}", "+".green(), t.topic);
+            added += 1;
+        }
+        skipped += topics.len() - new_topics.len();
+    }
+
+    println!();
+    println!(
+        "  {} Added {} new topic{} · {} already in PKG",
+        "✓".green(),
+        added,
+        if added == 1 { "" } else { "s" },
+        skipped
+    );
+    if added > 0 {
+        println!("  {}", "Run  rocky quiz  to start reviewing them.".dimmed());
+    }
+
     Ok(())
 }
 

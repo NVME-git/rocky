@@ -144,6 +144,10 @@ impl Db {
         topic.to_lowercase().trim().replace(' ', "-")
     }
 
+    pub fn node_id_static(topic: &str) -> String {
+        topic.to_lowercase().trim().replace(' ', "-")
+    }
+
     fn today() -> String {
         Local::now().date_naive().to_string()
     }
