@@ -329,6 +329,23 @@ impl Db {
 
     // ── search / delete ───────────────────────────────────────────────────────
 
+    pub fn get_nodes_by_date(&self, since: Option<&str>, before: Option<&str>) -> Result<Vec<Node>> {
+        let conn = self.connect()?;
+        // Use sentinel values so we can always bind two params
+        let since_val  = since.unwrap_or("0000-00-00");
+        let before_val = before.unwrap_or("9999-99-99");
+        let mut stmt = conn.prepare(
+            "SELECT * FROM nodes WHERE kind != 'domain'
+             AND created_at >= ?1 AND created_at <= ?2
+             ORDER BY created_at DESC, topic",
+        )?;
+        let nodes: Vec<Node> = stmt
+            .query_map(params![since_val, before_val], |row| Self::row_to_node(&conn, row))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(nodes)
+    }
+
     pub fn search_nodes(&self, query: &str) -> Result<Vec<Node>> {
         let conn = self.connect()?;
         let pattern = format!("%{}%", query.to_lowercase());

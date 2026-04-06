@@ -81,7 +81,13 @@ enum Cmd {
     /// Search for and delete topics from your PKG
     Delete {
         /// Search query (substring match on topic name and description)
-        query: String,
+        query: Option<String>,
+        /// Delete topics added on or after this date (YYYY-MM-DD)
+        #[arg(long, value_name = "YYYY-MM-DD")]
+        since: Option<String>,
+        /// Delete topics added on or before this date (YYYY-MM-DD)
+        #[arg(long, value_name = "YYYY-MM-DD")]
+        before: Option<String>,
     },
     /// Export all PKG topics to your PKG directory (Obsidian-compatible markdown)
     Export,
@@ -242,7 +248,9 @@ fn run() -> Result<()> {
         }
         Some(Cmd::Stats) => show_stats(&db, &cfg, &p)?,
         Some(Cmd::List) => list_topics(&db)?,
-        Some(Cmd::Delete { query }) => delete_topics(&db, &cfg.pkg_dir, &query)?,
+        Some(Cmd::Delete { query, since, before }) => {
+            delete_topics(&db, &cfg.pkg_dir, query.as_deref(), since.as_deref(), before.as_deref())?;
+        }
         Some(Cmd::Export) => run_export(&db, &cfg)?,
         Some(Cmd::Logs) => run_logs()?,
         Some(Cmd::Diff { git_ref, staged }) => {
@@ -1521,15 +1529,53 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
     Ok(())
 }
 
-fn delete_topics(db: &Db, pkg_dir: &std::path::Path, query: &str) -> Result<()> {
-    let matches = db.search_nodes(query)?;
-
-    if matches.is_empty() {
-        println!("  {} No topics found matching \"{}\".", "✗".red(), query);
+fn delete_topics(
+    db: &Db,
+    pkg_dir: &std::path::Path,
+    query: Option<&str>,
+    since: Option<&str>,
+    before: Option<&str>,
+) -> Result<()> {
+    // Must have at least one filter
+    if query.is_none() && since.is_none() && before.is_none() {
+        println!("  {} Provide a search query, --since DATE, --before DATE, or a combination.", "✗".red());
         return Ok(());
     }
 
-    println!("\n  Matches for \"{}\":\n", query);
+    // Build candidate list
+    let mut matches: Vec<node::Node> = if since.is_some() || before.is_some() {
+        let mut nodes = db.get_nodes_by_date(since, before)?;
+        // Further filter by text query if also provided
+        if let Some(q) = query {
+            let q = q.to_lowercase();
+            nodes.retain(|n| n.topic.to_lowercase().contains(&q) || n.description.to_lowercase().contains(&q));
+        }
+        nodes
+    } else {
+        db.search_nodes(query.unwrap_or(""))?
+    };
+
+    // Never surface domain skeleton nodes
+    matches.retain(|n| !n.kind.is_domain());
+
+    if matches.is_empty() {
+        println!("  {} No topics found.", "✗".red());
+        return Ok(());
+    }
+
+    // Heading
+    let heading = match (query, since, before) {
+        (Some(q), None, None) => format!("Matches for \"{}\"", q),
+        (None, Some(s), None) => format!("Topics added since {s}"),
+        (None, None, Some(b)) => format!("Topics added before {b}"),
+        (None, Some(s), Some(b)) => format!("Topics added between {s} and {b}"),
+        (Some(q), Some(s), None) => format!("\"{}\" added since {s}", q),
+        (Some(q), None, Some(b)) => format!("\"{}\" added before {b}", q),
+        (Some(q), Some(s), Some(b)) => format!("\"{}\" added between {s} and {b}", q),
+        (None, None, None) => unreachable!(),
+    };
+    println!("\n  {}:\n", heading);
+
     for (i, node) in matches.iter().enumerate() {
         let r = fsrs::retrievability(node.stability, node.last_reviewed);
         let cls = fsrs::classify(r);
@@ -1542,7 +1588,7 @@ fn delete_topics(db: &Db, pkg_dir: &std::path::Path, query: &str) -> Result<()> 
             "  {}  {} {}",
             format!("[{}]", i + 1).bold(),
             color_fn(&node.topic),
-            format!("({:.0}% recall · {})", r * 100.0, node.kind.as_str()).dimmed(),
+            format!("({:.0}% recall · {} · added {})", r * 100.0, node.kind.as_str(), node.created_at).dimmed(),
         );
         if !node.description.is_empty() {
             println!("       {}", node.description.dimmed());
