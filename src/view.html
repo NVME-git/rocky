@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rocky — Knowledge Graph</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -41,31 +40,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                   padding: 8px 16px; display: flex; align-items: center;
                   gap: 12px; flex-shrink: 0; }
 
-#spark-thumb { cursor: pointer; flex-shrink: 0; position: relative;
-               border: 1px solid #1E293B; border-radius: 6px; padding: 4px 6px;
-               background: #111827; transition: border-color 0.15s;
-               display: flex; align-items: center; gap: 6px; }
-#spark-thumb:hover { border-color: #F59E0B; }
-#spark-thumb svg { display: block; }
-#spark-expand-icon { font-size: 10px; color: #64748B; user-select: none; }
-#spark-thumb:hover #spark-expand-icon { color: #F59E0B; }
-
 #scrubber-wrap { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; }
 #tl-scrubber { flex: 1; accent-color: #F59E0B; cursor: pointer; min-width: 0; }
 #tl-date-label { font-size: 12px; color: #F59E0B; font-weight: 600;
                  white-space: nowrap; min-width: 130px; text-align: right; }
 #tl-count-label { font-size: 11px; color: #64748B; white-space: nowrap; }
-
-/* ── expandable chart panel ── */
-#chart-panel { background: #070B14; border-bottom: 1px solid #1E293B;
-               overflow: hidden; flex-shrink: 0;
-               max-height: 0; transition: max-height 0.3s ease, padding 0.3s ease;
-               padding: 0 24px; }
-#chart-panel.open { max-height: 260px; padding: 16px 24px; }
-#chart-panel-inner { height: 220px; position: relative; }
-#chart-close { position: absolute; top: 0; right: 0; background: none; border: none;
-               color: #64748B; font-size: 16px; cursor: pointer; line-height: 1; }
-#chart-close:hover { color: #F1F5F9; }
 
 /* ── main ── */
 #main { display: flex; flex: 1; overflow: hidden; }
@@ -139,23 +118,11 @@ svg#graph { width: 100%; height: 100%; }
 
 <!-- always-visible scrubber strip -->
 <div id="timeline-strip">
-  <div id="spark-thumb" title="Expand weekly chart" onclick="toggleChart()">
-    <svg id="spark-svg" width="80" height="28"></svg>
-    <span id="spark-expand-icon">▲</span>
-  </div>
   <div id="scrubber-wrap">
     <input id="tl-scrubber" type="range" min="0" max="100" value="100">
     <span id="tl-date-label">all time</span>
   </div>
   <span id="tl-count-label"></span>
-</div>
-
-<!-- expandable full chart -->
-<div id="chart-panel">
-  <div id="chart-panel-inner">
-    <button id="chart-close" onclick="toggleChart()">✕</button>
-    <canvas id="tl-chart"></canvas>
-  </div>
 </div>
 
 <div id="main">
@@ -376,22 +343,6 @@ function closePanel() {
 document.getElementById('panel-close').onclick = closePanel;
 
 // ── timeline / scrubber ─────────────────────────────────────────────────────
-// Build week buckets
-const weekMap = {};
-nodes.forEach(n => {
-  const d = new Date(n.created_at);
-  const day = d.getDay();
-  const monday = new Date(d);
-  monday.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
-  const key = monday.toISOString().slice(0, 10);
-  weekMap[key] = (weekMap[key] || 0) + 1;
-});
-const sortedWeeks = Object.keys(weekMap).sort();
-let cumulative = 0;
-const weekBuckets = sortedWeeks.map(w => {
-  cumulative += weekMap[w];
-  return { label: w, count: weekMap[w], cumulative };
-});
 // Scrubber positions: one per node sorted by created_at, plus sentinel for "all"
 const sortedDates = [...new Set(nodes.map(n => n.created_at))].sort();
 sortedDates.push('9999-99-99');
@@ -411,104 +362,8 @@ function onScrub() {
   const count = isAll ? nodes.length : nodes.filter(n => n.created_at <= cutoff).length;
   document.getElementById('tl-date-label').textContent = isAll ? 'all time' : cutoff;
   document.getElementById('tl-count-label').textContent = `${count} / ${nodes.length} topics`;
-
-  // Sync chart highlight
-  if (tlChart && weekBuckets.length > 0) {
-    const barIdx = isAll
-      ? weekBuckets.length - 1
-      : weekBuckets.findLastIndex(b => b.label <= (cutoff || ''));
-    tlChart.data.datasets[0].backgroundColor = weekBuckets.map((_, i) =>
-      i <= (isAll ? weekBuckets.length - 1 : barIdx) ? '#F59E0B' : 'rgba(245,158,11,0.2)'
-    );
-    tlChart.update('none');
-  }
 }
 onScrub(); // initialise labels
-
-// ── spark thumbnail ─────────────────────────────────────────────────────────
-(function buildSpark() {
-  if (weekBuckets.length === 0) return;
-  const W = 80, H = 28, pad = 1;
-  const maxCount = Math.max(...weekBuckets.map(b => b.count));
-  const barW = (W - pad * (weekBuckets.length + 1)) / weekBuckets.length;
-  const sparkSvg = document.getElementById('spark-svg');
-  sparkSvg.setAttribute('width', W);
-  weekBuckets.forEach((b, i) => {
-    const bh = Math.max(2, (b.count / maxCount) * (H - 4));
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', pad + i * (barW + pad));
-    rect.setAttribute('y', H - bh);
-    rect.setAttribute('width', Math.max(1, barW));
-    rect.setAttribute('height', bh);
-    rect.setAttribute('fill', '#F59E0B');
-    rect.setAttribute('rx', '1');
-    sparkSvg.appendChild(rect);
-  });
-})();
-
-// ── full chart ──────────────────────────────────────────────────────────────
-let tlChart = null;
-let chartOpen = false;
-
-function toggleChart() {
-  chartOpen = !chartOpen;
-  document.getElementById('chart-panel').classList.toggle('open', chartOpen);
-  document.getElementById('spark-expand-icon').textContent = chartOpen ? '▼' : '▲';
-  if (chartOpen && !tlChart) buildFullChart();
-}
-
-function buildFullChart() {
-  const ctx = document.getElementById('tl-chart').getContext('2d');
-  tlChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: weekBuckets.map(b => b.label),
-      datasets: [
-        {
-          label: 'Added',
-          data: weekBuckets.map(b => b.count),
-          backgroundColor: weekBuckets.map(() => '#F59E0B'),
-          borderColor: '#D97706',
-          borderWidth: 1,
-          borderRadius: 3,
-          order: 1,
-        },
-        {
-          label: 'Total',
-          data: weekBuckets.map(b => b.cumulative),
-          type: 'line',
-          borderColor: '#06B6D4',
-          backgroundColor: 'rgba(6,182,212,0.08)',
-          borderWidth: 2,
-          pointRadius: 2,
-          pointBackgroundColor: '#06B6D4',
-          fill: true,
-          tension: 0.3,
-          order: 0,
-          yAxisID: 'y2',
-        }
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { labels: { color: '#94A3B8', font: { size: 11 }, boxWidth: 12 } },
-        tooltip: { backgroundColor: '#111827', borderColor: '#1E293B', borderWidth: 1,
-                   titleColor: '#F1F5F9', bodyColor: '#94A3B8' }
-      },
-      scales: {
-        x: { ticks: { color: '#64748B', font: { size: 10 }, maxRotation: 45 }, grid: { color: '#1E293B' } },
-        y: { ticks: { color: '#64748B', font: { size: 10 } }, grid: { color: '#1E293B' },
-             title: { display: true, text: 'Added', color: '#64748B', font: { size: 10 } } },
-        y2: { position: 'right', ticks: { color: '#06B6D4', font: { size: 10 } }, grid: { display: false },
-              title: { display: true, text: 'Total', color: '#06B6D4', font: { size: 10 } } }
-      }
-    }
-  });
-  // Apply current scrubber state to chart
-  onScrub();
-}
 </script>
 </body>
 </html>

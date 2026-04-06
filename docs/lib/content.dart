@@ -133,6 +133,9 @@ Questions end with ", question?" — Rocky's way of asking. Set `personality = f
 | **Retrievability** | Rocky's estimate of how likely you are to remember something right now |
 | **Stability** | How deeply embedded the topic is — higher stability means slower decay |
 | **Domain** | One of 13 taxonomy categories (Language, Auth, Database, DevOps, etc.) |
+| **Edge** | A relationship between two topics in the PKG — generated automatically by Rocky after new topics are added |
+| **Edge kind** | The type of relationship: `implies`, `depends_on`, `conflicts_with`, or `part_of` |
+| **Cross-concept question** | A question that bridges two related topics — asked when Rocky detects a relevant edge and both topics have strong recall |
 ''';
 
 const kInstallation = r'''
@@ -545,6 +548,8 @@ rocky stats
 
   Quiz budget: 2/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
 
+  Edges: 18 total  ·  Most connected: JWT authentication (4 edges)
+
   ♫ Good progress, friend. Keep science going.
 ```
 
@@ -729,14 +734,15 @@ rocky edges --stats
 ```
   ◈ Edge Stats
 
-  Total edges:         12
-  Most connected:      JWT authentication
+  Total edges:           12
+  Avg strength:          0.78
+  Most connected:        JWT authentication (5 edges)
 
-  By kind:
-    implies              7
-    depends_on           3
-    conflicts_with       1
-    part_of              1
+  By kind:               count    avg str
+    implies              7        0.82
+    depends_on           3        0.74
+    conflicts_with       1        0.60
+    part_of              1        0.80
 ```
 
 Edge kinds: `implies`, `depends_on`, `conflicts_with`, `part_of`.
@@ -745,7 +751,7 @@ Edge kinds: `implies`, `depends_on`, `conflicts_with`, `part_of`.
 
 ## `rocky view`
 
-Open an interactive knowledge graph in your default browser. Nodes are colored by knowledge state (known/fading/gap) and grouped by domain.
+Open an interactive knowledge graph in your default browser. Nodes are colored by knowledge state (known/fading/gap) and sized by stability.
 
 ```bash
 rocky view
@@ -753,7 +759,11 @@ rocky view
 # → Opening in browser...
 ```
 
-Rocky writes the graph to `~/.rocky/view.html` and opens it automatically. The graph uses a D3.js force simulation — you can drag nodes, zoom in, filter by domain, and search for topics by name. Click any node to see its connected edges and a detail panel.
+Rocky writes the graph to `~/.rocky/view.html` and opens it automatically.
+
+**Graph** — D3.js force simulation. Drag nodes, zoom in/out, filter by domain, search topics by name. Click any node to open a detail panel showing retrievability, stability, review history, and all connected edges.
+
+**Timeline scrubber** — a range slider below the controls lets you rewind your knowledge graph to any point in time. As you scrub backward, nodes dim and disappear (topics you hadn't learned yet). Scrub forward to watch them light up — your personal growth, visualised. The current node count and date are shown next to the scrubber.
 
 ---
 
@@ -791,6 +801,9 @@ pkg_dir = "~/Documents/Obsidian/MyVault/rocky"
 
 [ui]
 personality = true           # Rocky's voice and ASCII art (default: true)
+
+[edges]
+reuse = "off"                # "off" = always reuse, "14d" = 14-day cooldown, "5s" = 5-session cooldown
 
 [sync]
 enabled = false              # opt-in — enable PKG version control
@@ -911,6 +924,31 @@ rocky restore
 
 ---
 
+## Edges settings
+
+Rocky automatically infers relationships between topics in your PKG and uses them to ask cross-concept questions. The `reuse` setting controls how often the same edge can be used as a question source.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `reuse` | `"off"` | How soon the same edge can trigger a cross-concept question again |
+
+**Values:**
+
+| Value | Behaviour |
+|---|---|
+| `"off"` | Always use an edge if it's the best fit |
+| `"14d"` | Don't reuse the same edge within 14 calendar days |
+| `"5s"` | Don't reuse the same edge within 5 quiz sessions |
+
+```toml
+[edges]
+reuse = "14d"
+```
+
+Use a days-based cooldown if you want variety. Use `"off"` (default) to always surface the most relevant relationship regardless of recency.
+
+---
+
 ## Claude Code hook
 
 To make Rocky log your AI prompts automatically:
@@ -960,14 +998,15 @@ You describe what you're about to work on. Rocky extracts the topics, checks you
 3. For each topic, classify against PKG:
    - **Known** (≥90% recall) → Mark encountered, move on
    - **Stale** (70–90%) → Write 2–3 sentence reminder, update PKG with small score bump
-   - **New / Gap** (<70%) → Generate Socratic question about implications and trade-offs
+   - **New / Gap** (<70%) → Check for implication edges to other well-known topics; if a relevant edge exists, generate a cross-concept question linking the two topics; otherwise, generate a standard Socratic question
 4. User answers:
    - **Understood** → Record in PKG with high confidence
    - **Not understood** → Give senior-engineer explanation, ask one follow-up, record partial confidence
    - **Too easy** (`k`) → Record as known — no Q&A needed
    - **Skip** (Enter) → Queue topic in `.rocky`, not added to PKG yet
    - **Ignore** (`i`) → Dismiss topic entirely, not added to PKG
-5. Summary printed — done
+5. After all Q&A: Rocky sends new topics to the LLM to infer relationships with existing PKG topics — edges are added silently in the background
+6. Summary printed — done
 
 ---
 
