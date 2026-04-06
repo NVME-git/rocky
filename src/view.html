@@ -23,16 +23,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 .stat-fading span { color: #EF9F27; }
 .stat-gap span { color: #E24B4A; }
 
-/* ── tab bar ── */
-#tabbar { display: flex; gap: 4px; align-items: center; }
-.tab { background: none; border: none; color: #64748B; font-size: 13px; font-weight: 500;
-       padding: 4px 14px; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
-.tab:hover { color: #CBD5E1; background: #111827; }
-.tab.active { color: #F59E0B; background: rgba(245,158,11,0.12); }
-#tab-divider { width: 1px; height: 18px; background: #1E293B; margin: 0 4px; }
-
-/* ── graph controls ── */
-#graph-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #search { background: #111827; border: 1px solid #1E293B; border-radius: 6px;
           color: #F1F5F9; padding: 4px 10px; font-size: 12px; width: 180px; outline: none; }
 #search:focus { border-color: #F59E0B; }
@@ -45,11 +36,39 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 .domain-btn.all-btn { border-color: #334155; color: #CBD5E1; }
 .domain-btn.all-btn.active { background: rgba(203,213,225,0.1); border-color: #CBD5E1; color: #CBD5E1; }
 
-/* ── views ── */
-#main { display: flex; flex: 1; overflow: hidden; }
+/* ── timeline strip ── */
+#timeline-strip { background: #070B14; border-bottom: 1px solid #1E293B;
+                  padding: 8px 16px; display: flex; align-items: center;
+                  gap: 12px; flex-shrink: 0; }
 
-/* graph view */
-#graph-view { display: flex; flex: 1; overflow: hidden; }
+#spark-thumb { cursor: pointer; flex-shrink: 0; position: relative;
+               border: 1px solid #1E293B; border-radius: 6px; padding: 4px 6px;
+               background: #111827; transition: border-color 0.15s;
+               display: flex; align-items: center; gap: 6px; }
+#spark-thumb:hover { border-color: #F59E0B; }
+#spark-thumb svg { display: block; }
+#spark-expand-icon { font-size: 10px; color: #64748B; user-select: none; }
+#spark-thumb:hover #spark-expand-icon { color: #F59E0B; }
+
+#scrubber-wrap { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; }
+#tl-scrubber { flex: 1; accent-color: #F59E0B; cursor: pointer; min-width: 0; }
+#tl-date-label { font-size: 12px; color: #F59E0B; font-weight: 600;
+                 white-space: nowrap; min-width: 130px; text-align: right; }
+#tl-count-label { font-size: 11px; color: #64748B; white-space: nowrap; }
+
+/* ── expandable chart panel ── */
+#chart-panel { background: #070B14; border-bottom: 1px solid #1E293B;
+               overflow: hidden; flex-shrink: 0;
+               max-height: 0; transition: max-height 0.3s ease, padding 0.3s ease;
+               padding: 0 24px; }
+#chart-panel.open { max-height: 260px; padding: 16px 24px; }
+#chart-panel-inner { height: 220px; position: relative; }
+#chart-close { position: absolute; top: 0; right: 0; background: none; border: none;
+               color: #64748B; font-size: 16px; cursor: pointer; line-height: 1; }
+#chart-close:hover { color: #F1F5F9; }
+
+/* ── main ── */
+#main { display: flex; flex: 1; overflow: hidden; }
 #graph-container { flex: 1; position: relative; overflow: hidden; }
 svg#graph { width: 100%; height: 100%; }
 
@@ -82,44 +101,28 @@ svg#graph { width: 100%; height: 100%; }
 .edge-kind.part_of        { background: rgba(29,158,117,0.15); color: #1D9E75; }
 .edge-peer { color: #CBD5E1; }
 
-/* ── graph decorations ── */
-.link { stroke-opacity: 0.6; }
-.node circle { cursor: pointer; transition: r 0.15s; }
+/* ── graph elements ── */
+.link { stroke-opacity: 0.6; transition: stroke-opacity 0.25s; }
+.link.dimmed { stroke-opacity: 0.04; }
+.node circle { cursor: pointer; }
+.node circle { transition: opacity 0.35s; }
+.node text   { transition: opacity 0.35s; }
 .node circle:hover { stroke: #F59E0B !important; stroke-width: 2px; }
 .node.selected circle { stroke: #F59E0B !important; stroke-width: 2.5px; }
-.node.dimmed circle { opacity: 0.12; }
-.node.dimmed text { opacity: 0.08; }
+.node.dimmed circle { opacity: 0.08; }
+.node.dimmed text { opacity: 0.05; }
 .node.highlighted circle { stroke: #F59E0B; stroke-width: 2px; }
 .node text { pointer-events: none; font-size: 11px; fill: #CBD5E1; text-anchor: middle; }
-.link.dimmed { stroke-opacity: 0.04; }
 
 .legend { position: absolute; bottom: 16px; left: 16px; background: rgba(7,11,20,0.85);
           border: 1px solid #1E293B; border-radius: 6px; padding: 10px 14px; }
 .legend-title { font-size: 10px; color: #64748B; margin-bottom: 6px; text-transform: uppercase; }
 .legend-row { display: flex; align-items: center; gap: 8px; font-size: 11px;
               color: #94A3B8; margin-bottom: 4px; }
-
-/* ── timeline view ── */
-#timeline-view { display: none; flex: 1; flex-direction: column; padding: 32px 40px 0;
-                 overflow: hidden; }
-#timeline-view.active { display: flex; }
-
-#tl-header { margin-bottom: 24px; }
-#tl-header h2 { font-size: 18px; font-weight: 700; color: #F1F5F9; margin-bottom: 4px; }
-#tl-header p { font-size: 13px; color: #64748B; }
-
-#tl-chart-wrap { flex: 1; min-height: 0; margin-bottom: 0; }
-#tl-chart-wrap canvas { max-height: 100%; }
-
-#tl-scrubber-section { padding: 20px 0 24px; flex-shrink: 0; }
-#tl-scrubber-label { font-size: 12px; color: #64748B; margin-bottom: 10px;
-                     display: flex; justify-content: space-between; }
-#tl-scrubber-label span { color: #F59E0B; font-weight: 600; }
-#tl-scrubber { width: 100%; accent-color: #F59E0B; cursor: pointer; height: 4px; }
-#tl-caption { font-size: 12px; color: #94A3B8; margin-top: 8px; text-align: center; }
 </style>
 </head>
 <body>
+
 <div id="topbar">
   <div id="stats-row">
     <div class="stat">Nodes: <span id="s-total"></span></div>
@@ -128,76 +131,67 @@ svg#graph { width: 100%; height: 100%; }
     <div class="stat stat-gap">Gap: <span id="s-gap"></span></div>
     <div class="stat">Edges: <span id="s-edges"></span></div>
   </div>
-  <div id="tabbar">
-    <button class="tab active" id="tab-graph" onclick="switchTab('graph')">Graph</button>
-    <button class="tab" id="tab-timeline" onclick="switchTab('timeline')">Timeline</button>
-    <div id="tab-divider"></div>
-    <div id="graph-controls">
-      <input id="search" type="text" placeholder="Search topics…">
-      <div id="domain-filters"></div>
-    </div>
+  <div id="controls">
+    <input id="search" type="text" placeholder="Search topics…">
+    <div id="domain-filters"></div>
+  </div>
+</div>
+
+<!-- always-visible scrubber strip -->
+<div id="timeline-strip">
+  <div id="spark-thumb" title="Expand weekly chart" onclick="toggleChart()">
+    <svg id="spark-svg" width="80" height="28"></svg>
+    <span id="spark-expand-icon">▲</span>
+  </div>
+  <div id="scrubber-wrap">
+    <input id="tl-scrubber" type="range" min="0" max="100" value="100">
+    <span id="tl-date-label">all time</span>
+  </div>
+  <span id="tl-count-label"></span>
+</div>
+
+<!-- expandable full chart -->
+<div id="chart-panel">
+  <div id="chart-panel-inner">
+    <button id="chart-close" onclick="toggleChart()">✕</button>
+    <canvas id="tl-chart"></canvas>
   </div>
 </div>
 
 <div id="main">
-  <!-- ── graph view ── -->
-  <div id="graph-view">
-    <div id="graph-container">
-      <svg id="graph"></svg>
-      <div class="legend">
-        <div class="legend-title">Edge types</div>
-        <div class="legend-row">
-          <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#06B6D4" stroke-width="1.5"/></svg>
-          implies
-        </div>
-        <div class="legend-row">
-          <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="6,3"/></svg>
-          depends on
-        </div>
-        <div class="legend-row">
-          <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="2,4"/></svg>
-          part of
-        </div>
-        <div class="legend-row">
-          <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#E24B4A" stroke-width="1.5" stroke-dasharray="2,2"/></svg>
-          conflicts
-        </div>
+  <div id="graph-container">
+    <svg id="graph"></svg>
+    <div class="legend">
+      <div class="legend-title">Edge types</div>
+      <div class="legend-row">
+        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#06B6D4" stroke-width="1.5"/></svg>implies
       </div>
-    </div>
-    <div id="panel">
-      <button id="panel-close">✕</button>
-      <div id="panel-inner">
-        <div class="panel-topic" id="p-topic"></div>
-        <div class="panel-domain" id="p-domain"></div>
-        <div class="panel-desc" id="p-desc"></div>
-        <div class="panel-row"><span class="panel-label">Retrievability</span><span class="panel-value" id="p-recall"></span></div>
-        <div class="panel-row"><span class="panel-label">Stability</span><span class="panel-value" id="p-stab"></span></div>
-        <div class="panel-row"><span class="panel-label">Last reviewed</span><span class="panel-value" id="p-reviewed"></span></div>
-        <div class="panel-row"><span class="panel-label">Reviews</span><span class="panel-value" id="p-count"></span></div>
-        <div class="panel-row"><span class="panel-label">Kind</span><span class="panel-value" id="p-kind"></span></div>
-        <div class="panel-section">
-          <div class="panel-section-title">Edges</div>
-          <div id="p-edges"></div>
-        </div>
+      <div class="legend-row">
+        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="6,3"/></svg>depends on
+      </div>
+      <div class="legend-row">
+        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="2,4"/></svg>part of
+      </div>
+      <div class="legend-row">
+        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#E24B4A" stroke-width="1.5" stroke-dasharray="2,2"/></svg>conflicts
       </div>
     </div>
   </div>
-
-  <!-- ── timeline view ── -->
-  <div id="timeline-view">
-    <div id="tl-header">
-      <h2>Knowledge Growth Timeline</h2>
-      <p>Topics added to your PKG week by week. Drag the scrubber to watch your graph grow.</p>
-    </div>
-    <div id="tl-chart-wrap">
-      <canvas id="tl-chart"></canvas>
-    </div>
-    <div id="tl-scrubber-section">
-      <div id="tl-scrubber-label">
-        Showing graph as of: <span id="tl-date-label">today</span>
+  <div id="panel">
+    <button id="panel-close">✕</button>
+    <div id="panel-inner">
+      <div class="panel-topic" id="p-topic"></div>
+      <div class="panel-domain" id="p-domain"></div>
+      <div class="panel-desc" id="p-desc"></div>
+      <div class="panel-row"><span class="panel-label">Retrievability</span><span class="panel-value" id="p-recall"></span></div>
+      <div class="panel-row"><span class="panel-label">Stability</span><span class="panel-value" id="p-stab"></span></div>
+      <div class="panel-row"><span class="panel-label">Last reviewed</span><span class="panel-value" id="p-reviewed"></span></div>
+      <div class="panel-row"><span class="panel-label">Reviews</span><span class="panel-value" id="p-count"></span></div>
+      <div class="panel-row"><span class="panel-label">Kind</span><span class="panel-value" id="p-kind"></span></div>
+      <div class="panel-section">
+        <div class="panel-section-title">Edges</div>
+        <div id="p-edges"></div>
       </div>
-      <input id="tl-scrubber" type="range" min="0" max="100" value="100">
-      <div id="tl-caption"></div>
     </div>
   </div>
 </div>
@@ -207,19 +201,12 @@ const PKG = __DATA_JSON__;
 
 // ── colour helpers ──────────────────────────────────────────────────────────
 function nodeColor(r) {
-  if (r >= 0.7) {
-    const t = (r - 0.7) / 0.3;
-    return d3.interpolateRgb('#EF9F27', '#1D9E75')(t);
-  } else {
-    const t = r / 0.7;
-    return d3.interpolateRgb('#E24B4A', '#EF9F27')(t);
-  }
+  if (r >= 0.7) return d3.interpolateRgb('#EF9F27', '#1D9E75')((r - 0.7) / 0.3);
+  return d3.interpolateRgb('#E24B4A', '#EF9F27')(r / 0.7);
 }
-function nodeRadius(stability) {
-  return Math.max(6, Math.min(22, 6 + stability * 1.2));
-}
+function nodeRadius(s) { return Math.max(6, Math.min(22, 6 + s * 1.2)); }
 
-// ── stats bar ───────────────────────────────────────────────────────────────
+// ── stats ───────────────────────────────────────────────────────────────────
 const nodes = PKG.nodes;
 const edges = PKG.edges;
 document.getElementById('s-total').textContent = nodes.length;
@@ -228,22 +215,10 @@ document.getElementById('s-fading').textContent = nodes.filter(n => n.classifica
 document.getElementById('s-gap').textContent = nodes.filter(n => n.classification === 'gap').length;
 document.getElementById('s-edges').textContent = edges.length;
 
-// ── tab switching ───────────────────────────────────────────────────────────
-function switchTab(tab) {
-  document.getElementById('tab-graph').classList.toggle('active', tab === 'graph');
-  document.getElementById('tab-timeline').classList.toggle('active', tab === 'timeline');
-  document.getElementById('graph-view').style.display = tab === 'graph' ? 'flex' : 'none';
-  document.getElementById('timeline-view').classList.toggle('active', tab === 'timeline');
-  document.getElementById('graph-controls').style.display = tab === 'graph' ? 'flex' : 'none';
-  if (tab === 'timeline') initTimeline();
-}
-switchTab('graph'); // start on graph tab
-
 // ── domain filter ───────────────────────────────────────────────────────────
 const domains = [...new Set(nodes.map(n => n.domain || 'Other'))].sort();
 let activeDomains = new Set(domains);
-// Time scrubber cutoff — null means no restriction (show all)
-let scrubberCutoff = null;
+let scrubberCutoff = null; // null = show all
 
 const filterEl = document.getElementById('domain-filters');
 const allBtn = document.createElement('button');
@@ -286,14 +261,12 @@ function applyFilters() {
   );
   nodeGroup.selectAll('.node').each(function(d) {
     const show = visible.has(d.id);
-    d3.select(this)
-      .classed('dimmed', !show)
-      .classed('highlighted', show && !!searchTerm);
+    d3.select(this).classed('dimmed', !show).classed('highlighted', show && !!searchTerm);
   });
   linkGroup.selectAll('.link').classed('dimmed', d => {
-    const src = typeof d.source === 'object' ? d.source.id : d.source;
-    const tgt = typeof d.target === 'object' ? d.target.id : d.target;
-    return !visible.has(src) || !visible.has(tgt);
+    const s = typeof d.source === 'object' ? d.source.id : d.source;
+    const t = typeof d.target === 'object' ? d.target.id : d.target;
+    return !visible.has(s) || !visible.has(t);
   });
 }
 
@@ -308,11 +281,11 @@ svg.call(d3.zoom().scaleExtent([0.2, 4]).on('zoom', e => g.attr('transform', e.t
 
 const defs = svg.append('defs');
 const arrowColors = { implies: '#06B6D4', depends_on: '#F59E0B', conflicts_with: '#E24B4A', part_of: '#1D9E75' };
-['implies','depends_on','conflicts_with','part_of'].forEach(kind => {
-  defs.append('marker').attr('id', 'arrow-' + kind)
+['implies','depends_on','conflicts_with','part_of'].forEach(k => {
+  defs.append('marker').attr('id', 'arrow-' + k)
     .attr('viewBox', '0 -5 10 10').attr('refX', 20).attr('refY', 0)
     .attr('markerWidth', 6).attr('markerHeight', 6).attr('orient', 'auto')
-    .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', arrowColors[kind]);
+    .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', arrowColors[k]);
 });
 
 const linkGroup = g.append('g');
@@ -326,8 +299,7 @@ const edgeStyle = {
 };
 
 const link = linkGroup.selectAll('.link')
-  .data(edges).enter().append('line')
-  .attr('class', 'link')
+  .data(edges).enter().append('line').attr('class', 'link')
   .attr('stroke', d => (edgeStyle[d.kind] || edgeStyle.implies).color)
   .attr('stroke-width', d => Math.max(1, d.strength * 2.5))
   .attr('stroke-dasharray', d => (edgeStyle[d.kind] || edgeStyle.implies).dash)
@@ -357,9 +329,8 @@ node.append('text')
   .text(d => d.topic.length > 22 ? d.topic.slice(0, 20) + '…' : d.topic);
 
 simulation.on('tick', () => {
-  link
-    .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-    .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
   node.attr('transform', d => `translate(${d.x},${d.y})`);
 });
 
@@ -369,19 +340,17 @@ window.addEventListener('resize', () => {
 });
 
 // ── side panel ──────────────────────────────────────────────────────────────
-let selectedId = null;
 const edgeIndex = {};
 nodes.forEach(n => { edgeIndex[n.id] = []; });
 edges.forEach(e => {
-  const src = typeof e.source === 'object' ? e.source.id : e.source;
-  const tgt = typeof e.target === 'object' ? e.target.id : e.target;
-  if (edgeIndex[src]) edgeIndex[src].push({ ...e, peer: tgt });
-  if (edgeIndex[tgt]) edgeIndex[tgt].push({ ...e, peer: src });
+  const s = typeof e.source === 'object' ? e.source.id : e.source;
+  const t = typeof e.target === 'object' ? e.target.id : e.target;
+  if (edgeIndex[s]) edgeIndex[s].push({ ...e, peer: t });
+  if (edgeIndex[t]) edgeIndex[t].push({ ...e, peer: s });
 });
 const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
 
 function selectNode(d) {
-  selectedId = d.id;
   node.classed('selected', n => n.id === d.id);
   document.getElementById('p-topic').textContent = d.topic;
   document.getElementById('p-domain').textContent = d.domain || 'Other';
@@ -391,67 +360,104 @@ function selectNode(d) {
   document.getElementById('p-reviewed').textContent = d.last_reviewed;
   document.getElementById('p-count').textContent = d.review_count;
   document.getElementById('p-kind').textContent = d.kind;
-
-  const edgesEl = document.getElementById('p-edges');
   const nodeEdges = edgeIndex[d.id] || [];
-  if (nodeEdges.length === 0) {
-    edgesEl.innerHTML = '<div style="color:#64748B;font-size:12px">No edges yet</div>';
-  } else {
-    edgesEl.innerHTML = nodeEdges.map(e => {
-      const peer = nodeById[e.peer];
-      const label = peer ? peer.topic : e.peer;
-      return `<div class="edge-item"><span class="edge-kind ${e.kind}">${e.kind.replace(/_/g,' ')}</span><span class="edge-peer">${label}</span></div>`;
-    }).join('');
-  }
+  document.getElementById('p-edges').innerHTML = nodeEdges.length === 0
+    ? '<div style="color:#64748B;font-size:12px">No edges yet</div>'
+    : nodeEdges.map(e => {
+        const label = nodeById[e.peer] ? nodeById[e.peer].topic : e.peer;
+        return `<div class="edge-item"><span class="edge-kind ${e.kind}">${e.kind.replace(/_/g,' ')}</span><span class="edge-peer">${label}</span></div>`;
+      }).join('');
   document.getElementById('panel').classList.add('open');
 }
-
 function closePanel() {
   document.getElementById('panel').classList.remove('open');
   node.classed('selected', false);
-  selectedId = null;
 }
 document.getElementById('panel-close').onclick = closePanel;
 
-// ── timeline ────────────────────────────────────────────────────────────────
+// ── timeline / scrubber ─────────────────────────────────────────────────────
+// Build week buckets
+const weekMap = {};
+nodes.forEach(n => {
+  const d = new Date(n.created_at);
+  const day = d.getDay();
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  const key = monday.toISOString().slice(0, 10);
+  weekMap[key] = (weekMap[key] || 0) + 1;
+});
+const sortedWeeks = Object.keys(weekMap).sort();
+let cumulative = 0;
+const weekBuckets = sortedWeeks.map(w => {
+  cumulative += weekMap[w];
+  return { label: w, count: weekMap[w], cumulative };
+});
+// Scrubber positions: one per node sorted by created_at, plus sentinel for "all"
+const sortedDates = [...new Set(nodes.map(n => n.created_at))].sort();
+sortedDates.push('9999-99-99');
+const scrubber = document.getElementById('tl-scrubber');
+scrubber.max = sortedDates.length - 1;
+scrubber.value = sortedDates.length - 1;
+
+scrubber.addEventListener('input', onScrub);
+
+function onScrub() {
+  const idx = parseInt(scrubber.value);
+  const isAll = idx === sortedDates.length - 1;
+  const cutoff = isAll ? null : sortedDates[idx];
+  scrubberCutoff = cutoff;
+  applyFilters();
+
+  const count = isAll ? nodes.length : nodes.filter(n => n.created_at <= cutoff).length;
+  document.getElementById('tl-date-label').textContent = isAll ? 'all time' : cutoff;
+  document.getElementById('tl-count-label').textContent = `${count} / ${nodes.length} topics`;
+
+  // Sync chart highlight
+  if (tlChart && weekBuckets.length > 0) {
+    const barIdx = isAll
+      ? weekBuckets.length - 1
+      : weekBuckets.findLastIndex(b => b.label <= (cutoff || ''));
+    tlChart.data.datasets[0].backgroundColor = weekBuckets.map((_, i) =>
+      i <= (isAll ? weekBuckets.length - 1 : barIdx) ? '#F59E0B' : 'rgba(245,158,11,0.2)'
+    );
+    tlChart.update('none');
+  }
+}
+onScrub(); // initialise labels
+
+// ── spark thumbnail ─────────────────────────────────────────────────────────
+(function buildSpark() {
+  if (weekBuckets.length === 0) return;
+  const W = 80, H = 28, pad = 1;
+  const maxCount = Math.max(...weekBuckets.map(b => b.count));
+  const barW = (W - pad * (weekBuckets.length + 1)) / weekBuckets.length;
+  const sparkSvg = document.getElementById('spark-svg');
+  sparkSvg.setAttribute('width', W);
+  weekBuckets.forEach((b, i) => {
+    const bh = Math.max(2, (b.count / maxCount) * (H - 4));
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', pad + i * (barW + pad));
+    rect.setAttribute('y', H - bh);
+    rect.setAttribute('width', Math.max(1, barW));
+    rect.setAttribute('height', bh);
+    rect.setAttribute('fill', '#F59E0B');
+    rect.setAttribute('rx', '1');
+    sparkSvg.appendChild(rect);
+  });
+})();
+
+// ── full chart ──────────────────────────────────────────────────────────────
 let tlChart = null;
-let weekBuckets = [];   // [{label, date, count, cumulative}]
-let scrubberDates = []; // ISO date strings, one per scrubber step
+let chartOpen = false;
 
-function initTimeline() {
-  if (tlChart) return; // already built
+function toggleChart() {
+  chartOpen = !chartOpen;
+  document.getElementById('chart-panel').classList.toggle('open', chartOpen);
+  document.getElementById('spark-expand-icon').textContent = chartOpen ? '▼' : '▲';
+  if (chartOpen && !tlChart) buildFullChart();
+}
 
-  // Group nodes by ISO week (Monday-based)
-  const weekMap = {};
-  nodes.forEach(n => {
-    const d = new Date(n.created_at);
-    // Get Monday of the week
-    const day = d.getDay();
-    const diff = (day === 0 ? -6 : 1) - day;
-    const monday = new Date(d);
-    monday.setDate(d.getDate() + diff);
-    const key = monday.toISOString().slice(0, 10);
-    weekMap[key] = (weekMap[key] || 0) + 1;
-  });
-
-  const sortedWeeks = Object.keys(weekMap).sort();
-  if (sortedWeeks.length === 0) return;
-
-  let cumulative = 0;
-  weekBuckets = sortedWeeks.map(w => {
-    cumulative += weekMap[w];
-    return { label: w, date: w, count: weekMap[w], cumulative };
-  });
-
-  // Scrubber: one position per week + a "today" position at the end
-  scrubberDates = weekBuckets.map(b => b.date);
-  scrubberDates.push('9999-99-99'); // sentinel = show all
-
-  const scrubber = document.getElementById('tl-scrubber');
-  scrubber.max = scrubberDates.length - 1;
-  scrubber.value = scrubberDates.length - 1;
-
-  // Build Chart.js bar chart
+function buildFullChart() {
   const ctx = document.getElementById('tl-chart').getContext('2d');
   tlChart = new Chart(ctx, {
     type: 'bar',
@@ -459,10 +465,10 @@ function initTimeline() {
       labels: weekBuckets.map(b => b.label),
       datasets: [
         {
-          label: 'Topics added',
+          label: 'Added',
           data: weekBuckets.map(b => b.count),
-          backgroundColor: 'rgba(245,158,11,0.5)',
-          borderColor: '#F59E0B',
+          backgroundColor: weekBuckets.map(() => '#F59E0B'),
+          borderColor: '#D97706',
           borderWidth: 1,
           borderRadius: 3,
           order: 1,
@@ -474,7 +480,7 @@ function initTimeline() {
           borderColor: '#06B6D4',
           backgroundColor: 'rgba(6,182,212,0.08)',
           borderWidth: 2,
-          pointRadius: 3,
+          pointRadius: 2,
           pointBackgroundColor: '#06B6D4',
           fill: true,
           tension: 0.3,
@@ -484,77 +490,24 @@ function initTimeline() {
       ]
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
+      responsive: true, maintainAspectRatio: false, animation: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: {
-          labels: { color: '#94A3B8', font: { size: 12 } }
-        },
-        tooltip: {
-          backgroundColor: '#111827',
-          borderColor: '#1E293B',
-          borderWidth: 1,
-          titleColor: '#F1F5F9',
-          bodyColor: '#94A3B8',
-        }
+        legend: { labels: { color: '#94A3B8', font: { size: 11 }, boxWidth: 12 } },
+        tooltip: { backgroundColor: '#111827', borderColor: '#1E293B', borderWidth: 1,
+                   titleColor: '#F1F5F9', bodyColor: '#94A3B8' }
       },
       scales: {
-        x: {
-          ticks: { color: '#64748B', font: { size: 11 }, maxRotation: 45 },
-          grid: { color: '#1E293B' }
-        },
-        y: {
-          ticks: { color: '#64748B', font: { size: 11 } },
-          grid: { color: '#1E293B' },
-          title: { display: true, text: 'Added this week', color: '#64748B', font: { size: 11 } }
-        },
-        y2: {
-          position: 'right',
-          ticks: { color: '#06B6D4', font: { size: 11 } },
-          grid: { display: false },
-          title: { display: true, text: 'Cumulative total', color: '#06B6D4', font: { size: 11 } }
-        }
+        x: { ticks: { color: '#64748B', font: { size: 10 }, maxRotation: 45 }, grid: { color: '#1E293B' } },
+        y: { ticks: { color: '#64748B', font: { size: 10 } }, grid: { color: '#1E293B' },
+             title: { display: true, text: 'Added', color: '#64748B', font: { size: 10 } } },
+        y2: { position: 'right', ticks: { color: '#06B6D4', font: { size: 10 } }, grid: { display: false },
+              title: { display: true, text: 'Total', color: '#06B6D4', font: { size: 10 } } }
       }
     }
   });
-
-  // Scrubber interaction
-  scrubber.addEventListener('input', onScrub);
-  onScrub(); // set initial state
-}
-
-function onScrub() {
-  const scrubber = document.getElementById('tl-scrubber');
-  const idx = parseInt(scrubber.value);
-  const cutoffDate = scrubberDates[idx];
-  const isToday = idx === scrubberDates.length - 1;
-
-  // Update graph filter
-  scrubberCutoff = isToday ? null : cutoffDate;
-  applyFilters();
-
-  // Update label
-  const visibleCount = isToday
-    ? nodes.length
-    : nodes.filter(n => n.created_at <= cutoffDate).length;
-
-  document.getElementById('tl-date-label').textContent =
-    isToday ? `today (${nodes.length} topics)` : `${cutoffDate} (${visibleCount} topics)`;
-
-  document.getElementById('tl-caption').textContent =
-    isToday
-      ? 'Showing your full knowledge graph'
-      : `Graph shows ${visibleCount} topic${visibleCount !== 1 ? 's' : ''} that existed on ${cutoffDate}`;
-
-  // Highlight the active bar in the chart
-  if (!tlChart) return;
-  const barIdx = isToday ? weekBuckets.length - 1 : weekBuckets.findLastIndex(b => b.date <= cutoffDate);
-  tlChart.data.datasets[0].backgroundColor = weekBuckets.map((_, i) =>
-    i === barIdx ? '#F59E0B' : 'rgba(245,158,11,0.35)'
-  );
-  tlChart.update('none');
+  // Apply current scrubber state to chart
+  onScrub();
 }
 </script>
 </body>
