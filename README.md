@@ -231,6 +231,9 @@ At any question you can:
 | `rocky config` | Show active configuration |
 | `rocky delete "query"` | Remove topics from PKG |
 | `rocky logs` | Show recent Claude Code prompts |
+| `rocky edges` | List all edges in the implication graph |
+| `rocky edges --stats` | Edge stats summary (totals by kind) |
+| `rocky view` | Open interactive knowledge graph in the browser |
 | `rocky hook` | Internal: called by Claude Code hook |
 
 ### `rocky "task description"`
@@ -323,6 +326,29 @@ Rebuild `graph.db` from `pkg/pkg.json`. Use when setting up Rocky on a new machi
 ### `rocky delete "query"`
 
 Search and remove topics from your PKG. Rocky shows matches and asks for confirmation.
+
+### `rocky edges`
+
+List all edges in the implication graph — the relationships Rocky has inferred between topics. Each edge has a kind, a strength, and a short description.
+
+```bash
+rocky edges                 # list all edges
+rocky edges --stats         # summary: total count, most connected topic, breakdown by kind
+```
+
+Edge kinds: `implies`, `depends_on`, `conflicts_with`, `part_of`.
+
+### `rocky view`
+
+Open an interactive knowledge graph in your default browser. Nodes are colored by knowledge state (known/fading/gap) and grouped by domain. Click a node to see its edges and details.
+
+```bash
+rocky view
+# ✓ Written to ~/.rocky/view.html
+# → Opening in browser...
+```
+
+Rocky writes the graph to `~/.rocky/view.html` and opens it automatically. The graph uses D3.js force simulation — drag nodes, zoom in, filter by domain, and search for topics by name.
 
 ---
 

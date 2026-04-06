@@ -705,6 +705,58 @@ rocky logs
 
 ---
 
+## `rocky edges`
+
+List all edges in the implication graph — the relationships Rocky has inferred between topics in your PKG.
+
+```bash
+rocky edges
+```
+
+```
+  SOURCE                         TARGET                         KIND               STR   DESCRIPTION
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  JWT authentication             token expiry handling          implies            0.90  ...
+  Redis TTL expiry               cache invalidation             depends_on         0.75  ...
+  SQL indexes                    query optimisation             implies            0.85  ...
+```
+
+```bash
+# Edge stats summary
+rocky edges --stats
+```
+
+```
+  ◈ Edge Stats
+
+  Total edges:         12
+  Most connected:      JWT authentication
+
+  By kind:
+    implies              7
+    depends_on           3
+    conflicts_with       1
+    part_of              1
+```
+
+Edge kinds: `implies`, `depends_on`, `conflicts_with`, `part_of`.
+
+---
+
+## `rocky view`
+
+Open an interactive knowledge graph in your default browser. Nodes are colored by knowledge state (known/fading/gap) and grouped by domain.
+
+```bash
+rocky view
+# ✓ Written to ~/.rocky/view.html
+# → Opening in browser...
+```
+
+Rocky writes the graph to `~/.rocky/view.html` and opens it automatically. The graph uses a D3.js force simulation — you can drag nodes, zoom in, filter by domain, and search for topics by name. Click any node to see its connected edges and a detail panel.
+
+---
+
 ## `rocky hook`
 
 Called automatically by the Claude Code hook — logs the prompt to `./.rocky`. You don't run this manually.
