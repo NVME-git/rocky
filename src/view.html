@@ -167,23 +167,43 @@ svg#graph { width: 100%; height: 100%; }
 const PKG = __DATA_JSON__;
 
 // ── colour helpers ──────────────────────────────────────────────────────────
-function nodeColor(r) {
+function nodeColor(d) {
+  if (d.kind === 'user')   return '#F59E0B';
+  if (d.kind === 'domain') return '#1E293B';
+  const r = d.retrievability;
   if (r >= 0.7) return d3.interpolateRgb('#EF9F27', '#1D9E75')((r - 0.7) / 0.3);
   return d3.interpolateRgb('#E24B4A', '#EF9F27')(r / 0.7);
 }
-function nodeRadius(s) { return Math.max(6, Math.min(22, 6 + s * 1.2)); }
+function nodeRadius(d) {
+  if (d.kind === 'user')   return 28;
+  if (d.kind === 'domain') return 18;
+  return Math.max(6, Math.min(22, 6 + d.stability * 1.2));
+}
+function nodeStroke(d) {
+  if (d.kind === 'user')   return '#F59E0B';
+  if (d.kind === 'domain') return '#475569';
+  return '#0A0E1A';
+}
+function nodeStrokeWidth(d) {
+  return (d.kind === 'user' || d.kind === 'domain') ? 2 : 1.5;
+}
 
 // ── stats ───────────────────────────────────────────────────────────────────
 const nodes = PKG.nodes;
 const edges = PKG.edges;
-document.getElementById('s-total').textContent = nodes.length;
-document.getElementById('s-known').textContent = nodes.filter(n => n.classification === 'known').length;
-document.getElementById('s-fading').textContent = nodes.filter(n => n.classification === 'stale').length;
-document.getElementById('s-gap').textContent = nodes.filter(n => n.classification === 'gap').length;
-document.getElementById('s-edges').textContent = edges.length;
+const topicNodes = nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
+document.getElementById('s-total').textContent = topicNodes.length;
+document.getElementById('s-known').textContent = topicNodes.filter(n => n.classification === 'known').length;
+document.getElementById('s-fading').textContent = topicNodes.filter(n => n.classification === 'stale').length;
+document.getElementById('s-gap').textContent = topicNodes.filter(n => n.classification === 'gap').length;
+document.getElementById('s-edges').textContent = edges.filter(e => {
+  const s = nodes.find(n => n.id === (typeof e.source === 'object' ? e.source.id : e.source));
+  const t = nodes.find(n => n.id === (typeof e.target === 'object' ? e.target.id : e.target));
+  return s && t && s.kind !== 'domain' && s.kind !== 'user' && t.kind !== 'domain' && t.kind !== 'user';
+}).length;
 
 // ── domain filter ───────────────────────────────────────────────────────────
-const domains = [...new Set(nodes.map(n => n.domain || 'Other'))].sort();
+const domains = [...new Set(topicNodes.map(n => n.domain || 'Other'))].sort();
 let activeDomains = new Set(domains);
 let scrubberCutoff = null; // null = show all
 
@@ -192,9 +212,17 @@ const allBtn = document.createElement('button');
 allBtn.className = 'domain-btn all-btn active';
 allBtn.textContent = 'All';
 allBtn.onclick = () => {
-  activeDomains = new Set(domains);
-  document.querySelectorAll('.domain-btn:not(.all-btn)').forEach(b => b.classList.add('active'));
-  allBtn.classList.add('active');
+  const allActive = activeDomains.size === domains.length;
+  if (allActive) {
+    // Deselect all — user can then click individual domains
+    activeDomains = new Set();
+    document.querySelectorAll('.domain-btn:not(.all-btn)').forEach(b => b.classList.remove('active'));
+    allBtn.classList.remove('active');
+  } else {
+    activeDomains = new Set(domains);
+    document.querySelectorAll('.domain-btn:not(.all-btn)').forEach(b => b.classList.add('active'));
+    allBtn.classList.add('active');
+  }
   applyFilters();
 };
 filterEl.appendChild(allBtn);
@@ -203,9 +231,18 @@ domains.forEach(d => {
   btn.className = 'domain-btn active';
   btn.textContent = d;
   btn.onclick = () => {
-    if (activeDomains.has(d)) { activeDomains.delete(d); btn.classList.remove('active'); }
-    else { activeDomains.add(d); btn.classList.add('active'); }
-    allBtn.classList.toggle('active', activeDomains.size === domains.length);
+    const wasAllActive = activeDomains.size === domains.length;
+    if (wasAllActive) {
+      // Exclusive select: deselect all, activate only this one
+      activeDomains = new Set([d]);
+      document.querySelectorAll('.domain-btn:not(.all-btn)').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      allBtn.classList.remove('active');
+    } else {
+      if (activeDomains.has(d)) { activeDomains.delete(d); btn.classList.remove('active'); }
+      else { activeDomains.add(d); btn.classList.add('active'); }
+      allBtn.classList.toggle('active', activeDomains.size === domains.length);
+    }
     applyFilters();
   };
   filterEl.appendChild(btn);
@@ -221,14 +258,17 @@ document.getElementById('search').addEventListener('input', e => {
 function applyFilters() {
   const visible = new Set(
     nodes
-      .filter(n => !scrubberCutoff || n.created_at <= scrubberCutoff)
-      .filter(n => activeDomains.has(n.domain || 'Other'))
-      .filter(n => !searchTerm || n.topic.toLowerCase().includes(searchTerm))
+      // Domain and user nodes are always visible
+      .filter(n => n.kind === 'domain' || n.kind === 'user' ||
+        ((!scrubberCutoff || n.created_at <= scrubberCutoff) &&
+         (activeDomains.size === 0 || activeDomains.has(n.domain || 'Other')) &&
+         (!searchTerm || n.topic.toLowerCase().includes(searchTerm))))
       .map(n => n.id)
   );
   nodeGroup.selectAll('.node').each(function(d) {
     const show = visible.has(d.id);
-    d3.select(this).classed('dimmed', !show).classed('highlighted', show && !!searchTerm);
+    const isStructural = d.kind === 'domain' || d.kind === 'user';
+    d3.select(this).classed('dimmed', !show).classed('highlighted', show && !!searchTerm && !isStructural);
   });
   linkGroup.selectAll('.link').classed('dimmed', d => {
     const s = typeof d.source === 'object' ? d.source.id : d.source;
@@ -273,10 +313,18 @@ const link = linkGroup.selectAll('.link')
   .attr('marker-end', d => `url(#arrow-${d.kind})`);
 
 const simulation = d3.forceSimulation(nodes)
-  .force('link', d3.forceLink(edges).id(d => d.id).distance(d => 100 + (1 - d.strength) * 80))
-  .force('charge', d3.forceManyBody().strength(-280))
+  .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
+    const s = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
+    const t = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
+    if (t && t.kind === 'user') return 160;
+    if (s && s.kind === 'domain') return 120;
+    return 100 + (1 - d.strength) * 80;
+  }))
+  .force('charge', d3.forceManyBody().strength(d =>
+    d.kind === 'user' ? -800 : d.kind === 'domain' ? -400 : -280
+  ))
   .force('center', d3.forceCenter(W() / 2, H() / 2))
-  .force('collision', d3.forceCollide().radius(d => nodeRadius(d.stability) + 12));
+  .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 12));
 
 const node = nodeGroup.selectAll('.node')
   .data(nodes).enter().append('g').attr('class', 'node')
@@ -287,12 +335,16 @@ const node = nodeGroup.selectAll('.node')
   .on('click', (e, d) => { e.stopPropagation(); selectNode(d); });
 
 node.append('circle')
-  .attr('r', d => nodeRadius(d.stability))
-  .attr('fill', d => nodeColor(d.retrievability))
-  .attr('stroke', '#0A0E1A').attr('stroke-width', 1.5);
+  .attr('r', d => nodeRadius(d))
+  .attr('fill', d => nodeColor(d))
+  .attr('stroke', d => nodeStroke(d))
+  .attr('stroke-width', d => nodeStrokeWidth(d));
 
 node.append('text')
-  .attr('dy', d => nodeRadius(d.stability) + 12)
+  .attr('dy', d => nodeRadius(d) + 12)
+  .style('font-size', d => d.kind === 'user' ? '13px' : d.kind === 'domain' ? '11px' : '11px')
+  .style('font-weight', d => (d.kind === 'user' || d.kind === 'domain') ? '600' : 'normal')
+  .style('fill', d => d.kind === 'user' ? '#F59E0B' : d.kind === 'domain' ? '#94A3B8' : '#CBD5E1')
   .text(d => d.topic.length > 22 ? d.topic.slice(0, 20) + '…' : d.topic);
 
 simulation.on('tick', () => {

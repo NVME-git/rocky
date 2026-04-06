@@ -628,51 +628,87 @@ fn truncate_to(s: &str, max_chars: usize) -> String {
 fn run_view(db: &Db, cfg: &Config) -> Result<()> {
     use serde_json::{json, Value};
 
-    let nodes: Vec<_> = db.all_nodes()?.into_iter().filter(|n| !n.kind.is_domain()).collect();
-    let node_ids: std::collections::HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
-    // Only include edges where both endpoints are visible (non-domain) nodes
-    let edges: Vec<_> = db.get_all_edges()?.into_iter()
-        .filter(|e| node_ids.contains(e.source_id.as_str()) && node_ids.contains(e.target_id.as_str()))
-        .collect();
+    let all_nodes = db.all_nodes()?;
+    let topic_nodes: Vec<_> = all_nodes.iter().filter(|n| !n.kind.is_domain()).collect();
+    let domain_nodes: Vec<_> = all_nodes.iter().filter(|n| n.kind.is_domain()).collect();
 
-    if nodes.is_empty() {
+    if topic_nodes.is_empty() {
         println!("  PKG is empty — add some topics first with  rocky \"<task>\"");
         return Ok(());
     }
 
-    // Serialise nodes
-    let nodes_json: Vec<Value> = nodes.iter().map(|n| {
+    // Domains that actually have at least one topic
+    let active_domains: std::collections::HashSet<&str> = topic_nodes.iter()
+        .map(|n| n.domain.as_str())
+        .filter(|d| !d.is_empty())
+        .collect();
+
+    let user_id = "__user__";
+    let user_name = &cfg.user_name;
+
+    // Serialise topic nodes
+    let mut nodes_json: Vec<Value> = topic_nodes.iter().map(|n| {
         let r = fsrs::retrievability(n.stability, n.last_reviewed);
         let cls = fsrs::classify(r);
         json!({
-            "id": n.id,
-            "topic": n.topic,
-            "kind": n.kind.as_str(),
-            "domain": n.domain,
-            "description": n.description,
-            "stability": n.stability,
-            "difficulty": n.difficulty,
-            "retrievability": r,
-            "classification": cls,
+            "id": n.id, "topic": n.topic, "kind": n.kind.as_str(),
+            "domain": n.domain, "description": n.description,
+            "stability": n.stability, "difficulty": n.difficulty,
+            "retrievability": r, "classification": cls,
             "last_reviewed": n.last_reviewed.to_string(),
-            "review_count": n.review_count,
-            "created_at": n.created_at.to_string(),
+            "review_count": n.review_count, "created_at": n.created_at.to_string(),
         })
     }).collect();
 
-    // Serialise edges
-    let edges_json: Vec<Value> = edges.iter().map(|e| {
-        json!({
-            "id": e.id,
-            "source": e.source_id,
-            "target": e.target_id,
-            "kind": e.kind.as_str(),
-            "description": e.description,
-            "strength": e.strength,
-        })
-    }).collect();
+    // Domain nodes (only those with topics)
+    for dn in &domain_nodes {
+        if !active_domains.contains(dn.topic.as_str()) { continue; }
+        nodes_json.push(json!({
+            "id": dn.id, "topic": dn.topic, "kind": "domain",
+            "domain": dn.topic, "description": dn.description,
+            "stability": 999.0, "difficulty": 0.0,
+            "retrievability": 1.0, "classification": "known",
+            "last_reviewed": dn.last_reviewed.to_string(),
+            "review_count": 0, "created_at": dn.created_at.to_string(),
+        }));
+    }
 
-    let data = json!({ "nodes": nodes_json, "edges": edges_json });
+    // Central user node
+    nodes_json.push(json!({
+        "id": user_id, "topic": user_name, "kind": "user",
+        "domain": "", "description": "Your personal knowledge graph",
+        "stability": 999.0, "difficulty": 0.0,
+        "retrievability": 1.0, "classification": "known",
+        "last_reviewed": "", "review_count": 0, "created_at": "",
+    }));
+
+    // Edges: topic→domain (part_of only where both ends visible), domain→user
+    let topic_ids: std::collections::HashSet<&str> = topic_nodes.iter().map(|n| n.id.as_str()).collect();
+    let domain_ids: std::collections::HashSet<&str> = domain_nodes.iter()
+        .filter(|n| active_domains.contains(n.topic.as_str()))
+        .map(|n| n.id.as_str()).collect();
+    let all_visible: std::collections::HashSet<&str> = topic_ids.iter()
+        .chain(domain_ids.iter()).chain(std::iter::once(&user_id)).copied().collect();
+
+    let mut edges_json: Vec<Value> = db.get_all_edges()?.into_iter()
+        .filter(|e| all_visible.contains(e.source_id.as_str()) && all_visible.contains(e.target_id.as_str()))
+        .map(|e| json!({
+            "id": e.id, "source": e.source_id, "target": e.target_id,
+            "kind": e.kind.as_str(), "description": e.description, "strength": e.strength,
+        }))
+        .collect();
+
+    // Synthetic domain→user edges
+    for dn in &domain_nodes {
+        if !active_domains.contains(dn.topic.as_str()) { continue; }
+        edges_json.push(json!({
+            "id": format!("{}-user", dn.id),
+            "source": dn.id, "target": user_id,
+            "kind": "part_of", "description": "", "strength": 1.0,
+        }));
+    }
+
+    let data = json!({ "nodes": nodes_json, "edges": edges_json, "userName": user_name });
     let data_str = serde_json::to_string(&data)?;
 
     let html = build_view_html(&data_str);

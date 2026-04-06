@@ -73,6 +73,7 @@ struct ExportSection {
 #[derive(Debug, Deserialize)]
 struct UiSection {
     personality: Option<bool>,
+    name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,6 +110,7 @@ pub struct Config {
     pub db_path: PathBuf,
     pub rocky_dir: PathBuf,
     pub personality: bool,
+    pub user_name: String,
     pub sync: SyncConfig,
     pub edge_reuse: EdgeReuse,
 }
@@ -126,6 +128,7 @@ impl Default for Config {
             db_path: rocky_dir.join("graph.db"),
             rocky_dir: rocky_dir.clone(),
             personality: true,
+            user_name: git_user_name(),
             edge_reuse: EdgeReuse::Off,
             sync: SyncConfig {
                 enabled: false,
@@ -180,6 +183,7 @@ impl Config {
         }
         if let Some(ui) = file.ui {
             if let Some(v) = ui.personality { self.personality = v; }
+            if let Some(v) = ui.name { self.user_name = v; }
         }
         if let Some(e) = file.edges {
             if let Some(v) = e.reuse {
@@ -240,4 +244,15 @@ impl Config {
         }
         println!();
     }
+}
+
+fn git_user_name() -> String {
+    std::process::Command::new("git")
+        .args(["config", "user.name"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Me".to_string())
 }
