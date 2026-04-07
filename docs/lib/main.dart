@@ -8,23 +8,46 @@ void main() {
 }
 
 // ---------------------------------------------------------------------------
-// Color palette
+// Global theme state
+// ---------------------------------------------------------------------------
+final ValueNotifier<bool> _isDark = ValueNotifier(true);
+
+// ---------------------------------------------------------------------------
+// Color palette — dynamic based on theme
 // ---------------------------------------------------------------------------
 class AppColors {
-  static const background = Color(0xFF0A0E1A);
-  static const surface = Color(0xFF111827);
-  static const sidebarBg = Color(0xFF070B14);
-  static const sidebarHover = Color(0xFF0F1629);
-  static const primary = Color(0xFFF59E0B); // amber
-  static const primaryDim = Color(0xFFD97706);
-  static const secondary = Color(0xFF06B6D4); // cyan
-  static const textPrimary = Color(0xFFF1F5F9);
-  static const textSecondary = Color(0xFFCBD5E1);
-  static const textMuted = Color(0xFF64748B);
-  static const codeBg = Color(0xFF1E293B);
-  static const codeBorder = Color(0xFF334155);
-  static const divider = Color(0xFF1E293B);
-  static const cardBg = Color(0xFF0F172A);
+  static bool get _d => _isDark.value;
+
+  static Color get background => _d ? const Color(0xFF0A0E1A) : const Color(0xFFF8FAFC);
+  static Color get surface    => _d ? const Color(0xFF111827) : const Color(0xFFFFFFFF);
+  static Color get sidebarBg  => _d ? const Color(0xFF070B14) : const Color(0xFFF1F5F9);
+  static Color get sidebarHover => _d ? const Color(0xFF0F1629) : const Color(0xFFE2E8F0);
+  static Color get primary    => _d ? const Color(0xFFF59E0B) : const Color(0xFFD97706);
+  static Color get primaryDim => _d ? const Color(0xFFD97706) : const Color(0xFFB45309);
+  static Color get secondary  => _d ? const Color(0xFF06B6D4) : const Color(0xFF0891B2);
+  static Color get textPrimary   => _d ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A);
+  static Color get textSecondary => _d ? const Color(0xFFCBD5E1) : const Color(0xFF334155);
+  static Color get textMuted     => _d ? const Color(0xFF64748B) : const Color(0xFF94A3B8);
+  static Color get codeBg        => _d ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
+  static Color get codeBorder    => _d ? const Color(0xFF334155) : const Color(0xFFCBD5E1);
+  static Color get divider       => _d ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+  static Color get cardBg        => _d ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+}
+
+// Terminal block colours — always dark regardless of theme
+class TermColors {
+  static const bg         = Color(0xFF0d1117);
+  static const headerBg   = Color(0xFF161b22);
+  static const border     = Color(0xFF30363d);
+  static const prompt     = Color(0xFF4ade80);  // green prompt
+  static const cmdText    = Color(0xFFf0f6fc);  // bright command text
+  static const commentTxt = Color(0xFF8b949e);  // muted comment
+  static const outputTxt  = Color(0xFFe6edf3);  // normal output
+  static const cursor     = Color(0xFF4ade80);
+  static const dot1       = Color(0xFFFF5F57);  // red
+  static const dot2       = Color(0xFFFFBD2E);  // yellow
+  static const dot3       = Color(0xFF28C840);  // green
+  static const titleTxt   = Color(0xFF8b949e);
 }
 
 // ---------------------------------------------------------------------------
@@ -35,24 +58,35 @@ class RockyDocsApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Rocky',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: true).copyWith(
-        scaffoldBackgroundColor: AppColors.background,
-        colorScheme: const ColorScheme.dark(
-          primary: AppColors.primary,
-          secondary: AppColors.secondary,
-          surface: AppColors.surface,
-        ),
-        dividerColor: AppColors.divider,
-        textTheme: ThemeData.dark().textTheme.apply(
-          bodyColor: AppColors.textPrimary,
-          displayColor: AppColors.textPrimary,
-          fontFamily: 'Roboto',
-        ),
-      ),
-      home: const DocsShell(),
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isDark,
+      builder: (context, dark, _) {
+        return MaterialApp(
+          title: 'Rocky',
+          debugShowCheckedModeBanner: false,
+          theme: (dark ? ThemeData.dark(useMaterial3: true) : ThemeData.light(useMaterial3: true)).copyWith(
+            scaffoldBackgroundColor: AppColors.background,
+            colorScheme: dark
+                ? ColorScheme.dark(
+                    primary: AppColors.primary,
+                    secondary: AppColors.secondary,
+                    surface: AppColors.surface,
+                  )
+                : ColorScheme.light(
+                    primary: AppColors.primary,
+                    secondary: AppColors.secondary,
+                    surface: AppColors.surface,
+                  ),
+            dividerColor: AppColors.divider,
+            textTheme: (dark ? ThemeData.dark() : ThemeData.light()).textTheme.apply(
+              bodyColor: AppColors.textPrimary,
+              displayColor: AppColors.textPrimary,
+              fontFamily: 'Roboto',
+            ),
+          ),
+          home: const DocsShell(),
+        );
+      },
     );
   }
 }
@@ -104,7 +138,7 @@ class _DocsShellState extends State<DocsShell> {
   void _selectSection(int index) {
     setState(() => _selected = index);
     _scrollController.jumpTo(0);
-    if (_isNarrow(context)) Navigator.of(context).pop(); // close drawer
+    if (_isNarrow(context)) Navigator.of(context).pop();
   }
 
   bool _isNarrow(BuildContext context) =>
@@ -113,21 +147,28 @@ class _DocsShellState extends State<DocsShell> {
   @override
   Widget build(BuildContext context) {
     final narrow = _isNarrow(context);
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: narrow
-          ? AppBar(
-              backgroundColor: AppColors.sidebarBg,
-              title: const _LogoRow(compact: true),
-              elevation: 0,
-            )
-          : null,
-      drawer: narrow ? Drawer(child: _buildSidebar()) : null,
-      body: Row(
-        children: [
-          if (!narrow) _buildSidebar(),
-          Expanded(child: _buildContent()),
-        ],
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isDark,
+      builder: (context, _, __) => Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: narrow
+            ? AppBar(
+                backgroundColor: AppColors.sidebarBg,
+                title: const _LogoRow(compact: true),
+                elevation: 0,
+                actions: [
+                  _ThemeToggleButton(),
+                  const SizedBox(width: 8),
+                ],
+              )
+            : null,
+        drawer: narrow ? Drawer(child: _buildSidebar()) : null,
+        body: Row(
+          children: [
+            if (!narrow) _buildSidebar(),
+            Expanded(child: _buildContent()),
+          ],
+        ),
       ),
     );
   }
@@ -135,7 +176,7 @@ class _DocsShellState extends State<DocsShell> {
   Widget _buildSidebar() {
     return Container(
       width: _sidebarWidth,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.sidebarBg,
         border: Border(right: BorderSide(color: AppColors.divider, width: 1)),
       ),
@@ -144,8 +185,8 @@ class _DocsShellState extends State<DocsShell> {
           const SizedBox(height: 24),
           const _LogoRow(),
           const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
               'You Observe. Question?',
               style: TextStyle(
@@ -156,8 +197,8 @@ class _DocsShellState extends State<DocsShell> {
             ),
           ),
           const SizedBox(height: 24),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Divider(color: AppColors.divider, height: 1),
           ),
           const SizedBox(height: 12),
@@ -177,28 +218,25 @@ class _DocsShellState extends State<DocsShell> {
               },
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Divider(color: AppColors.divider, height: 1),
           ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                const Icon(Icons.code, size: 14, color: AppColors.textMuted),
+                Icon(Icons.code, size: 14, color: AppColors.textMuted),
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => _openUrl('https://github.com/NVME-git/rocky'),
-                  child: const Text(
+                  child: Text(
                     'GitHub',
                     style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                   ),
                 ),
                 const Spacer(),
-                const Text(
-                  'MIT License',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 11),
-                ),
+                _ThemeToggleButton(),
               ],
             ),
           ),
@@ -219,8 +257,40 @@ class _DocsShellState extends State<DocsShell> {
             child: SingleChildScrollView(
               controller: _scrollController,
               padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 40),
-              child: StyledMarkdown(
-                data: kSections[_selected].markdown,
+              child: SectionContent(
+                key: ValueKey(_selected),
+                markdown: kSections[_selected].markdown,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dark / light mode toggle button
+// ---------------------------------------------------------------------------
+class _ThemeToggleButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isDark,
+      builder: (_, dark, __) => Tooltip(
+        message: dark ? 'Switch to light mode' : 'Switch to dark mode',
+        child: InkWell(
+          onTap: () => _isDark.value = !_isDark.value,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: Icon(
+                dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                key: ValueKey(dark),
+                size: 18,
+                color: AppColors.textMuted,
               ),
             ),
           ),
@@ -248,7 +318,7 @@ class _LogoRow extends StatelessWidget {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [AppColors.primary, AppColors.primaryDim],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -261,7 +331,7 @@ class _LogoRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          const Text(
+          Text(
             'Rocky',
             style: TextStyle(
               color: AppColors.textPrimary,
@@ -277,7 +347,7 @@ class _LogoRow extends StatelessWidget {
               color: AppColors.primary.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: const Text(
+            child: Text(
               'docs',
               style: TextStyle(
                 color: AppColors.primary,
@@ -342,13 +412,15 @@ class _SidebarItemState extends State<_SidebarItem> {
             children: [
               Icon(widget.icon, size: 18, color: fg),
               const SizedBox(width: 12),
-              Text(
-                widget.label,
-                style: TextStyle(
-                  color: fg,
-                  fontSize: 14,
-                  fontWeight:
-                      widget.active ? FontWeight.w600 : FontWeight.w400,
+              Expanded(
+                child: Text(
+                  widget.label,
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 14,
+                    fontWeight:
+                        widget.active ? FontWeight.w600 : FontWeight.w400,
+                  ),
                 ),
               ),
             ],
@@ -360,7 +432,332 @@ class _SidebarItemState extends State<_SidebarItem> {
 }
 
 // ---------------------------------------------------------------------------
-// Styled Markdown renderer
+// Markdown part model — text vs fenced code block
+// ---------------------------------------------------------------------------
+sealed class _MdPart {}
+
+class _TextPart extends _MdPart {
+  final String text;
+  _TextPart(this.text);
+}
+
+class _CodePart extends _MdPart {
+  final String code;
+  final String language;
+  _CodePart(this.code, this.language);
+}
+
+List<_MdPart> _parseParts(String markdown) {
+  final parts = <_MdPart>[];
+  // Match fenced code blocks: ```lang\n...\n```
+  final re = RegExp(r'```(\w*)\n([\s\S]*?)```', multiLine: true);
+  int lastEnd = 0;
+  for (final m in re.allMatches(markdown)) {
+    if (m.start > lastEnd) {
+      parts.add(_TextPart(markdown.substring(lastEnd, m.start)));
+    }
+    final code = m.group(2) ?? '';
+    // Trim trailing newline that the regex captures
+    parts.add(_CodePart(code.endsWith('\n') ? code.substring(0, code.length - 1) : code, m.group(1) ?? ''));
+    lastEnd = m.end;
+  }
+  if (lastEnd < markdown.length) {
+    parts.add(_TextPart(markdown.substring(lastEnd)));
+  }
+  return parts;
+}
+
+// ---------------------------------------------------------------------------
+// Section content — mixes StyledMarkdown and TerminalBlock
+// ---------------------------------------------------------------------------
+class SectionContent extends StatelessWidget {
+  final String markdown;
+  const SectionContent({super.key, required this.markdown});
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = _parseParts(markdown);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final part in parts)
+          if (part is _TextPart)
+            StyledMarkdown(data: part.text)
+          else if (part is _CodePart)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: TerminalBlock(
+                code: part.code,
+                language: part.language,
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Terminal block — animated, blinking cursor, Mac chrome
+// ---------------------------------------------------------------------------
+class TerminalBlock extends StatefulWidget {
+  final String code;
+  final String language;
+  const TerminalBlock({super.key, required this.code, required this.language});
+
+  @override
+  State<TerminalBlock> createState() => _TerminalBlockState();
+}
+
+class _TerminalBlockState extends State<TerminalBlock>
+    with TickerProviderStateMixin {
+  late final AnimationController _typewriter;
+  late final AnimationController _cursor;
+  late final Animation<int> _charCount;
+  bool _animationStarted = false;
+  ScrollPosition? _scrollPos;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final totalChars = widget.code.length;
+    // Scale duration: ~18ms per char, clamped between 600ms and 2800ms
+    final ms = (totalChars * 18).clamp(600, 2800);
+    _typewriter = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: ms),
+    );
+    _charCount = IntTween(begin: 0, end: totalChars)
+        .animate(CurvedAnimation(parent: _typewriter, curve: Curves.linear));
+
+    _cursor = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 530),
+    )..repeat(reverse: true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final scrollable = Scrollable.maybeOf(context);
+      _scrollPos = scrollable?.position;
+      _scrollPos?.addListener(_checkVisibility);
+      _checkVisibility();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollPos?.removeListener(_checkVisibility);
+    _typewriter.dispose();
+    _cursor.dispose();
+    super.dispose();
+  }
+
+  void _checkVisibility() {
+    if (_animationStarted || !mounted) return;
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return;
+    final pos = box.localToGlobal(Offset.zero);
+    final screenH = MediaQuery.sizeOf(context).height;
+    if (pos.dy < screenH + 80 && pos.dy + box.size.height > -80) {
+      _animationStarted = true;
+      _typewriter.forward();
+    }
+  }
+
+  String get _title {
+    final lang = widget.language;
+    if (lang.isEmpty) return 'output';
+    return lang;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: TermColors.bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: TermColors.border, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildTitleBar(),
+          _buildBody(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTitleBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: const BoxDecoration(
+        color: TermColors.headerBg,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(10),
+          topRight: Radius.circular(10),
+        ),
+        border: Border(bottom: BorderSide(color: TermColors.border, width: 1)),
+      ),
+      child: Row(
+        children: [
+          _dot(TermColors.dot1),
+          const SizedBox(width: 6),
+          _dot(TermColors.dot2),
+          const SizedBox(width: 6),
+          _dot(TermColors.dot3),
+          const SizedBox(width: 14),
+          Text(
+            _title,
+            style: const TextStyle(
+              color: TermColors.titleTxt,
+              fontFamily: 'monospace',
+              fontSize: 12,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dot(Color color) => Container(
+        width: 12,
+        height: 12,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      );
+
+  Widget _buildBody() {
+    return AnimatedBuilder(
+      animation: _charCount,
+      builder: (context, _) {
+        final visible = widget.code.substring(0, _charCount.value);
+        final lines = visible.split('\n');
+        final isFinished = _charCount.value == widget.code.length;
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: const BoxDecoration(
+            color: TermColors.bg,
+            borderRadius: BorderRadius.only(
+              bottomLeft: Radius.circular(10),
+              bottomRight: Radius.circular(10),
+            ),
+          ),
+          child: SelectionArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final line in lines) _buildLine(line),
+                // Blinking cursor
+                AnimatedBuilder(
+                  animation: _cursor,
+                  builder: (_, __) {
+                    final showCursor = isFinished ? _cursor.value > 0.5 : true;
+                    return Text(
+                      '█',
+                      style: TextStyle(
+                        color: showCursor
+                            ? TermColors.cursor
+                            : Colors.transparent,
+                        fontFamily: 'monospace',
+                        fontSize: 14,
+                        height: 1.0,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLine(String line) {
+    return Text.rich(
+      _styleLine(line),
+      style: const TextStyle(
+        fontFamily: 'monospace',
+        fontSize: 13.5,
+        height: 1.55,
+      ),
+    );
+  }
+
+  /// Style a single terminal line.
+  /// Lines matching `~/path $ cmd` or `$ cmd` → green prompt + bright command.
+  /// Lines starting with `#` or `  #` → muted comment.
+  /// Everything else → normal output.
+  TextSpan _styleLine(String line) {
+    // Match prompt patterns like: `~/taskify $ `, `$ `, `~ $ `
+    final promptRe = RegExp(r'^([\w~/.]*\s*\$\s+)(.*)');
+    final promptMatch = promptRe.firstMatch(line);
+    if (promptMatch != null) {
+      return TextSpan(children: [
+        TextSpan(
+          text: promptMatch.group(1),
+          style: const TextStyle(color: TermColors.prompt, fontWeight: FontWeight.w600),
+        ),
+        TextSpan(
+          text: promptMatch.group(2),
+          style: const TextStyle(color: TermColors.cmdText),
+        ),
+      ]);
+    }
+
+    // Comment line
+    final trimmed = line.trimLeft();
+    if (trimmed.startsWith('#')) {
+      return TextSpan(
+        text: line,
+        style: const TextStyle(color: TermColors.commentTxt),
+      );
+    }
+
+    // Rocky output lines — colour ♫ prefix lines distinctly
+    if (line.trimLeft().startsWith('♫')) {
+      return TextSpan(children: [
+        TextSpan(
+          text: line,
+          style: const TextStyle(color: Color(0xFF93c5fd)),
+        ),
+      ]);
+    }
+
+    // ✓ success lines
+    if (line.trimLeft().startsWith('✓')) {
+      return TextSpan(
+        text: line,
+        style: const TextStyle(color: Color(0xFF86efac)),
+      );
+    }
+
+    // ~ fading lines
+    if (line.trimLeft().startsWith('~')) {
+      return TextSpan(
+        text: line,
+        style: const TextStyle(color: Color(0xFFfbbf24)),
+      );
+    }
+
+    return TextSpan(
+      text: line,
+      style: const TextStyle(color: TermColors.outputTxt),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Styled Markdown renderer (non-code-block text only)
 // ---------------------------------------------------------------------------
 class StyledMarkdown extends StatelessWidget {
   final String data;
@@ -368,117 +765,112 @@ class StyledMarkdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MarkdownBody(
-      data: data,
-      selectable: true,
-      onTapLink: (text, href, title) {
-        if (href != null) _openUrl(href);
-      },
-      styleSheet: MarkdownStyleSheet(
-        // Headings
-        h1: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 32,
-          fontWeight: FontWeight.w800,
-          height: 1.3,
-          letterSpacing: -0.5,
-        ),
-        h1Padding: const EdgeInsets.only(bottom: 16, top: 8),
-        h2: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 24,
-          fontWeight: FontWeight.w700,
-          height: 1.4,
-        ),
-        h2Padding: const EdgeInsets.only(bottom: 12, top: 32),
-        h3: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-          height: 1.4,
-        ),
-        h3Padding: const EdgeInsets.only(bottom: 8, top: 24),
-        // Body
-        p: const TextStyle(
-          color: AppColors.textSecondary,
-          fontSize: 15,
-          height: 1.7,
-        ),
-        pPadding: const EdgeInsets.only(bottom: 12),
-        // Strong / emphasis
-        strong: const TextStyle(
-          color: AppColors.textPrimary,
-          fontWeight: FontWeight.w700,
-        ),
-        em: const TextStyle(
-          color: AppColors.textSecondary,
-          fontStyle: FontStyle.italic,
-        ),
-        // Links
-        a: const TextStyle(
-          color: AppColors.secondary,
-          decoration: TextDecoration.underline,
-          decorationColor: AppColors.secondary,
-        ),
-        // Code
-        code: TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 13.5,
-          color: AppColors.primary,
-          backgroundColor: AppColors.codeBg,
-        ),
-        codeblockDecoration: BoxDecoration(
-          color: AppColors.codeBg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.codeBorder, width: 1),
-        ),
-        codeblockPadding: const EdgeInsets.all(16),
-        // Lists
-        listBullet: const TextStyle(color: AppColors.primary, fontSize: 14),
-        listBulletPadding: const EdgeInsets.only(right: 8),
-        listIndent: 24,
-        // Blockquote
-        blockquote: const TextStyle(
-          color: AppColors.textMuted,
-          fontSize: 15,
-          height: 1.7,
-          fontStyle: FontStyle.italic,
-        ),
-        blockquoteDecoration: BoxDecoration(
-          border: const Border(
-            left: BorderSide(color: AppColors.primary, width: 3),
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isDark,
+      builder: (context, _, __) => MarkdownBody(
+        data: data,
+        selectable: true,
+        onTapLink: (text, href, title) {
+          if (href != null) _openUrl(href);
+        },
+        styleSheet: MarkdownStyleSheet(
+          h1: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 32,
+            fontWeight: FontWeight.w800,
+            height: 1.3,
+            letterSpacing: -0.5,
           ),
-          color: AppColors.primary.withValues(alpha: 0.06),
-          borderRadius: const BorderRadius.only(
-            topRight: Radius.circular(4),
-            bottomRight: Radius.circular(4),
+          h1Padding: const EdgeInsets.only(bottom: 16, top: 8),
+          h2: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            height: 1.4,
           ),
-        ),
-        blockquotePadding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        // Horizontal rule
-        horizontalRuleDecoration: const BoxDecoration(
-          border: Border(
-            top: BorderSide(color: AppColors.divider, width: 1),
+          h2Padding: const EdgeInsets.only(bottom: 12, top: 32),
+          h3: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            height: 1.4,
           ),
+          h3Padding: const EdgeInsets.only(bottom: 8, top: 24),
+          p: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 15,
+            height: 1.7,
+          ),
+          pPadding: const EdgeInsets.only(bottom: 12),
+          strong: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+          em: TextStyle(
+            color: AppColors.textSecondary,
+            fontStyle: FontStyle.italic,
+          ),
+          a: TextStyle(
+            color: AppColors.secondary,
+            decoration: TextDecoration.underline,
+            decorationColor: AppColors.secondary,
+          ),
+          code: TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 13.5,
+            color: AppColors.primary,
+            backgroundColor: AppColors.codeBg,
+          ),
+          codeblockDecoration: BoxDecoration(
+            color: AppColors.codeBg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.codeBorder, width: 1),
+          ),
+          codeblockPadding: const EdgeInsets.all(16),
+          listBullet: TextStyle(color: AppColors.primary, fontSize: 14),
+          listBulletPadding: const EdgeInsets.only(right: 8),
+          listIndent: 24,
+          blockquote: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 15,
+            height: 1.7,
+            fontStyle: FontStyle.italic,
+          ),
+          blockquoteDecoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(color: AppColors.primary, width: 3),
+            ),
+            color: AppColors.primary.withValues(alpha: 0.06),
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(4),
+              bottomRight: Radius.circular(4),
+            ),
+          ),
+          blockquotePadding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          horizontalRuleDecoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(color: AppColors.divider, width: 1),
+            ),
+          ),
+          tableHead: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
+          tableBody: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+          tableBorder: TableBorder.all(
+            color: AppColors.codeBorder,
+            width: 1,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          tableHeadAlign: TextAlign.left,
+          tableCellsPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         ),
-        // Tables
-        tableHead: const TextStyle(
-          color: AppColors.textPrimary,
-          fontWeight: FontWeight.w600,
-          fontSize: 14,
-        ),
-        tableBody: const TextStyle(
-          color: AppColors.textSecondary,
-          fontSize: 14,
-          height: 1.5,
-        ),
-        tableBorder: TableBorder.all(
-          color: AppColors.codeBorder,
-          width: 1,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        tableHeadAlign: TextAlign.left,
-        tableCellsPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
     );
   }
@@ -489,7 +881,8 @@ class StyledMarkdown extends StatelessWidget {
 // ---------------------------------------------------------------------------
 Future<void> _openUrl(String url) async {
   final parsedUri = Uri.parse(url);
-  final absoluteUri = parsedUri.hasScheme ? parsedUri : Uri.base.resolveUri(parsedUri);
+  final absoluteUri =
+      parsedUri.hasScheme ? parsedUri : Uri.base.resolveUri(parsedUri);
   if (await canLaunchUrl(absoluteUri)) {
     await launchUrl(absoluteUri, mode: LaunchMode.externalApplication);
   }
