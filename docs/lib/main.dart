@@ -864,20 +864,6 @@ class _TerminalBlockState extends State<TerminalBlock>
           style: const TextStyle(color: TermColors.commentTxt));
     }
 
-    // Rocky's explanation / feedback body text (indented, after a ♫ or Q line)
-    // — lines that are part of Rocky's voice: use feedback cyan
-    if (line.startsWith('   ') && trimmed.isNotEmpty &&
-        !trimmed.startsWith('Task:') &&
-        !trimmed.startsWith('Total') && !trimmed.startsWith('Known') &&
-        !trimmed.startsWith('Fading') && !trimmed.startsWith('Gaps') &&
-        !trimmed.startsWith('Quiz') && !trimmed.startsWith('Edges') &&
-        !trimmed.startsWith('Run ') && !trimmed.startsWith('Topic') &&
-        !RegExp(r'^[A-Z][a-z].*\s+\|').hasMatch(trimmed) &&   // table rows
-        !RegExp(r'^─').hasMatch(trimmed)) {
-      return TextSpan(text: line,
-          style: const TextStyle(color: TermColors.rockyFeedback));
-    }
-
     return TextSpan(text: line,
         style: const TextStyle(color: TermColors.outputTxt));
   }
