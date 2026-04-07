@@ -477,21 +477,40 @@ class SectionContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final parts = _parseParts(markdown);
+    final widgets = <Widget>[];
+    int i = 0;
+    while (i < parts.length) {
+      final part = parts[i];
+      if (part is _TextPart) {
+        widgets.add(StyledMarkdown(data: part.text));
+        i++;
+      } else if (part is _CodePart) {
+        // Combine a bash input block with the immediately following plain
+        // output block into a single terminal: input typed, output instant.
+        String? outputCode;
+        if (part.language == 'bash' &&
+            i + 1 < parts.length &&
+            parts[i + 1] is _CodePart &&
+            (parts[i + 1] as _CodePart).language.isEmpty) {
+          outputCode = (parts[i + 1] as _CodePart).code;
+          i++; // consume the output block
+        }
+        widgets.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: TerminalBlock(
+            code: part.code,
+            language: part.language,
+            outputCode: outputCode,
+          ),
+        ));
+        i++;
+      } else {
+        i++;
+      }
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final part in parts)
-          if (part is _TextPart)
-            StyledMarkdown(data: part.text)
-          else if (part is _CodePart)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: TerminalBlock(
-                code: part.code,
-                language: part.language,
-              ),
-            ),
-      ],
+      children: widgets,
     );
   }
 }
@@ -502,7 +521,9 @@ class SectionContent extends StatelessWidget {
 class TerminalBlock extends StatefulWidget {
   final String code;
   final String language;
-  const TerminalBlock({super.key, required this.code, required this.language});
+  /// Output to reveal instantly after the input finishes typing.
+  final String? outputCode;
+  const TerminalBlock({super.key, required this.code, required this.language, this.outputCode});
 
   @override
   State<TerminalBlock> createState() => _TerminalBlockState();
@@ -656,24 +677,42 @@ class _TerminalBlockState extends State<TerminalBlock>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 for (final line in lines) _buildLine(line),
-                // Blinking cursor
-                AnimatedBuilder(
-                  animation: _cursor,
-                  builder: (_, __) {
-                    final showCursor = isFinished ? _cursor.value > 0.5 : true;
-                    return Text(
+                // Cursor sits right after the typed input while still animating
+                if (!isFinished)
+                  AnimatedBuilder(
+                    animation: _cursor,
+                    builder: (_, __) => Text(
+                      '█',
+                      style: const TextStyle(
+                        color: TermColors.cursor,
+                        fontFamily: 'monospace',
+                        fontSize: 14,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+                // Output revealed all at once when input finishes typing
+                if (isFinished && widget.outputCode != null)
+                  ...[
+                    const SizedBox(height: 2),
+                    ...widget.outputCode!.split('\n').map(_buildLine),
+                  ],
+                // Blinking cursor at the bottom
+                if (isFinished)
+                  AnimatedBuilder(
+                    animation: _cursor,
+                    builder: (_, __) => Text(
                       '█',
                       style: TextStyle(
-                        color: showCursor
+                        color: _cursor.value > 0.5
                             ? TermColors.cursor
                             : Colors.transparent,
                         fontFamily: 'monospace',
                         fontSize: 14,
                         height: 1.0,
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  ),
               ],
             ),
           ),
