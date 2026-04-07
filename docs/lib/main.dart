@@ -481,12 +481,13 @@ class StyledMarkdown extends StatelessWidget {
         tableCellsPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
       imageBuilder: (uri, title, alt) {
+        final resolved = uri.hasScheme ? uri : Uri.base.resolveUri(uri);
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: Image.network(
-              uri.toString(),
+              resolved.toString(),
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) => Container(
                 padding: const EdgeInsets.all(16),
@@ -512,7 +513,8 @@ class StyledMarkdown extends StatelessWidget {
 // Helpers
 // ---------------------------------------------------------------------------
 Future<void> _openUrl(String url) async {
-  final uri = Uri.parse(url);
+  final parsed = Uri.parse(url);
+  final uri = parsed.hasScheme ? parsed : Uri.base.resolveUri(parsed);
   if (await canLaunchUrl(uri)) {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
