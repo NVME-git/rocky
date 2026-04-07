@@ -80,6 +80,20 @@ svg#graph { width: 100%; height: 100%; }
 .edge-kind.part_of        { background: rgba(29,158,117,0.15); color: #1D9E75; }
 .edge-peer { color: #CBD5E1; }
 
+/* ── review history ── */
+.review-item { margin-bottom: 10px; padding: 10px; background: #0A0E1A;
+               border-radius: 6px; border: 1px solid #1E293B; }
+.review-date { font-size: 10px; color: #64748B; margin-bottom: 6px; }
+.review-q  { font-size: 12px; color: #94A3B8; margin-bottom: 4px; line-height: 1.45; }
+.review-a  { font-size: 12px; color: #CBD5E1; margin-bottom: 4px; line-height: 1.45;
+             font-style: italic; border-left: 2px solid #334155; padding-left: 8px; }
+.review-fb { font-size: 12px; color: #06B6D4; line-height: 1.45; margin-bottom: 6px; }
+.review-score { display: inline-block; font-size: 10px; font-weight: 600;
+                padding: 1px 6px; border-radius: 3px; }
+.review-score.known { background: rgba(29,158,117,0.15); color: #1D9E75; }
+.review-score.stale { background: rgba(239,159,39,0.15);  color: #EF9F27; }
+.review-score.gap   { background: rgba(226,75,74,0.15);   color: #E24B4A; }
+
 /* ── graph elements ── */
 .link { stroke-opacity: 0.6; transition: stroke-opacity 0.25s; }
 .link.dimmed { stroke-opacity: 0.05; }
@@ -157,6 +171,10 @@ svg#graph { width: 100%; height: 100%; }
       <div class="panel-section">
         <div class="panel-section-title">Edges</div>
         <div id="p-edges"></div>
+      </div>
+      <div class="panel-section" id="p-reviews-section">
+        <div class="panel-section-title">Review History</div>
+        <div id="p-reviews"></div>
       </div>
     </div>
   </div>
@@ -420,6 +438,27 @@ function selectNode(d) {
         const label = nodeById[e.peer] ? nodeById[e.peer].topic : e.peer;
         return `<div class="edge-item"><span class="edge-kind ${e.kind}">${e.kind.replace(/_/g,' ')}</span><span class="edge-peer">${label}</span></div>`;
       }).join('');
+  // Review history — hidden for structural (domain/user) nodes
+  const reviewSection = document.getElementById('p-reviews-section');
+  const reviews = d.reviews || [];
+  if (d.kind === 'domain' || d.kind === 'user') {
+    reviewSection.style.display = 'none';
+  } else {
+    reviewSection.style.display = '';
+    document.getElementById('p-reviews').innerHTML = reviews.length === 0
+      ? '<div style="color:#64748B;font-size:12px">No reviews yet</div>'
+      : reviews.map(r => {
+          const pct = Math.round(r.score * 100);
+          const cls = pct >= 70 ? 'known' : pct >= 40 ? 'stale' : 'gap';
+          return `<div class="review-item">
+            <div class="review-date">${r.date}</div>
+            ${r.question ? `<div class="review-q">Q: ${r.question}</div>` : ''}
+            ${r.answer   ? `<div class="review-a">${r.answer}</div>` : ''}
+            ${r.feedback ? `<div class="review-fb">${r.feedback}</div>` : ''}
+            <span class="review-score ${cls}">${pct}%</span>
+          </div>`;
+        }).join('');
+  }
   document.getElementById('panel').classList.add('open');
 }
 function closePanel() {

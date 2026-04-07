@@ -61,6 +61,17 @@ pub struct Edge {
     pub last_fired_session: Option<i64>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Review {
+    #[allow(dead_code)]
+    pub node_id: String,
+    pub reviewed_at: String,
+    pub question: String,
+    pub answer: String,
+    pub feedback: String,
+    pub score: f64,
+}
+
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS session_state (
     key        TEXT PRIMARY KEY,
@@ -103,6 +114,17 @@ CREATE TABLE IF NOT EXISTS edges (
 
 CREATE INDEX IF NOT EXISTS edges_source ON edges(source_id);
 CREATE INDEX IF NOT EXISTS edges_target ON edges(target_id);
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id     TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    reviewed_at TEXT NOT NULL,
+    question    TEXT NOT NULL DEFAULT '',
+    answer      TEXT NOT NULL DEFAULT '',
+    feedback    TEXT NOT NULL DEFAULT '',
+    score       REAL NOT NULL DEFAULT 0.0
+);
+CREATE INDEX IF NOT EXISTS reviews_node ON reviews(node_id);
 ";
 
 pub struct Db {
@@ -629,6 +651,45 @@ impl Db {
             }
         }
         Ok(())
+    }
+
+    pub fn add_review(
+        &self,
+        node_id: &str,
+        question: &str,
+        answer: &str,
+        feedback: &str,
+        score: f64,
+    ) -> Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "INSERT INTO reviews (node_id, reviewed_at, question, answer, feedback, score)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![node_id, Self::today(), question, answer, feedback, score],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_reviews(&self, node_id: &str) -> Result<Vec<Review>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT node_id, reviewed_at, question, answer, feedback, score
+             FROM reviews WHERE node_id = ?1 ORDER BY id ASC",
+        )?;
+        let reviews = stmt
+            .query_map(params![node_id], |row| {
+                Ok(Review {
+                    node_id:     row.get(0)?,
+                    reviewed_at: row.get(1)?,
+                    question:    row.get(2)?,
+                    answer:      row.get(3)?,
+                    feedback:    row.get(4)?,
+                    score:       row.get(5)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(reviews)
     }
 }
 

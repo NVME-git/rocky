@@ -1752,7 +1752,7 @@ Fresh project. Empty PKG.
   Axum framework           concept  ██████████ 95%  4.5   0.3   1        2026-04-01
 ```
 
-**`rocky view` after commit 1:** Three nodes cluster in the centre, connected by auto-inferred edges: *tokio runtime → Axum framework* (`depends_on`, strength 0.90), *Rust async/await → tokio runtime* (`depends_on`, strength 0.88). All three glow bright gold. The Language taxonomy node pulls them together on the left side of the canvas.
+**`rocky view` after commit 1:** Three nodes cluster in the centre, connected by auto-inferred edges: *tokio runtime → Axum framework* (`depends_on`, strength 0.90), *Rust async/await → tokio runtime* (`depends_on`, strength 0.88). All three glow bright gold. The Language taxonomy node pulls them together on the left side of the canvas. **Click any node** to open the detail panel — you'll see the question Rocky asked, your answer, and the feedback, all stored against that topic.
 
 [**→ Open interactive graph: commit 1**](graphs/stage1.html)
 
@@ -2134,7 +2134,7 @@ You've been shipping features. It's been 7 days since commit 1.
   ✓ Rust async/await — stability increased to 6.8 · recall now at 94%
 ```
 
-**`rocky view` after the quiz:** Rust async/await snaps from red back to gold. The node's detail panel shows two review data points: the original session on April 1 (initial stability 4.5) and today's review on April 8 (stability 6.8 — deeper embedding). The decay curve between those two points is visible in the timeline scrubber.
+**`rocky view` after the quiz:** Rust async/await snaps from red back to gold. Click the node — the detail panel now shows **two review entries**: the Q&A from April 1 (initial stability 4.5) and today's harder question on April 8 (stability 6.8 — deeper embedding). Each entry shows the question, your answer, Rocky's feedback, and the score. The decay curve between those two points is visible in the timeline scrubber.
 
 ---
 

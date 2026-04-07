@@ -650,6 +650,16 @@ fn run_view(db: &Db, cfg: &Config) -> Result<()> {
     let mut nodes_json: Vec<Value> = topic_nodes.iter().map(|n| {
         let r = fsrs::retrievability(n.stability, n.last_reviewed);
         let cls = fsrs::classify(r);
+        let reviews: Vec<Value> = db.get_reviews(&n.id).unwrap_or_default()
+            .into_iter()
+            .map(|rev| json!({
+                "date":     rev.reviewed_at,
+                "question": rev.question,
+                "answer":   rev.answer,
+                "feedback": rev.feedback,
+                "score":    rev.score,
+            }))
+            .collect();
         json!({
             "id": n.id, "topic": n.topic, "kind": n.kind.as_str(),
             "domain": n.domain, "description": n.description,
@@ -657,6 +667,7 @@ fn run_view(db: &Db, cfg: &Config) -> Result<()> {
             "retrievability": r, "classification": cls,
             "last_reviewed": n.last_reviewed.to_string(),
             "review_count": n.review_count, "created_at": n.created_at.to_string(),
+            "reviews": reviews,
         })
     }).collect();
 
@@ -1242,6 +1253,7 @@ fn run_socratic_loop(
                 task,
                 None,
             )?;
+            db.add_review(&Db::node_id_static(topic), &question, "", &explanation, 0.2).ok();
             return Ok((true, true));
         }
 
@@ -1266,6 +1278,7 @@ fn run_socratic_loop(
                 task,
                 None,
             )?;
+            db.add_review(&Db::node_id_static(topic), &question, answer, &result.feedback, result.score).ok();
             if let Some(msg) = p.correct() { println!("   {msg}"); }
             else { println!("{}", "   Added to your PKG.".green()); }
             print_milestone(db, p, topic);
@@ -1310,6 +1323,7 @@ fn run_socratic_loop(
         task,
         None,
     )?;
+    db.add_review(&Db::node_id_static(topic), &last_question, &last_answer, &explanation, avg_score).ok();
     Ok((true, true))
 }
 

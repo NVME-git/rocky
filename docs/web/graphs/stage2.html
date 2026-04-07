@@ -80,6 +80,20 @@ svg#graph { width: 100%; height: 100%; }
 .edge-kind.part_of        { background: rgba(29,158,117,0.15); color: #1D9E75; }
 .edge-peer { color: #CBD5E1; }
 
+/* ── review history ── */
+.review-item { margin-bottom: 10px; padding: 10px; background: #0A0E1A;
+               border-radius: 6px; border: 1px solid #1E293B; }
+.review-date { font-size: 10px; color: #64748B; margin-bottom: 6px; }
+.review-q  { font-size: 12px; color: #94A3B8; margin-bottom: 4px; line-height: 1.45; }
+.review-a  { font-size: 12px; color: #CBD5E1; margin-bottom: 4px; line-height: 1.45;
+             font-style: italic; border-left: 2px solid #334155; padding-left: 8px; }
+.review-fb { font-size: 12px; color: #06B6D4; line-height: 1.45; margin-bottom: 6px; }
+.review-score { display: inline-block; font-size: 10px; font-weight: 600;
+                padding: 1px 6px; border-radius: 3px; }
+.review-score.known { background: rgba(29,158,117,0.15); color: #1D9E75; }
+.review-score.stale { background: rgba(239,159,39,0.15);  color: #EF9F27; }
+.review-score.gap   { background: rgba(226,75,74,0.15);   color: #E24B4A; }
+
 /* ── graph elements ── */
 .link { stroke-opacity: 0.6; transition: stroke-opacity 0.25s; }
 .link.dimmed { stroke-opacity: 0.05; }
@@ -158,12 +172,16 @@ svg#graph { width: 100%; height: 100%; }
         <div class="panel-section-title">Edges</div>
         <div id="p-edges"></div>
       </div>
+      <div class="panel-section" id="p-reviews-section">
+        <div class="panel-section-title">Review History</div>
+        <div id="p-reviews"></div>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-const PKG = {"nodes":[{"id":"rust-async/await","topic":"Rust async/await","kind":"concept","domain":"Language","description":"Rust async/await builds on zero-cost state machines — when you write async fn, the compiler generates a state machine, not threads.","stability":4.5,"difficulty":0.3,"retrievability":0.95,"classification":"known","last_reviewed":"2026-04-01","review_count":1,"created_at":"2026-04-01"},{"id":"tokio-runtime","topic":"tokio runtime","kind":"concept","domain":"Language","description":"The async executor that drives Rust futures — manages the thread pool and event loop.","stability":4.5,"difficulty":0.3,"retrievability":0.95,"classification":"known","last_reviewed":"2026-04-01","review_count":1,"created_at":"2026-04-01"},{"id":"axum-framework","topic":"Axum framework","kind":"concept","domain":"Language","description":"A Rust web framework built on hyper and tower — composable routing with extractors and type-safe middleware.","stability":4.5,"difficulty":0.3,"retrievability":0.95,"classification":"known","last_reviewed":"2026-04-01","review_count":1,"created_at":"2026-04-01"},{"id":"sqlx-connection-pooling","topic":"sqlx connection pooling","kind":"implementation","domain":"Database","description":"Async database driver for Rust with compile-time query checking — PgPool manages a pool of reusable PostgreSQL connections.","stability":4.8,"difficulty":0.3,"retrievability":0.96,"classification":"known","last_reviewed":"2026-04-02","review_count":1,"created_at":"2026-04-02"},{"id":"database-migrations","topic":"database migrations","kind":"concept","domain":"Database","description":"Versioned, incremental changes to your database schema — tracked so they apply once and in order across all environments.","stability":5,"difficulty":0.3,"retrievability":0.96,"classification":"known","last_reviewed":"2026-04-02","review_count":1,"created_at":"2026-04-02"},{"id":"language","topic":"Language","kind":"domain","domain":"Language","description":"Language domain","stability":999,"difficulty":0,"retrievability":1,"classification":"known","last_reviewed":"","review_count":0,"created_at":"2026-03-01"},{"id":"database","topic":"Database","kind":"domain","domain":"Database","description":"Database domain","stability":999,"difficulty":0,"retrievability":1,"classification":"known","last_reviewed":"","review_count":0,"created_at":"2026-03-01"},{"id":"__user__","topic":"alex","kind":"user","domain":"","description":"Your personal knowledge graph","stability":999,"difficulty":0,"retrievability":1,"classification":"known","last_reviewed":"","review_count":0,"created_at":""}],"edges":[{"id":"e1","source":"rust-async/await","target":"tokio-runtime","kind":"depends_on","description":"Rust async code requires a runtime to drive futures; tokio is the standard choice.","strength":0.88},{"id":"e2","source":"tokio-runtime","target":"axum-framework","kind":"depends_on","description":"Axum is built on hyper/tower which uses tokio as its async runtime.","strength":0.9},{"id":"e3","source":"sqlx-connection-pooling","target":"database-migrations","kind":"depends_on","description":"Connection pools are used with migrated schemas; migrations must run before the pool is opened.","strength":0.8},{"id":"e4","source":"database-migrations","target":"sqlx-connection-pooling","kind":"implies","description":"Running sqlx migrations implies having a connection pool configured to connect to the database.","strength":0.78},{"id":"language-user","source":"language","target":"__user__","kind":"part_of","description":"","strength":1},{"id":"database-user","source":"database","target":"__user__","kind":"part_of","description":"","strength":1}],"userName":"alex"};
+const PKG = {"nodes":[{"id":"rust-async/await","topic":"Rust async/await","kind":"concept","domain":"Language","description":"Rust async/await builds on zero-cost state machines \u2014 when you write async fn, the compiler generates a state machine, not threads.","stability":4.5,"difficulty":0.3,"retrievability":0.95,"classification":"known","last_reviewed":"2026-04-01","review_count":1,"created_at":"2026-04-01","reviews":[{"date":"2026-04-01","question":"You have a Rust async function that makes two independent HTTP calls. Right now they run sequentially. How would you run them concurrently, and what's the difference between join! and select!?","answer":"tokio::join! runs both futures concurrently and waits for both to finish. select! waits for whichever resolves first and cancels the other. For two independent calls where I want both results, join! is correct.","feedback":"Good distinction. Worth noting: join! doesn't parallelize \u2014 both futures still run on a single thread unless you spawn tasks. tokio::spawn moves them to the thread pool.","score":0.85}]},{"id":"tokio-runtime","topic":"tokio runtime","kind":"concept","domain":"Language","description":"The async executor that drives Rust futures \u2014 manages the thread pool and event loop.","stability":4.5,"difficulty":0.3,"retrievability":0.95,"classification":"known","last_reviewed":"2026-04-01","review_count":1,"created_at":"2026-04-01","reviews":[{"date":"2026-04-01","question":"You add #[tokio::main] to your main function. What does it actually do, and what's the difference between the current_thread and multi_thread flavours?","answer":"#[tokio::main] is a macro that creates a tokio runtime and calls block_on on your main future. current_thread runs everything on one thread; multi_thread (default) uses a thread pool matching your CPU cores.","feedback":"Excite excite excite! Friend get it!","score":0.88}]},{"id":"axum-framework","topic":"Axum framework","kind":"concept","domain":"Language","description":"A Rust web framework built on hyper and tower \u2014 composable routing with extractors and type-safe middleware.","stability":4.5,"difficulty":0.3,"retrievability":0.95,"classification":"known","last_reviewed":"2026-04-01","review_count":1,"created_at":"2026-04-01","reviews":[{"date":"2026-04-01","question":"You want to add request logging to every route in Axum. What's the difference between a tower Layer and a tower Service, and how do they compose in Axum?","answer":"A Service is the core abstraction \u2014 takes a request, returns a future with a response. A Layer wraps a Service to add behaviour (logging, auth, etc.). Router::layer applies a tower Layer to all routes.","feedback":"We are crew. We solve together. Is correct!","score":0.87}]},{"id":"sqlx-connection-pooling","topic":"sqlx connection pooling","kind":"implementation","domain":"Database","description":"Async database driver for Rust with compile-time query checking \u2014 PgPool manages a pool of reusable PostgreSQL connections.","stability":4.8,"difficulty":0.3,"retrievability":0.96,"classification":"known","last_reviewed":"2026-04-02","review_count":1,"created_at":"2026-04-02","reviews":[{"date":"2026-04-02","question":"Your API gets a burst of 200 simultaneous requests. With sqlx PgPool, what happens when all pool connections are in use?","answer":"New requests wait until a connection is freed. PgPool has a max_connections setting \u2014 if the pool is exhausted the request blocks until one becomes available, and returns an error if it waits longer than connect_timeout.","feedback":"Fist my bump, friend! Is correct!","score":0.88}]},{"id":"database-migrations","topic":"database migrations","kind":"concept","domain":"Database","description":"Versioned, incremental changes to your database schema \u2014 tracked so they apply once and in order across all environments.","stability":5,"difficulty":0.3,"retrievability":0.96,"classification":"known","last_reviewed":"2026-04-02","review_count":1,"created_at":"2026-04-02","reviews":[{"date":"2026-04-02","question":"You run sqlx migrate run in CI. A migration ran on staging but you changed it locally before it hit production. What happens when production tries to apply it?","answer":"sqlx tracks migrations by checksum. If the checksum doesn't match it refuses to run \u2014 it won't apply a migration it's seen in a different form. You'd need a new migration file to correct the schema.","feedback":"Is correct, friend! Rocky also learn this hard way.","score":0.9}]},{"id":"language","topic":"Language","kind":"domain","domain":"Language","description":"Language domain","stability":999,"difficulty":0,"retrievability":1,"classification":"known","last_reviewed":"","review_count":0,"created_at":"2026-03-01","reviews":[]},{"id":"database","topic":"Database","kind":"domain","domain":"Database","description":"Database domain","stability":999,"difficulty":0,"retrievability":1,"classification":"known","last_reviewed":"","review_count":0,"created_at":"2026-03-01","reviews":[]},{"id":"__user__","topic":"alex","kind":"user","domain":"","description":"Your personal knowledge graph","stability":999,"difficulty":0,"retrievability":1,"classification":"known","last_reviewed":"","review_count":0,"created_at":"","reviews":[]}],"edges":[{"id":"e1","source":"rust-async/await","target":"tokio-runtime","kind":"depends_on","description":"Rust async code requires a runtime to drive futures; tokio is the standard choice.","strength":0.88},{"id":"e2","source":"tokio-runtime","target":"axum-framework","kind":"depends_on","description":"Axum is built on hyper/tower which uses tokio as its async runtime.","strength":0.9},{"id":"e3","source":"sqlx-connection-pooling","target":"database-migrations","kind":"depends_on","description":"Connection pools are used with migrated schemas; migrations must run before the pool is opened.","strength":0.8},{"id":"e4","source":"database-migrations","target":"sqlx-connection-pooling","kind":"implies","description":"Running sqlx migrations implies having a connection pool configured to connect to the database.","strength":0.78},{"id":"language-user","source":"language","target":"__user__","kind":"part_of","description":"","strength":1},{"id":"database-user","source":"database","target":"__user__","kind":"part_of","description":"","strength":1}],"userName":"alex"};
 
 // ── colour helpers ──────────────────────────────────────────────────────────
 function nodeColor(d) {
@@ -340,15 +358,36 @@ node.append('circle')
   .attr('stroke-width', d => nodeStrokeWidth(d));
 
 node.append('text')
-  .attr('dy', d => (d.kind === 'domain' || d.kind === 'user') ? '0' : nodeRadius(d) + 14)
-  .attr('alignment-baseline', d => (d.kind === 'domain' || d.kind === 'user') ? 'middle' : null)
-  .style('dominant-baseline', d => (d.kind === 'domain' || d.kind === 'user') ? 'central' : 'auto')
   .style('font-size', d => d.kind === 'user' ? '11px' : d.kind === 'domain' ? '9px' : '11px')
   .style('font-weight', d => (d.kind === 'user' || d.kind === 'domain') ? '700' : 'normal')
   .style('fill', d => d.kind === 'user' ? '#0A0E1A' : d.kind === 'domain' ? '#F1F5F9' : '#CBD5E1')
-  .text(d => {
-    const maxLen = d.kind === 'user' ? 10 : d.kind === 'domain' ? 7 : 22;
-    return d.topic.length > maxLen ? d.topic.slice(0, maxLen - 1) + '…' : d.topic;
+  .each(function(d) {
+    const el = d3.select(this);
+    if (d.kind === 'user') {
+      // Word-wrap to fit inside circle (r=28 → ~8 chars per line at 11px bold)
+      const maxChars = 8, lineH = 13;
+      const words = d.topic.split(/\s+/);
+      const lines = [];
+      let cur = '';
+      for (const w of words) {
+        const word = w.length > maxChars ? w.slice(0, maxChars - 1) + '…' : w;
+        const test = cur ? cur + ' ' + word : word;
+        if (test.length <= maxChars) { cur = test; }
+        else { if (cur) lines.push(cur); cur = word; }
+      }
+      if (cur) lines.push(cur);
+      // Centre the block vertically
+      const startDy = -(lines.length - 1) * lineH / 2;
+      lines.forEach((line, i) =>
+        el.append('tspan').attr('x', 0).attr('dy', i === 0 ? startDy : lineH).text(line));
+    } else if (d.kind === 'domain') {
+      const t = d.topic;
+      el.attr('dy', '0').style('dominant-baseline', 'central')
+        .text(t.length > 7 ? t.slice(0, 6) + '…' : t);
+    } else {
+      el.attr('dy', nodeRadius(d) + 14)
+        .text(d.topic.length > 22 ? d.topic.slice(0, 20) + '…' : d.topic);
+    }
   });
 
 simulation.on('tick', () => {
@@ -399,6 +438,27 @@ function selectNode(d) {
         const label = nodeById[e.peer] ? nodeById[e.peer].topic : e.peer;
         return `<div class="edge-item"><span class="edge-kind ${e.kind}">${e.kind.replace(/_/g,' ')}</span><span class="edge-peer">${label}</span></div>`;
       }).join('');
+  // Review history — hidden for structural (domain/user) nodes
+  const reviewSection = document.getElementById('p-reviews-section');
+  const reviews = d.reviews || [];
+  if (d.kind === 'domain' || d.kind === 'user') {
+    reviewSection.style.display = 'none';
+  } else {
+    reviewSection.style.display = '';
+    document.getElementById('p-reviews').innerHTML = reviews.length === 0
+      ? '<div style="color:#64748B;font-size:12px">No reviews yet</div>'
+      : reviews.map(r => {
+          const pct = Math.round(r.score * 100);
+          const cls = pct >= 70 ? 'known' : pct >= 40 ? 'stale' : 'gap';
+          return `<div class="review-item">
+            <div class="review-date">${r.date}</div>
+            ${r.question ? `<div class="review-q">Q: ${r.question}</div>` : ''}
+            ${r.answer   ? `<div class="review-a">${r.answer}</div>` : ''}
+            ${r.feedback ? `<div class="review-fb">${r.feedback}</div>` : ''}
+            <span class="review-score ${cls}">${pct}%</span>
+          </div>`;
+        }).join('');
+  }
   document.getElementById('panel').classList.add('open');
 }
 function closePanel() {
