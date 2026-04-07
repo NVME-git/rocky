@@ -537,11 +537,32 @@ class _TerminalBlockState extends State<TerminalBlock>
   bool _animationStarted = false;
   ScrollPosition? _scrollPos;
 
+  late final String _inputSection;
+  late final String _outputSection;
+
   @override
   void initState() {
     super.initState();
 
-    final totalChars = widget.code.length;
+    // Split at the last shell-prompt line: everything up to and including it
+    // is typed character-by-character; everything after appears all at once.
+    final promptRe = RegExp(r'^[\w~/.]*\s*\$\s');
+    final lines = widget.code.split('\n');
+    int lastPrompt = -1;
+    for (int i = 0; i < lines.length; i++) {
+      if (promptRe.hasMatch(lines[i])) lastPrompt = i;
+    }
+    if (lastPrompt < 0 || lastPrompt == lines.length - 1) {
+      _inputSection = widget.code;
+      _outputSection = widget.outputCode ?? '';
+    } else {
+      _inputSection = lines.sublist(0, lastPrompt + 1).join('\n');
+      final rest = lines.sublist(lastPrompt + 1).join('\n');
+      _outputSection =
+          widget.outputCode != null ? '$rest\n${widget.outputCode}' : rest;
+    }
+
+    final totalChars = _inputSection.length;
     // Scale duration: ~18ms per char, clamped between 600ms and 2800ms
     final ms = (totalChars * 18).clamp(600, 2800);
     _typewriter = AnimationController(
@@ -659,9 +680,9 @@ class _TerminalBlockState extends State<TerminalBlock>
     return AnimatedBuilder(
       animation: _charCount,
       builder: (context, _) {
-        final visible = widget.code.substring(0, _charCount.value);
+        final visible = _inputSection.substring(0, _charCount.value);
         final lines = visible.split('\n');
-        final isFinished = _charCount.value == widget.code.length;
+        final isFinished = _charCount.value == _inputSection.length;
 
         return Container(
           padding: const EdgeInsets.all(16),
@@ -692,10 +713,10 @@ class _TerminalBlockState extends State<TerminalBlock>
                     ),
                   ),
                 // Output revealed all at once when input finishes typing
-                if (isFinished && widget.outputCode != null)
+                if (isFinished && _outputSection.isNotEmpty)
                   ...[
                     const SizedBox(height: 2),
-                    ...widget.outputCode!.split('\n').map(_buildLine),
+                    ..._outputSection.split('\n').map(_buildLine),
                   ],
                 // Blinking cursor at the bottom
                 if (isFinished)

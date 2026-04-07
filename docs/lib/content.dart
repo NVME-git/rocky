@@ -356,9 +356,7 @@ After a few sessions, see what you know:
 
 ```bash
 rocky ls
-```
 
-```
   ♫  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
@@ -505,9 +503,7 @@ Search your PKG and queued topics, then select which to quiz:
 ```bash
 rocky quiz "redis"
 rocky quiz "auth"
-```
 
-```
   Matching topics for "redis":
 
   [1]  Redis TTL expiry           (gap    · 38% recall)
@@ -541,9 +537,7 @@ PKG summary.
 
 ```bash
 rocky stats
-```
 
-```
   ♫  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
@@ -567,9 +561,7 @@ Full topic list with all metrics.
 
 ```bash
 rocky ls
-```
 
-```
   Topic                           Kind           Recall         Stab   Diff  Reviews  Last Reviewed
   ────────────────────────────────────────────────────────────────────────────────────────────────
   JWT authentication              pattern        ██████████ 97%  8.2    0.3   3        2026-04-03
@@ -881,9 +873,7 @@ List all edges in the implication graph — the relationships Rocky has inferred
 
 ```bash
 rocky edges
-```
 
-```
   SOURCE                         TARGET                         KIND               STR   DESCRIPTION
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
   JWT authentication             token expiry handling          implies            0.90  ...
@@ -894,9 +884,7 @@ rocky edges
 ```bash
 # Edge stats summary
 rocky edges --stats
-```
 
-```
   ◈ Edge Stats
 
   Total edges:           12
@@ -1661,9 +1649,7 @@ Fresh project. Empty PKG.
 ~ $ mkdir taskify && cd taskify && git init
 ~/taskify $ rocky install          # install the git hook
 ~/taskify $ rocky stats
-```
 
-```
   ♫  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
@@ -1685,9 +1671,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky "set up Rust Axum web server with tokio and tower middleware"
-```
 
-```
   ♫  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
@@ -1760,9 +1744,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky ls
-```
 
-```
   Topic                    Kind     Recall         Stab  Diff  Reviews  Last Reviewed
   ─────────────────────────────────────────────────────────────────────────────────────
   Rust async/await         concept  ██████████ 95%  4.5   0.3   1        2026-04-01
@@ -1780,9 +1762,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky "add PostgreSQL with sqlx — connection pooling and migrations"
-```
 
-```
   Task: add PostgreSQL with sqlx — connection pooling and migrations
 
   Rocky: New topic — sqlx connection pooling
@@ -1832,9 +1812,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky ls
-```
 
-```
   Topic                    Kind           Recall         Stab  Diff  Reviews  Last Reviewed
   ──────────────────────────────────────────────────────────────────────────────────────────
   Rust async/await         concept        █████████░ 92%  4.5   0.3   1        2026-04-01
@@ -1846,9 +1824,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky queue
-```
 
-```
   1 queued topic (not yet in PKG):
 
   · PostgreSQL transactions
@@ -1868,9 +1844,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky "implement JWT auth middleware — issue tokens, validate on protected routes"
-```
 
-```
   Task: implement JWT auth middleware — issue tokens, validate on protected routes
 
   Rocky: New topic — JWT authentication
@@ -1922,9 +1896,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky stats
-```
 
-```
   ♫  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
@@ -1950,9 +1922,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky "add Redis caching for user sessions and frequently accessed data"
-```
 
-```
   Task: add Redis caching for user sessions and frequently accessed data
 
   Rocky: New topic — Redis TTL expiry
@@ -2000,9 +1970,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky ls
-```
 
-```
   Topic                       Kind           Recall         Stab  Diff  Reviews  Last Reviewed
   ──────────────────────────────────────────────────────────────────────────────────────────────
   Rust async/await            concept        ████████░░ 85%  4.5   0.3   1        2026-04-01
@@ -2027,9 +1995,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky "implement per-user rate limiting with Redis sorted sets and Lua scripting"
-```
 
-```
   Task: implement per-user rate limiting with Redis sorted sets and Lua scripting
 
   Rocky: New topic — Redis sorted sets
@@ -2075,9 +2041,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky edges --stats
-```
 
-```
   ◈ Edge Stats
 
   Total edges:           14
@@ -2103,9 +2067,7 @@ You've been shipping features. It's been 7 days since commit 1.
 
 ```bash
 ~/taskify $ rocky stats
-```
 
-```
   ♫  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
@@ -2123,9 +2085,7 @@ You've been shipping features. It's been 7 days since commit 1.
 
 ```bash
 ~/taskify $ rocky ls
-```
 
-```
   Topic                       Kind           Recall         Stab  Diff  Reviews  Last Reviewed
   ──────────────────────────────────────────────────────────────────────────────────────────────
   Rust async/await            concept        ██████░░░░ 63%  4.5   0.3   1        2026-04-01
@@ -2148,9 +2108,7 @@ You've been shipping features. It's been 7 days since commit 1.
 
 ```bash
 ~/taskify $ rocky quiz
-```
 
-```
   ♫  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
@@ -2186,9 +2144,7 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
 
 ```bash
 ~/taskify $ rocky backfill --limit 10
-```
 
-```
   ♫  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
@@ -2219,9 +2175,7 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
 
 ```bash
 ~/taskify $ rocky stats
-```
 
-```
   ♫  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
@@ -2269,9 +2223,7 @@ The graph is a single self-contained HTML file at `~/.rocky/view.html`.
 
 ```bash
 ~/taskify $ rocky edges
-```
 
-```
   SOURCE                         TARGET                         KIND               STR   DESCRIPTION
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Rust async/await               tokio runtime                  depends_on         0.88  Rust async code requires a...
