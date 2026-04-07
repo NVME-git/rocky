@@ -747,7 +747,7 @@ class _TerminalBlockState extends State<TerminalBlock>
                 if (isFinished && _outputSection.isNotEmpty)
                   ...[
                     const SizedBox(height: 2),
-                    ..._outputSection.split('\n').map(_buildLine),
+                    ..._buildOutputLines(_outputSection),
                   ],
                 // Blinking cursor at the bottom
                 if (isFinished)
@@ -784,11 +784,9 @@ class _TerminalBlockState extends State<TerminalBlock>
     );
   }
 
-  /// Style a single terminal line with semantic colours matching the Rocky CLI.
+  /// Style a single terminal line (used for the typing-animation input section).
   TextSpan _styleLine(String line) {
     final trimmed = line.trimLeft();
-
-    // Shell prompt:  ~/path $ command
     final promptMatch = RegExp(r'^([\w~/.]*\s*\$\s+)(.*)').firstMatch(line);
     if (promptMatch != null) {
       return TextSpan(children: [
@@ -798,74 +796,105 @@ class _TerminalBlockState extends State<TerminalBlock>
             style: const TextStyle(color: TermColors.cmdText)),
       ]);
     }
-
-    // ♫  Rocky personality / banner lines  →  Rocky brand amber
-    if (trimmed.startsWith('♫')) {
-      return TextSpan(text: line,
-          style: const TextStyle(color: TermColors.rockyBrand, fontWeight: FontWeight.w500));
-    }
-
-    // ✓  success
-    if (trimmed.startsWith('✓')) {
-      return TextSpan(text: line,
-          style: const TextStyle(color: TermColors.successGreen));
-    }
-
-    // ✗  error
-    if (trimmed.startsWith('✗')) {
-      return TextSpan(text: line,
-          style: const TextStyle(color: TermColors.gapRed));
-    }
-
-    // ~  fading / warning
-    if (trimmed.startsWith('~')) {
-      return TextSpan(text: line,
-          style: const TextStyle(color: TermColors.fadingAmber));
-    }
-
-    // Q1. / Q2. / Q3. …  Rocky is asking a question  →  Rocky feedback cyan
-    if (RegExp(r'^Q\d+\.').hasMatch(trimmed)) {
-      return TextSpan(text: line,
-          style: const TextStyle(color: TermColors.rockyFeedback));
-    }
-
-    // Rocky: New topic …  Rocky is introducing something  →  Rocky brand amber
-    if (trimmed.startsWith('Rocky:')) {
-      return TextSpan(text: line,
-          style: const TextStyle(color: TermColors.rockyBrand, fontWeight: FontWeight.w500));
-    }
-
-    // > …  user answer  →  bright white, slightly italic
-    if (trimmed.startsWith('>') && !trimmed.startsWith('> ') == false || trimmed.startsWith('> ')) {
-      if (trimmed.startsWith('>')) {
-        return TextSpan(text: line,
-            style: const TextStyle(color: TermColors.userAnswer, fontStyle: FontStyle.italic));
-      }
-    }
-
-    // [e] / [?] hint line  →  very muted
-    if (trimmed.startsWith('[')) {
-      return TextSpan(text: line,
-          style: const TextStyle(color: TermColors.hintMuted));
-    }
-
-    // Evaluating… / Fetching explanation… / Analyzing…  →  muted
-    if (trimmed.startsWith('Evaluating') ||
-        trimmed.startsWith('Fetching') ||
-        trimmed.startsWith('Analyzing') ||
-        trimmed.startsWith('Saved to PKG')) {
-      return TextSpan(text: line,
-          style: const TextStyle(color: TermColors.hintMuted));
-    }
-
-    // # comment
     if (trimmed.startsWith('#')) {
       return TextSpan(text: line,
           style: const TextStyle(color: TermColors.commentTxt));
     }
-
     return TextSpan(text: line,
         style: const TextStyle(color: TermColors.outputTxt));
+  }
+
+  /// Stateful output renderer — tracks question/answer blocks across lines so
+  /// every continuation line of a question is cyan and every line of an answer
+  /// is white, not just the first.
+  List<Widget> _buildOutputLines(String output) {
+    // _LineMode: 0 = normal, 1 = question, 2 = answer
+    int mode = 0;
+    final widgets = <Widget>[];
+
+    for (final line in output.split('\n')) {
+      final trimmed = line.trimLeft();
+      TextSpan span;
+
+      // --- Lines that unconditionally reset mode ---
+      final promptMatch = RegExp(r'^([\w~/.]*\s*\$\s+)(.*)').firstMatch(line);
+      if (promptMatch != null) {
+        mode = 0;
+        span = TextSpan(children: [
+          TextSpan(text: promptMatch.group(1),
+              style: const TextStyle(color: TermColors.prompt, fontWeight: FontWeight.w600)),
+          TextSpan(text: promptMatch.group(2),
+              style: const TextStyle(color: TermColors.cmdText)),
+        ]);
+      } else if (trimmed.startsWith('♫')) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.rockyBrand, fontWeight: FontWeight.w500));
+      } else if (trimmed.startsWith('Rocky:')) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.rockyBrand, fontWeight: FontWeight.w500));
+      } else if (trimmed.startsWith('✓')) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.successGreen));
+      } else if (trimmed.startsWith('✗')) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.gapRed));
+      } else if (trimmed.startsWith('~')) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.fadingAmber));
+
+      // --- Mode starters ---
+      } else if (RegExp(r'^Q\d+\.').hasMatch(trimmed)) {
+        mode = 1;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.rockyFeedback));
+      } else if (trimmed.startsWith('>')) {
+        mode = 2;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.userAnswer, fontStyle: FontStyle.italic));
+
+      // --- Blank lines: reset mode, render plain ---
+      } else if (trimmed.isEmpty) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.outputTxt));
+
+      // --- Hint / muted lines (do not change mode) ---
+      } else if (trimmed.startsWith('[')) {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.hintMuted));
+      } else if (trimmed.startsWith('Evaluating') ||
+                 trimmed.startsWith('Fetching') ||
+                 trimmed.startsWith('Analyzing') ||
+                 trimmed.startsWith('Saved to PKG')) {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.hintMuted));
+      } else if (trimmed.startsWith('#')) {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.commentTxt));
+
+      // --- Continuation: inherit current mode ---
+      } else if (mode == 1) {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.rockyFeedback));
+      } else if (mode == 2) {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.userAnswer, fontStyle: FontStyle.italic));
+      } else {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.outputTxt));
+      }
+
+      widgets.add(Text.rich(
+        span,
+        style: const TextStyle(fontFamily: 'monospace', fontSize: 13.5, height: 1.55),
+      ));
+    }
+    return widgets;
   }
 }
 
