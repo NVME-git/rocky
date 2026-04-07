@@ -103,15 +103,15 @@ When you answer well, stability increases and the topic decays slower. When you 
 ## Rocky the alien
 
 ```
-      ♫
-    _____
-  .'     '.
- /  .   .  \
-|  . _____ .|
-|   |     | |
-|   |_____|  |
- \   .   .  /
-  '.______.'
+       ♫
+     _____
+   .'     '.
+  /  .   .  \
+ |  . _____ .|
+ |   |     | |
+ |   |_____|  |
+  \   .   .  /
+   '.______.'
 ```
 
 Rocky has a personality based on Rocky the alien from Andy Weir's [*Project Hail Mary*](https://www.imdb.com/title/tt12042730/) — enthusiastic, direct, and genuinely rooting for you.
