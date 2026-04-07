@@ -608,6 +608,96 @@ rocky uninstall claude
 
 After installing, every Claude Code prompt in any project is logged. Run `rocky quiz` at any time to review what topics came up.
 
+### Prompt logging only (no git hook)
+
+Enable the `.rocky` prompt log in a project without installing the git hook. Useful when you want `rocky quiz` to pick up Claude Code prompts but don't want `rocky diff` to run on every commit.
+
+```bash
+rocky install prompt
+rocky uninstall prompt
+```
+
+This creates the `.rocky` SQLite log file and adds it to `.gitignore`, but leaves the post-commit hook untouched.
+
+---
+
+## `rocky queue`
+
+Show topics queued in this project. A topic is queued when you pressed Enter (skip) during a session — it's been encountered but not yet added to your PKG. Queued topics are stored in `./.rocky` and picked up automatically next time you run `rocky quiz`.
+
+```bash
+rocky queue
+```
+
+**When topics are queued:**
+
+```
+  3 queued topics (not yet in PKG):
+
+  · Redis Lua scripting
+    concept · Lua scripts in Redis run atomically — the whole script or nothing
+    from: add Redis rate limiter
+
+  · PostgreSQL transactions
+    concept · All-or-nothing SQL execution with ACID guarantees
+    from: add database connection
+
+  · Docker multi-stage builds
+    implementation · Build stages that produce smaller final images by discarding build tools
+    from: Dockerize the app
+
+  Run  rocky quiz  to work through the queue.
+```
+
+**When the queue is empty:**
+
+```
+  No topics queued — queue is clear.
+```
+
+**When Rocky hasn't been installed in this project:**
+
+```
+  No queue found for this project.
+  Run `rocky install` or `rocky install prompt` to enable logging here.
+```
+
+---
+
+## `rocky logs`
+
+Show recent prompts logged in this project from the Claude Code hook (last 24 hours). Useful for seeing what you've been asking your AI to build before running `rocky quiz`.
+
+```bash
+rocky logs
+```
+
+**When prompts have been logged:**
+
+```
+  4 prompts in the last 24h:
+
+  09:14 add JWT authentication middleware to the Axum router
+  10:32 implement Redis caching for user sessions with TTL
+  14:05 write sqlx migration for the users table with created_at and updated_at columns
+  16:41 add rate limiting using Redis sorted sets — max 100 requests per minute per user
+```
+
+**When nothing has been logged today:**
+
+```
+  No prompts logged in the last 24 hours.
+```
+
+**When the Claude Code hook isn't installed:**
+
+```
+  No local log found.
+  Run `rocky install` in this project to enable prompt logging.
+```
+
+`rocky quiz` automatically reads from this same log, so any prompts shown here will be analysed in your next quiz session.
+
 ---
 
 ## `rocky export`
@@ -677,6 +767,61 @@ rocky restore
 
 ---
 
+## `rocky backfill`
+
+Scan your git history and silently add topics to your PKG — no interactive Q&A. Perfect for seeding your knowledge graph when you first install Rocky on an existing project.
+
+```bash
+# Scan all your commits in the current repo
+rocky backfill
+
+# Include commits from all authors (default: your commits only)
+rocky backfill --all-authors
+
+# Limit to the most recent N commits
+rocky backfill --limit 20
+
+# Scan last 50 commits from all contributors
+rocky backfill --all-authors --limit 50
+```
+
+Rocky reads the diff for each commit, extracts topics the same way `rocky diff` does, and adds any that aren't already in your PKG. It sets initial retrievability to 0.5 (neutral — you saw the code but weren't quizzed). Edges are generated for all new topics after the scan completes.
+
+**Example output:**
+
+```
+  ♫  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
+
+  Taxonomy skeleton ready.
+  Scanning last 10 commits by alex@example.com (10 commits)…
+
+  [1/10] a3f8c12 init: Axum server scaffold with tokio runtime — no new topics
+  [2/10] b7d4e19 feat: sqlx PgPool + migration runner — no new topics
+  [3/10] c1a2d83 feat: JWT auth middleware — no new topics
+  [4/10] d9f3b41 feat: Redis caching layer — no new topics
+  [5/10] e4c8a27 feat: per-user rate limiting — no new topics
+  [6/10] f2b7e94 feat: Docker multi-stage build — 2 new
+    + Docker multi-stage builds
+    + container image optimization
+  [7/10] g8d1c35 feat: GitHub Actions CI pipeline — 2 new
+    + GitHub Actions workflow syntax
+    + CI/CD pipeline design
+  [8/10] h5e4b72 feat: OpenAPI spec with utoipa — 1 new
+    + OpenAPI specification
+  [9/10] i3f6d28 fix: handle expired tokens in middleware — no new topics
+  [10/10] j7a9c14 docs: API documentation and README — no new topics
+
+  ◈ Generating edges for 5 new topics…
+
+  ✓ Added 5 new topics · 47 already in PKG
+  Run  rocky quiz  to start reviewing them.
+```
+
+After backfill, run `rocky quiz` to start reviewing the newly discovered topics.
+
+---
+
 ## `rocky delete "query"`
 
 Search your PKG and remove topics that are no longer relevant.
@@ -688,6 +833,30 @@ rocky delete "react hooks"
 
 Rocky shows all matching topics and asks you to confirm before deleting. The corresponding PKG file is also removed.
 
+### Date-based deletion
+
+Remove topics added within a specific date range — useful for cleaning up after a bad session or resetting topics from a period when you were exploring unfamiliar technology.
+
+```bash
+# Delete all topics added on or after a date
+rocky delete --since 2026-04-01
+
+# Delete all topics added on or before a date
+rocky delete --before 2026-01-01
+
+# Combine for a precise date range
+rocky delete --since 2026-03-01 --before 2026-03-31
+```
+
+You can combine a search query with date flags:
+
+```bash
+# Delete "redis" topics added in March
+rocky delete "redis" --since 2026-03-01 --before 2026-03-31
+```
+
+Rocky always shows what will be deleted and asks for confirmation before removing anything.
+
 ---
 
 ## `rocky config`
@@ -696,16 +865,6 @@ Show what config Rocky is currently using.
 
 ```bash
 rocky config
-```
-
----
-
-## `rocky logs`
-
-Show recent prompts logged in this project (from the Claude Code hook).
-
-```bash
-rocky logs
 ```
 
 ---
@@ -1082,6 +1241,28 @@ Review your staged changes before committing. Behaves like the manual flow — n
 
 ---
 
+## Scenario 6: Git history backfill (`rocky backfill`)
+
+Seed your PKG from your git history without any interactive Q&A. Useful when you first install Rocky on an existing project — Rocky scans your commits, extracts topics from each diff, and adds anything new to the PKG with a neutral starting retrievability of 0.5.
+
+**Flow:**
+
+1. Run `rocky backfill` (optionally with `--all-authors` or `--limit N`)
+2. Resolve author filter (default: current `git user.email` only)
+3. Fetch all matching commit SHAs from `git log`, oldest first
+4. For each commit:
+   - Read the commit diff
+   - Extract topics using code-aware analysis (same as `rocky diff`)
+   - For each topic not already in the PKG → add it with retrievability 0.5, no Q&A
+   - Print `+ topic name` for each new topic added
+5. After all commits: generate edges for all newly added topics in bulk
+6. Print summary: `✓ Added N new topics · M already in PKG`
+7. Prompt to run `rocky quiz` to start reviewing
+
+Backfill never overwrites existing PKG entries — if a topic is already in your PKG, it's counted as "already in PKG" and skipped.
+
+---
+
 ## How the PKG classifies topics
 
 Every topic in the PKG has a **retrievability score** — an estimate of how likely you are to recall it right now, based on how long ago you last reviewed it and how stable your knowledge is.
@@ -1383,10 +1564,6 @@ rocky restore
 # ✓ Restored 42 topics from ~/.rocky/pkg/pkg.json
 ```
 
-### `rocky backup`
-
-Write `pkg/pkg.json` without committing. Useful for a quick snapshot before making changes.
-
 ---
 
 ## Topic domains and PKG structure
@@ -1459,4 +1636,638 @@ remind_push_days = 7       # OR every 7 days — pick one, set other to 0
 ```
 
 Set both to `0` to disable reminders entirely.
+''';
+
+const kWalkthrough = r'''
+# Project Walkthrough: A PKG from Scratch
+
+This is a complete, realistic example of building a Personal Knowledge Graph while working on a Rust REST API called **taskify** — a task management backend with JWT auth, PostgreSQL, Redis caching, and Docker deployment.
+
+We follow 6 commits over one week. At each stage you can see exactly what Rocky does, what the PKG looks like, and how `rocky view` evolves as your knowledge grows.
+
+---
+
+## Setup
+
+Fresh project. Empty PKG.
+
+```bash
+mkdir taskify && cd taskify && git init
+rocky install          # install the git hook
+rocky stats
+```
+
+```
+  ♫  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
+
+  Total topics:  0
+  Known:         0
+  Fading:        0
+  Gaps/weak:     0
+
+  Quiz budget: 3/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
+
+  ♫ PKG is empty. Let us begin science, question?
+```
+
+**`rocky view` at this point:** A blank canvas. A few taxonomy skeleton nodes (Language, Database, Auth…) float at the edges, lightly dimmed. Nothing in the centre.
+
+---
+
+## Commit 1 — Project scaffold
+
+```bash
+rocky "set up Rust Axum web server with tokio and tower middleware"
+```
+
+```
+  ♫  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
+
+  Task: set up Rust Axum web server with tokio and tower middleware
+
+  Analyzing topics...
+
+  Rocky: New topic — Rust async/await
+    Rust's async/await builds on zero-cost state machines — when you write
+    async fn, the compiler generates a state machine, not threads.
+
+  Q1. You have a Rust async function that makes two independent HTTP calls.
+      Right now they run sequentially. How would you run them concurrently,
+      and what's the difference between join! and select!, question?
+
+  > tokio::join! runs both futures concurrently and waits for both to finish.
+    select! waits for whichever resolves first and cancels the other. For two
+    independent calls where I want both results, join! is correct.
+
+  ♫ Fist my bump, friend! Is correct!
+
+  Good distinction. Worth noting: join! doesn't parallelize — both futures
+  still run on a single thread unless you spawn tasks. tokio::spawn moves
+  them to the thread pool.
+
+  ✓ Rust async/await added to PKG.
+
+  Rocky: New topic — tokio runtime
+    The async executor that drives Rust futures — manages the thread pool
+    and event loop.
+
+  Q2. You add #[tokio::main] to your main function. What does it actually do,
+      and what's the difference between the current_thread and multi_thread
+      flavours, question?
+
+  > #[tokio::main] is a macro that creates a tokio runtime and calls block_on
+    on your main future. current_thread runs everything on one thread;
+    multi_thread (default) uses a thread pool matching your CPU cores.
+
+  ♫ Excite excite excite! Friend get it!
+
+  ✓ tokio runtime added to PKG.
+
+  Rocky: New topic — Axum framework
+    A Rust web framework built on hyper and tower — composable routing with
+    extractors and type-safe middleware.
+
+  Q3. You want to add request logging to every route in Axum. What's the
+      difference between a tower Layer and a tower Service, and how do they
+      compose in Axum, question?
+
+  > A Service is the core abstraction — takes a request, returns a future
+    with a response. A Layer wraps a Service to add behaviour (logging,
+    auth, etc.). Router::layer applies a tower Layer to all routes.
+
+  ♫ We are crew. We solve together. Is correct!
+
+  ✓ Axum framework added to PKG.
+```
+
+```bash
+git commit -m "init: Axum server scaffold with tokio runtime"
+# Rocky runs automatically (git hook):
+#
+#   ~ Rust async/await  (just reviewed — budget reached, skipping)
+#   ✓ No new topics in diff beyond what was just quizzed.
+```
+
+**PKG after commit 1:**
+
+```bash
+rocky ls
+```
+
+```
+  Topic                    Kind     Recall         Stab  Diff  Reviews  Last Reviewed
+  ─────────────────────────────────────────────────────────────────────────────────────
+  Rust async/await         concept  ██████████ 95%  4.5   0.3   1        2026-04-01
+  tokio runtime            concept  ██████████ 95%  4.5   0.2   1        2026-04-01
+  Axum framework           concept  ██████████ 95%  4.5   0.3   1        2026-04-01
+```
+
+**`rocky view` after commit 1:** Three nodes cluster in the centre, connected by auto-inferred edges: *tokio runtime → Axum framework* (`depends_on`, strength 0.90), *Rust async/await → tokio runtime* (`depends_on`, strength 0.88). All three glow bright gold. The Language taxonomy node pulls them together on the left side of the canvas.
+
+---
+
+## Commit 2 — Database and migrations
+
+```bash
+rocky "add PostgreSQL with sqlx — connection pooling and migrations"
+```
+
+```
+  Task: add PostgreSQL with sqlx — connection pooling and migrations
+
+  Rocky: New topic — sqlx connection pooling
+    Async database driver for Rust with compile-time query checking —
+    PgPool manages a pool of reusable PostgreSQL connections.
+
+  Q1. Your API gets a burst of 200 simultaneous requests. With sqlx PgPool,
+      what happens when all pool connections are in use, question?
+
+  > New requests wait until a connection is freed. PgPool has a max_connections
+    setting — if the pool is exhausted the request blocks until one becomes
+    available, and returns an error if it waits longer than connect_timeout.
+
+  ♫ Fist my bump, friend! Is correct!
+
+  ✓ sqlx connection pooling added to PKG.
+
+  Rocky: New topic — database migrations
+    Versioned, incremental changes to your database schema — tracked so
+    they apply once and in order across all environments.
+
+  Q2. You run sqlx migrate run in CI. A migration ran on staging but you
+      changed it locally before it hit production. What happens when
+      production tries to apply it, question?
+
+  > sqlx tracks migrations by checksum. If the checksum doesn't match it
+    refuses to run — it won't apply a migration it's seen in a different form.
+    You'd need a new migration file to correct the schema.
+
+  ♫ Is correct, friend! Rocky also learn this hard way.
+
+  ✓ database migrations added to PKG.
+
+  Rocky: New topic — PostgreSQL transactions
+    All-or-nothing execution of multiple SQL statements — ACID guarantees.
+
+  > (Enter — skip, I know this already)
+
+  ♫ Topic queued for later.
+```
+
+```bash
+git commit -m "feat: sqlx PgPool + migration runner"
+```
+
+**PKG after commit 2:**
+
+```bash
+rocky ls
+```
+
+```
+  Topic                    Kind           Recall         Stab  Diff  Reviews  Last Reviewed
+  ──────────────────────────────────────────────────────────────────────────────────────────
+  Rust async/await         concept        █████████░ 92%  4.5   0.3   1        2026-04-01
+  tokio runtime            concept        █████████░ 92%  4.5   0.2   1        2026-04-01
+  Axum framework           concept        █████████░ 92%  4.5   0.3   1        2026-04-01
+  sqlx connection pooling  implementation ██████████ 96%  4.8   0.3   1        2026-04-02
+  database migrations      concept        ██████████ 96%  5.0   0.2   1        2026-04-02
+```
+
+```bash
+rocky queue
+```
+
+```
+  1 queued topic (not yet in PKG):
+
+  · PostgreSQL transactions
+    concept · All-or-nothing SQL execution with ACID guarantees
+    from: add PostgreSQL with sqlx — connection pooling and migrations
+
+  Run  rocky quiz  to work through the queue.
+```
+
+**`rocky view` after commit 2:** Five nodes — the three Rust nodes from commit 1 remain bright gold but have started their slow decay (92%). Two new nodes appear near the Database taxonomy anchor. New edges: *sqlx connection pooling → PostgreSQL transactions* (`implies`, 0.85), *database migrations → sqlx connection pooling* (`depends_on`, 0.80). The PostgreSQL transactions topic appears as a faint outline node — it's queued but not yet in the PKG. Scrub the timeline slider back to "April 1" and watch the Database nodes disappear.
+
+---
+
+## Commit 3 — JWT authentication
+
+```bash
+rocky "implement JWT auth middleware — issue tokens, validate on protected routes"
+```
+
+```
+  Task: implement JWT auth middleware — issue tokens, validate on protected routes
+
+  Rocky: New topic — JWT authentication
+    Stateless token-based auth where the server signs a payload the client
+    stores and sends back on every request.
+
+  Q1. You're issuing JWTs with a 15-minute expiry. A user's access token
+      expires mid-checkout. What needs to happen on both sides for the
+      experience to feel seamless, without storing session state on the
+      server, question?
+
+  > The client stores a refresh token in an httpOnly cookie. When the access
+    token expires, the client sends the refresh token to /refresh. The server
+    validates it against a database (so it can be revoked) and issues a new
+    access token. The user never sees a login screen.
+
+  ♫ Fist my bump, friend! Is correct!
+
+  ✓ JWT authentication added to PKG.
+
+  Rocky: New topic — httpOnly cookie security
+    Cookies with the HttpOnly flag cannot be read by JavaScript — only sent
+    by the browser automatically on requests to the matching domain.
+
+  Q2. You're choosing between localStorage and an httpOnly cookie for your
+      refresh token. Your app loads third-party analytics JavaScript. What's
+      the attack surface difference, question?
+
+  > localStorage is accessible to any JavaScript on the page — a compromised
+    third-party script can exfiltrate it. An httpOnly cookie can't be read
+    by JavaScript at all. With third-party JS on the page, httpOnly is the
+    only safe option.
+
+  ♫ Excite excite excite! Friend protect the tokens!
+
+  ✓ httpOnly cookie security added to PKG.
+
+  Rocky: New topic — token expiry handling
+    ...
+
+  > k  (mark as known — no Q&A needed)
+
+  ✓ token expiry handling added to PKG.
+```
+
+```bash
+git commit -m "feat: JWT auth middleware with refresh token rotation"
+```
+
+```bash
+rocky stats
+```
+
+```
+  ♫  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
+
+  Total topics:  8
+  Known:         8
+  Fading:        0
+  Gaps/weak:     0
+
+  Quiz budget: 0/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
+
+  Edges: 6 total  ·  Most connected: JWT authentication (3 edges)
+
+  ♫ Good progress, friend. PKG growing. Keep science going.
+```
+
+**`rocky view` after commit 3:** An Auth cluster has appeared in the upper-right — JWT authentication, httpOnly cookie security, and token expiry handling form a triangle. The most notable edge: *JWT authentication → httpOnly cookie security* (`implies`, 0.92). The Database cluster sits lower-left. The Language cluster anchors the left. All nodes glow gold. Scrub the timeline from April 1 to April 3 to watch each cluster grow in.
+
+---
+
+## Commit 4 — Redis caching
+
+```bash
+rocky "add Redis caching for user sessions and frequently accessed data"
+```
+
+```
+  Task: add Redis caching for user sessions and frequently accessed data
+
+  Rocky: New topic — Redis TTL expiry
+    Time-based automatic key removal in Redis — keys expire and are deleted
+    after a configured duration.
+
+  Q1. You cache a user's profile in Redis with a 5-minute TTL. The user
+      updates their profile. The API writes the update to Postgres and
+      returns 200. A second request 30 seconds later hits Redis — what
+      does it get, and how do you fix it, question?
+
+  > It gets stale data — the cache still has the old profile. The fix is
+    either write-through (update both Postgres and Redis on writes) or cache
+    invalidation (delete the key on write and let the next read repopulate).
+    Write-through keeps reads fast; invalidation is simpler but causes one
+    cache miss after each write.
+
+  ♫ Is correct! Rocky appreciate the trade-off answer.
+
+  ✓ Redis TTL expiry added to PKG.
+
+  Rocky: New topic — cache invalidation strategies
+    Approaches for keeping a cache consistent with its source of truth —
+    write-through, cache-aside, TTL expiry, and explicit invalidation.
+
+  Q2. Your system has multiple API servers. Server A caches user:123 in its
+      local memory. Server B updates user:123. Server A's cache is now stale.
+      How does Redis solve this, question?
+
+  > In-memory caches per server can't coordinate. Redis is shared — all
+    servers read from the same instance. With cache-aside, every server
+    checks Redis first; on miss, reads from the DB and populates Redis.
+    All servers immediately see any Redis update or deletion.
+
+  ♫ Fist my bump, friend!
+
+  ✓ cache invalidation strategies added to PKG.
+```
+
+```bash
+git commit -m "feat: Redis caching layer for user sessions"
+```
+
+**PKG after commit 4:**
+
+```bash
+rocky ls
+```
+
+```
+  Topic                       Kind           Recall         Stab  Diff  Reviews  Last Reviewed
+  ──────────────────────────────────────────────────────────────────────────────────────────────
+  Rust async/await            concept        ████████░░ 85%  4.5   0.3   1        2026-04-01
+  tokio runtime               concept        ████████░░ 85%  4.5   0.2   1        2026-04-01
+  Axum framework              concept        ████████░░ 85%  4.5   0.3   1        2026-04-01
+  sqlx connection pooling     implementation █████████░ 90%  4.8   0.3   1        2026-04-02
+  database migrations         concept        █████████░ 90%  5.0   0.2   1        2026-04-02
+  JWT authentication          pattern        █████████░ 91%  5.2   0.3   1        2026-04-03
+  httpOnly cookie security    concept        █████████░ 91%  5.0   0.3   1        2026-04-03
+  token expiry handling       concept        █████████░ 91%  4.8   0.2   1        2026-04-03
+  Redis TTL expiry            implementation ██████████ 96%  5.1   0.3   1        2026-04-04
+  cache invalidation          concept        ██████████ 96%  5.2   0.2   1        2026-04-04
+```
+
+**`rocky view` after commit 4:** Four clusters now visible. A Performance cluster has formed around cache invalidation, and Redis TTL expiry bridges the Database and Performance anchors. The Language cluster (Rust, tokio, Axum) has shifted slightly amber as their initial high recall starts to decay. Scrub the timeline from April 1 through April 4 to watch each cluster appear: Language → Database → Auth → Performance.
+
+---
+
+## Commit 5 — Rate limiting
+
+```bash
+rocky "implement per-user rate limiting with Redis sorted sets and Lua scripting"
+```
+
+```
+  Task: implement per-user rate limiting with Redis sorted sets and Lua scripting
+
+  Rocky: New topic — Redis sorted sets
+    A Redis data structure mapping member strings to floating-point scores —
+    ordered by score, O(log N) insert and rank queries.
+
+  Rocky: New topic — Lua scripting in Redis
+
+  ♫ Cross-concept edge detected! JWT authentication → rate limiting
+
+  Q1. You know JWT authentication well. Your rate limiter identifies users
+      by their JWT subject claim. A malicious client strips the Authorization
+      header. The limiter falls back to IP-based limits. What's the attack
+      vector and how do you close it, question?
+
+  > IP-based fallback can be bypassed by rotating IPs via proxies or Tor.
+    The fix: require auth on all rate-limited routes — return 401 if no
+    valid JWT is present. Never fall back to IP for authenticated endpoints;
+    IP limits only make sense for unauthenticated routes like /login.
+
+  ♫ Excite! Cross-concept question! Friend connect the dots!
+
+  ✓ Redis sorted sets added to PKG.
+
+  Q2. Your rate limiter checks a Redis sorted set and increments a counter
+      in two separate commands. Under load, two requests arrive simultaneously.
+      Both see the count is under the limit and both pass. What's the fix,
+      and what makes it correct, question?
+
+  > This is a TOCTOU race — check-then-act without atomicity. The fix is a
+    Lua script: Redis executes the entire script atomically — no other command
+    can interleave. The script checks, conditionally increments, and returns
+    the result as a single atomic operation.
+
+  ♫ Fist my bump! Lua scripts in Redis — atomically or nothing!
+
+  ✓ Lua scripting in Redis added to PKG.
+```
+
+```bash
+git commit -m "feat: per-user rate limiting with Redis sorted sets"
+```
+
+```bash
+rocky edges --stats
+```
+
+```
+  ◈ Edge Stats
+
+  Total edges:           14
+  Avg strength:          0.81
+  Most connected:        JWT authentication (5 edges)
+
+  By kind:               count    avg str
+    implies              8        0.84
+    depends_on           4        0.78
+    conflicts_with       1        0.65
+    part_of              1        0.82
+```
+
+**`rocky view` after commit 5:** This is when the graph becomes interesting. JWT authentication is the most-connected node — 5 edges radiate outward to token expiry handling, httpOnly cookie security, Redis sorted sets, rate limiting, and Lua scripting. The cross-concept edge between Auth and Performance clusters appears in cyan (`implies`), crossing the gap between the two clusters. The `conflicts_with` edge (between in-memory caching and distributed session state) glows red. Click any node to open its detail panel showing retrievability, stability, review history, and all connected edges.
+
+---
+
+## One week later — decay begins
+
+You've been shipping features. It's been 7 days since commit 1.
+
+```bash
+rocky stats
+```
+
+```
+  ♫  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
+
+  Total topics:  12
+  Known:         7
+  Fading:        4
+  Gaps/weak:     1
+
+  Quiz budget: 3/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
+
+  Edges: 14 total  ·  Most connected: JWT authentication (5 edges)
+
+  ♫ Some topics fading, friend. Time for science.
+```
+
+```bash
+rocky ls
+```
+
+```
+  Topic                       Kind           Recall         Stab  Diff  Reviews  Last Reviewed
+  ──────────────────────────────────────────────────────────────────────────────────────────────
+  Rust async/await            concept        ██████░░░░ 63%  4.5   0.3   1        2026-04-01
+  tokio runtime               concept        ███████░░░ 72%  4.5   0.2   1        2026-04-01
+  Axum framework              concept        ███████░░░ 73%  4.5   0.3   1        2026-04-01
+  sqlx connection pooling     implementation ████████░░ 80%  4.8   0.3   1        2026-04-02
+  database migrations         concept        ████████░░ 81%  5.0   0.2   1        2026-04-02
+  JWT authentication          pattern        ████████░░ 82%  5.2   0.3   1        2026-04-03
+  httpOnly cookie security    concept        ████████░░ 82%  5.0   0.3   1        2026-04-03
+  token expiry handling       concept        ████████░░ 83%  4.8   0.2   1        2026-04-03
+  Redis TTL expiry            implementation ████████░░ 78%  5.1   0.3   1        2026-04-04
+  cache invalidation          concept        ████████░░ 79%  5.2   0.2   1        2026-04-04
+  Redis sorted sets           implementation ██████████ 95%  5.3   0.3   1        2026-04-07
+  Lua scripting in Redis      concept        ██████████ 95%  5.5   0.2   1        2026-04-07
+```
+
+**`rocky view` after one week:** The same 12 nodes — but now in three colors. The Language cluster (Rust, tokio, Axum) has shifted amber to orange. Rust async/await glows red (gap — below 70%). The Auth and Database clusters are amber. The two Redis topics from this week are still bright gold. This is the core value of the timeline scrubber: not only does it show when topics were added — it shows their *current* decay state at any point in time.
+
+```bash
+rocky quiz
+```
+
+```
+  ♫  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
+
+  0 topics in queue.
+  4 fading topics · 1 gap topic — starting review…
+
+  ~ Rust async/await  (gap · 63% recall)
+    Reminder: Rust's async/await uses state machines compiled at build time —
+    when you .await, the compiler pauses execution and polls the future again
+    when the resource is ready.
+
+  Q1. You have an async function holding a std::sync::Mutex guard across an
+      .await point. Your future gets suspended. What happens to other tasks
+      that try to lock the same Mutex, question?
+
+  > They deadlock. If a future holds a std::sync::Mutex across an await point,
+    the thread is suspended with the lock held. No other task on that thread
+    can acquire it. Use tokio::sync::Mutex for async contexts — its lock
+    is async-aware and yields the thread instead of blocking it.
+
+  ♫ Fist my bump, friend! Is correct!
+
+  ✓ Rust async/await — stability increased to 6.8 · recall now at 94%
+```
+
+**`rocky view` after the quiz:** Rust async/await snaps from red back to gold. The node's detail panel shows two review data points: the original session on April 1 (initial stability 4.5) and today's review on April 8 (stability 6.8 — deeper embedding). Click the node and the history tab shows the decay curve between those two points.
+
+---
+
+## Seeding from git history: `rocky backfill`
+
+A week in, you realize you want your PKG to reflect *everything* in the git history — not just the topics you happened to ask Rocky about interactively.
+
+```bash
+cd taskify
+rocky backfill --limit 10
+```
+
+```
+  ♫  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
+
+  Taxonomy skeleton ready.
+  Scanning last 10 commits by alex@example.com (10 commits)…
+
+  [1/10] a3f8c12 init: Axum server scaffold with tokio runtime — no new topics
+  [2/10] b7d4e19 feat: sqlx PgPool + migration runner — no new topics
+  [3/10] c1a2d83 feat: JWT auth middleware with refresh token rotation — no new topics
+  [4/10] d9f3b41 feat: Redis caching layer for user sessions — no new topics
+  [5/10] e4c8a27 feat: per-user rate limiting with Redis sorted sets — no new topics
+  [6/10] f2b7e94 feat: Docker multi-stage build — 2 new
+    + Docker multi-stage builds
+    + container image optimization
+  [7/10] g8d1c35 feat: GitHub Actions CI pipeline — 2 new
+    + GitHub Actions workflow syntax
+    + CI/CD pipeline design
+  [8/10] h5e4b72 feat: OpenAPI spec with utoipa — 1 new
+    + OpenAPI specification
+  [9/10] i3f6d28 fix: handle expired tokens in middleware — no new topics
+  [10/10] j7a9c14 docs: README and API documentation — no new topics
+
+  ◈ Generating edges for 5 new topics…
+
+  ✓ Added 5 new topics · 47 already in PKG
+  Run  rocky quiz  to start reviewing them.
+```
+
+```bash
+rocky stats
+```
+
+```
+  ♫  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
+
+  Total topics:  17
+  Known:         12
+  Fading:        4
+  Gaps/weak:     1
+
+  Quiz budget: 3/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
+
+  Edges: 21 total  ·  Most connected: JWT authentication (6 edges)
+```
+
+**`rocky view` after backfill:** Five new nodes appear, clustering near the DevOps and Tooling taxonomy anchors. Docker multi-stage builds links to the Architecture and Security clusters via new edges. GitHub Actions workflow syntax connects to the CI/CD node. The graph now has four distinct clusters: Language (left), Auth (upper-right), Database (lower-left), DevOps (top). Cross-cluster edges form a web across the centre. Filter by "Auth" in the domain filter to highlight only those nodes and their edges.
+
+---
+
+## Viewing the full graph
+
+```bash
+rocky view
+# ✓ Written to ~/.rocky/view.html
+# → Opening in browser...
+```
+
+The interactive graph opens in your browser:
+
+- **Nodes** — colored by recall: gold (≥90%), amber (70–90%), red (<70%)
+- **Node size** — proportional to stability (deeper knowledge = bigger node)
+- **Edges** — colored by kind: cyan (`implies`), yellow (`depends_on`), red (`conflicts_with`), green (`part_of`)
+- **Domain filter** — click any domain label to highlight only that cluster and its edges
+- **Search** — type "redis" to highlight all Redis-related nodes
+- **Node detail panel** — click any node to see retrievability score, stability, all connected edges, review history
+- **Timeline scrubber** — drag the range slider to any date to see what your PKG looked like at that point. Scrub from April 1 to April 8 to watch each cluster grow in. Topics not yet learned are dimmed or invisible; newly reviewed topics snap to full brightness.
+
+The graph is a single self-contained HTML file at `~/.rocky/view.html`. Open it in any browser, screenshot it, or host it anywhere.
+
+---
+
+## The full PKG at a glance
+
+```bash
+rocky edges
+```
+
+```
+  SOURCE                         TARGET                         KIND               STR   DESCRIPTION
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Rust async/await               tokio runtime                  depends_on         0.88  Rust async code requires a...
+  tokio runtime                  Axum framework                 depends_on         0.90  Axum is built on hyper/tow...
+  sqlx connection pooling        PostgreSQL transactions         implies            0.85  Connection pools are used w...
+  JWT authentication             httpOnly cookie security        implies            0.92  JWTs stored insecurely are...
+  JWT authentication             token expiry handling           implies            0.89  Issuing JWTs requires handl...
+  JWT authentication             Redis sorted sets               implies            0.78  Rate limiting often uses JW...
+  Redis TTL expiry               cache invalidation              depends_on         0.75  TTL is one invalidation stra...
+  Redis sorted sets              Lua scripting in Redis          depends_on         0.87  Atomic sorted set operations...
+  Lua scripting in Redis         Redis sorted sets               part_of            0.82  Lua scripting is used in con...
+  Docker multi-stage builds      container image optimization    implies            0.80  Multi-stage builds reduce ima...
+  GitHub Actions workflow syntax CI/CD pipeline design           part_of            0.85  GitHub Actions is one CI/CD...
+  cache invalidation             JWT authentication              conflicts_with     0.65  Stateless JWTs can't be inva...
+
+  21 edges total
+```
+
+This is your knowledge graph for one project, one week in. Each edge is a relationship Rocky inferred from the topics in your code — the ones worth understanding together, not just in isolation.
 ''';
