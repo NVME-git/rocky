@@ -103,15 +103,18 @@ When you answer well, stability increases and the topic decays slower. When you 
 ## Rocky the alien
 
 ```
-      ♫
-   __|__
-  /◉   ◉\
-  \ ─── /
-   \_↑_/
-  /|||||\
+       ♫
+     _____
+   .'     '.
+  /  .   .  \
+ |  . _____ .|
+ |   |     | |
+ |   |_____|  |
+  \   .   .  /
+   '.______.'
 ```
 
-Rocky has a personality based on Rocky the alien from Andy Weir's *Project Hail Mary* — enthusiastic, direct, and genuinely rooting for you.
+Rocky has a personality based on Rocky the alien from Andy Weir's [*Project Hail Mary*](https://www.imdb.com/title/tt12042730/) — enthusiastic, direct, and genuinely rooting for you.
 
 - `♫ Fist my bump, friend! Is correct!`
 - `♫ Excite excite excite! Friend get it!`
@@ -245,11 +248,14 @@ You'll see:
 ```
    ♫           ♪          ♫
 
-     __|__
-    /◉   ◉\         R  O  C  K  Y
-    \ ─── /         Personal Knowledge Graph
-     \_↑_/
-    /|||||\          Stay sharp. Stay human.
+     _____
+   .'     '.
+  /  .   .  \        R  O  C  K  Y
+ |  . _____ .|       Personal Knowledge Graph
+ |   |     | |
+ |   |_____|  |       Stay sharp. Stay human.
+  \   .   .  /
+   '.______.'
 
 
   ✓ git post-commit hook installed — .rocky added to .gitignore
@@ -1652,9 +1658,9 @@ We follow 6 commits over one week. At each stage you can see exactly what Rocky 
 Fresh project. Empty PKG.
 
 ```bash
-mkdir taskify && cd taskify && git init
-rocky install          # install the git hook
-rocky stats
+~ $ mkdir taskify && cd taskify && git init
+~/taskify $ rocky install          # install the git hook
+~/taskify $ rocky stats
 ```
 
 ```
@@ -1678,7 +1684,7 @@ rocky stats
 ## Commit 1 — Project scaffold
 
 ```bash
-rocky "set up Rust Axum web server with tokio and tower middleware"
+~/taskify $ rocky "set up Rust Axum web server with tokio and tower middleware"
 ```
 
 ```
@@ -1743,7 +1749,7 @@ rocky "set up Rust Axum web server with tokio and tower middleware"
 ```
 
 ```bash
-git commit -m "init: Axum server scaffold with tokio runtime"
+~/taskify $ git commit -m "init: Axum server scaffold with tokio runtime"
 # Rocky runs automatically (git hook):
 #
 #   ~ Rust async/await  (just reviewed — budget reached, skipping)
@@ -1753,7 +1759,7 @@ git commit -m "init: Axum server scaffold with tokio runtime"
 **PKG after commit 1:**
 
 ```bash
-rocky ls
+~/taskify $ rocky ls
 ```
 
 ```
@@ -1773,7 +1779,7 @@ rocky ls
 ## Commit 2 — Database and migrations
 
 ```bash
-rocky "add PostgreSQL with sqlx — connection pooling and migrations"
+~/taskify $ rocky "add PostgreSQL with sqlx — connection pooling and migrations"
 ```
 
 ```
@@ -1819,13 +1825,13 @@ rocky "add PostgreSQL with sqlx — connection pooling and migrations"
 ```
 
 ```bash
-git commit -m "feat: sqlx PgPool + migration runner"
+~/taskify $ git commit -m "feat: sqlx PgPool + migration runner"
 ```
 
 **PKG after commit 2:**
 
 ```bash
-rocky ls
+~/taskify $ rocky ls
 ```
 
 ```
@@ -1839,7 +1845,7 @@ rocky ls
 ```
 
 ```bash
-rocky queue
+~/taskify $ rocky queue
 ```
 
 ```
@@ -1861,7 +1867,7 @@ rocky queue
 ## Commit 3 — JWT authentication
 
 ```bash
-rocky "implement JWT auth middleware — issue tokens, validate on protected routes"
+~/taskify $ rocky "implement JWT auth middleware — issue tokens, validate on protected routes"
 ```
 
 ```
@@ -1911,11 +1917,11 @@ rocky "implement JWT auth middleware — issue tokens, validate on protected rou
 ```
 
 ```bash
-git commit -m "feat: JWT auth middleware with refresh token rotation"
+~/taskify $ git commit -m "feat: JWT auth middleware with refresh token rotation"
 ```
 
 ```bash
-rocky stats
+~/taskify $ rocky stats
 ```
 
 ```
@@ -1943,7 +1949,7 @@ rocky stats
 ## Commit 4 — Redis caching
 
 ```bash
-rocky "add Redis caching for user sessions and frequently accessed data"
+~/taskify $ rocky "add Redis caching for user sessions and frequently accessed data"
 ```
 
 ```
@@ -1987,13 +1993,13 @@ rocky "add Redis caching for user sessions and frequently accessed data"
 ```
 
 ```bash
-git commit -m "feat: Redis caching layer for user sessions"
+~/taskify $ git commit -m "feat: Redis caching layer for user sessions"
 ```
 
 **PKG after commit 4:**
 
 ```bash
-rocky ls
+~/taskify $ rocky ls
 ```
 
 ```
@@ -2020,7 +2026,7 @@ rocky ls
 ## Commit 5 — Rate limiting
 
 ```bash
-rocky "implement per-user rate limiting with Redis sorted sets and Lua scripting"
+~/taskify $ rocky "implement per-user rate limiting with Redis sorted sets and Lua scripting"
 ```
 
 ```
@@ -2064,11 +2070,11 @@ rocky "implement per-user rate limiting with Redis sorted sets and Lua scripting
 ```
 
 ```bash
-git commit -m "feat: per-user rate limiting with Redis sorted sets"
+~/taskify $ git commit -m "feat: per-user rate limiting with Redis sorted sets"
 ```
 
 ```bash
-rocky edges --stats
+~/taskify $ rocky edges --stats
 ```
 
 ```
@@ -2096,7 +2102,7 @@ rocky edges --stats
 You've been shipping features. It's been 7 days since commit 1.
 
 ```bash
-rocky stats
+~/taskify $ rocky stats
 ```
 
 ```
@@ -2116,7 +2122,7 @@ rocky stats
 ```
 
 ```bash
-rocky ls
+~/taskify $ rocky ls
 ```
 
 ```
@@ -2141,7 +2147,7 @@ rocky ls
 [**→ Open interactive graph: one week later**](graphs/stage6.html)
 
 ```bash
-rocky quiz
+~/taskify $ rocky quiz
 ```
 
 ```
@@ -2179,8 +2185,7 @@ rocky quiz
 A week in, you realize you want your PKG to reflect *everything* in the git history — not just the topics you happened to ask Rocky about interactively.
 
 ```bash
-cd taskify
-rocky backfill --limit 10
+~/taskify $ rocky backfill --limit 10
 ```
 
 ```
@@ -2213,7 +2218,7 @@ rocky backfill --limit 10
 ```
 
 ```bash
-rocky stats
+~/taskify $ rocky stats
 ```
 
 ```
@@ -2239,7 +2244,7 @@ rocky stats
 ## Viewing the full graph
 
 ```bash
-rocky view
+~/taskify $ rocky view
 # ✓ Written to ~/.rocky/view.html
 # → Opening in browser...
 ```
@@ -2263,7 +2268,7 @@ The graph is a single self-contained HTML file at `~/.rocky/view.html`.
 ## The full PKG at a glance
 
 ```bash
-rocky edges
+~/taskify $ rocky edges
 ```
 
 ```
