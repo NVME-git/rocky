@@ -480,30 +480,6 @@ class StyledMarkdown extends StatelessWidget {
         tableHeadAlign: TextAlign.left,
         tableCellsPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
-      imageBuilder: (uri, title, alt) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.network(
-              uri.toString(),
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.codeBg,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.codeBorder),
-                ),
-                child: Text(
-                  alt ?? 'Image',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -512,8 +488,9 @@ class StyledMarkdown extends StatelessWidget {
 // Helpers
 // ---------------------------------------------------------------------------
 Future<void> _openUrl(String url) async {
-  final uri = Uri.parse(url);
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  final parsedUri = Uri.parse(url);
+  final absoluteUri = parsedUri.hasScheme ? parsedUri : Uri.base.resolveUri(parsedUri);
+  if (await canLaunchUrl(absoluteUri)) {
+    await launchUrl(absoluteUri, mode: LaunchMode.externalApplication);
   }
 }
