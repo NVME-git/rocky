@@ -34,20 +34,30 @@ class AppColors {
   static Color get cardBg        => _d ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
 }
 
-// Terminal block colours — always dark regardless of theme
+// Terminal block colours — always dark regardless of theme.
+// Semantic colors match the Rocky CLI truecolor values exactly.
 class TermColors {
   static const bg         = Color(0xFF0d1117);
   static const headerBg   = Color(0xFF161b22);
   static const border     = Color(0xFF30363d);
-  static const prompt     = Color(0xFF4ade80);  // green prompt
+  static const prompt     = Color(0xFF1D9E75);  // #1D9E75 — app success/known green
   static const cmdText    = Color(0xFFf0f6fc);  // bright command text
-  static const commentTxt = Color(0xFF8b949e);  // muted comment
-  static const outputTxt  = Color(0xFFe6edf3);  // normal output
-  static const cursor     = Color(0xFF4ade80);
-  static const dot1       = Color(0xFFFF5F57);  // red
-  static const dot2       = Color(0xFFFFBD2E);  // yellow
-  static const dot3       = Color(0xFF28C840);  // green
+  static const commentTxt = Color(0xFF64748B);  // muted slate
+  static const outputTxt  = Color(0xFFCBD5E1);  // normal output
+  static const cursor     = Color(0xFF1D9E75);
+  static const dot1       = Color(0xFFFF5F57);
+  static const dot2       = Color(0xFFFFBD2E);
+  static const dot3       = Color(0xFF28C840);
   static const titleTxt   = Color(0xFF8b949e);
+
+  // Semantic: match the Rocky CLI truecolors
+  static const rockyBrand   = Color(0xFFF59E0B);  // #F59E0B — Rocky brand amber (banner, personality)
+  static const rockyFeedback= Color(0xFF06B6D4);  // #06B6D4 — Rocky's voice/feedback (cyan)
+  static const successGreen = Color(0xFF1D9E75);  // #1D9E75 — ✓ success / known
+  static const fadingAmber  = Color(0xFFEF9F27);  // #EF9F27 — ~ fading / warning
+  static const gapRed       = Color(0xFFE24B4A);  // #E24B4A — ✗ gap / error
+  static const userAnswer   = Color(0xFFF1F5F9);  // bright white — user's own words
+  static const hintMuted    = Color(0xFF475569);  // dimmed hint text
 }
 
 // ---------------------------------------------------------------------------
@@ -774,66 +784,102 @@ class _TerminalBlockState extends State<TerminalBlock>
     );
   }
 
-  /// Style a single terminal line.
-  /// Lines matching `~/path $ cmd` or `$ cmd` → green prompt + bright command.
-  /// Lines starting with `#` or `  #` → muted comment.
-  /// Everything else → normal output.
+  /// Style a single terminal line with semantic colours matching the Rocky CLI.
   TextSpan _styleLine(String line) {
-    // Match prompt patterns like: `~/taskify $ `, `$ `, `~ $ `
-    final promptRe = RegExp(r'^([\w~/.]*\s*\$\s+)(.*)');
-    final promptMatch = promptRe.firstMatch(line);
+    final trimmed = line.trimLeft();
+
+    // Shell prompt:  ~/path $ command
+    final promptMatch = RegExp(r'^([\w~/.]*\s*\$\s+)(.*)').firstMatch(line);
     if (promptMatch != null) {
       return TextSpan(children: [
-        TextSpan(
-          text: promptMatch.group(1),
-          style: const TextStyle(color: TermColors.prompt, fontWeight: FontWeight.w600),
-        ),
-        TextSpan(
-          text: promptMatch.group(2),
-          style: const TextStyle(color: TermColors.cmdText),
-        ),
+        TextSpan(text: promptMatch.group(1),
+            style: const TextStyle(color: TermColors.prompt, fontWeight: FontWeight.w600)),
+        TextSpan(text: promptMatch.group(2),
+            style: const TextStyle(color: TermColors.cmdText)),
       ]);
     }
 
-    // Comment line
-    final trimmed = line.trimLeft();
+    // ♫  Rocky personality / banner lines  →  Rocky brand amber
+    if (trimmed.startsWith('♫')) {
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.rockyBrand, fontWeight: FontWeight.w500));
+    }
+
+    // ✓  success
+    if (trimmed.startsWith('✓')) {
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.successGreen));
+    }
+
+    // ✗  error
+    if (trimmed.startsWith('✗')) {
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.gapRed));
+    }
+
+    // ~  fading / warning
+    if (trimmed.startsWith('~')) {
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.fadingAmber));
+    }
+
+    // Q1. / Q2. / Q3. …  Rocky is asking a question  →  Rocky feedback cyan
+    if (RegExp(r'^Q\d+\.').hasMatch(trimmed)) {
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.rockyFeedback));
+    }
+
+    // Rocky: New topic …  Rocky is introducing something  →  Rocky brand amber
+    if (trimmed.startsWith('Rocky:')) {
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.rockyBrand, fontWeight: FontWeight.w500));
+    }
+
+    // > …  user answer  →  bright white, slightly italic
+    if (trimmed.startsWith('>') && !trimmed.startsWith('> ') == false || trimmed.startsWith('> ')) {
+      if (trimmed.startsWith('>')) {
+        return TextSpan(text: line,
+            style: const TextStyle(color: TermColors.userAnswer, fontStyle: FontStyle.italic));
+      }
+    }
+
+    // [e] / [?] hint line  →  very muted
+    if (trimmed.startsWith('[')) {
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.hintMuted));
+    }
+
+    // Evaluating… / Fetching explanation… / Analyzing…  →  muted
+    if (trimmed.startsWith('Evaluating') ||
+        trimmed.startsWith('Fetching') ||
+        trimmed.startsWith('Analyzing') ||
+        trimmed.startsWith('Saved to PKG')) {
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.hintMuted));
+    }
+
+    // # comment
     if (trimmed.startsWith('#')) {
-      return TextSpan(
-        text: line,
-        style: const TextStyle(color: TermColors.commentTxt),
-      );
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.commentTxt));
     }
 
-    // Rocky output lines — colour ♫ prefix lines distinctly
-    if (line.trimLeft().startsWith('♫')) {
-      return TextSpan(children: [
-        TextSpan(
-          text: line,
-          style: const TextStyle(color: Color(0xFF93c5fd)),
-        ),
-      ]);
+    // Rocky's explanation / feedback body text (indented, after a ♫ or Q line)
+    // — lines that are part of Rocky's voice: use feedback cyan
+    if (line.startsWith('   ') && trimmed.isNotEmpty &&
+        !trimmed.startsWith('Task:') &&
+        !trimmed.startsWith('Total') && !trimmed.startsWith('Known') &&
+        !trimmed.startsWith('Fading') && !trimmed.startsWith('Gaps') &&
+        !trimmed.startsWith('Quiz') && !trimmed.startsWith('Edges') &&
+        !trimmed.startsWith('Run ') && !trimmed.startsWith('Topic') &&
+        !RegExp(r'^[A-Z][a-z].*\s+\|').hasMatch(trimmed) &&   // table rows
+        !RegExp(r'^─').hasMatch(trimmed)) {
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.rockyFeedback));
     }
 
-    // ✓ success lines
-    if (line.trimLeft().startsWith('✓')) {
-      return TextSpan(
-        text: line,
-        style: const TextStyle(color: Color(0xFF86efac)),
-      );
-    }
-
-    // ~ fading lines
-    if (line.trimLeft().startsWith('~')) {
-      return TextSpan(
-        text: line,
-        style: const TextStyle(color: Color(0xFFfbbf24)),
-      );
-    }
-
-    return TextSpan(
-      text: line,
-      style: const TextStyle(color: TermColors.outputTxt),
-    );
+    return TextSpan(text: line,
+        style: const TextStyle(color: TermColors.outputTxt));
   }
 }
 
