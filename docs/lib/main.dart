@@ -484,6 +484,16 @@ class SectionContent extends StatelessWidget {
       if (part is _TextPart) {
         widgets.add(StyledMarkdown(data: part.text));
         i++;
+      } else if (part is _CodePart && part.language == 'graphlink') {
+        final segs = part.code.trim().split('|');
+        widgets.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: _GraphLink(
+            linkPath: segs.isNotEmpty ? segs[0].trim() : '',
+            label:    segs.length > 1 ? segs[1].trim() : 'Open interactive graph',
+          ),
+        ));
+        i++;
       } else if (part is _CodePart && part.language == 'imagelink') {
         final segs = part.code.trim().split('|');
         widgets.add(Padding(
@@ -941,6 +951,42 @@ class StyledMarkdown extends StatelessWidget {
           tableHeadAlign: TextAlign.left,
           tableCellsPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Graph link — inline "open in new tab" styled link to a live graph
+// ---------------------------------------------------------------------------
+class _GraphLink extends StatelessWidget {
+  final String linkPath;
+  final String label;
+  const _GraphLink({required this.linkPath, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final url = Uri.base.resolve(linkPath).toString();
+    return GestureDetector(
+      onTap: () => _openUrl(url),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: AppColors.secondary,
+                fontSize: 14,
+                decoration: TextDecoration.underline,
+                decorationColor: AppColors.secondary,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.open_in_new, size: 13, color: AppColors.secondary),
+          ],
         ),
       ),
     );

@@ -1758,7 +1758,9 @@ Fresh project. Empty PKG.
 
 **`rocky view` after commit 1:** Three nodes cluster in the centre, connected by auto-inferred edges: *tokio runtime → Axum framework* (`depends_on`, strength 0.90), *Rust async/await → tokio runtime* (`depends_on`, strength 0.88). All three glow bright gold. The Language taxonomy node pulls them together on the left side of the canvas. **Click any node** to open the detail panel — you'll see the question Rocky asked, your answer, and the feedback, all stored against that topic.
 
-[**→ Open interactive graph: commit 1**](graphs/stage1.html)
+```graphlink
+graphs/stage1.html|Open interactive graph: commit 1
+```
 
 ---
 
@@ -1848,7 +1850,9 @@ Fresh project. Empty PKG.
 
 **`rocky view` after commit 2:** Five nodes — the three Rust nodes from commit 1 remain bright gold but have started their slow decay (92%). Two new nodes appear near the Database taxonomy anchor. New edges: *sqlx connection pooling → database migrations* (`depends_on`, 0.80), *database migrations → sqlx connection pooling* (`implies`, 0.78). Scrub the timeline slider back to "April 1" and watch the Database nodes disappear.
 
-[**→ Open interactive graph: commit 2**](graphs/stage2.html)
+```graphlink
+graphs/stage2.html|Open interactive graph: commit 2
+```
 
 ---
 
@@ -1930,7 +1934,9 @@ Fresh project. Empty PKG.
 
 **`rocky view` after commit 3:** An Auth cluster has appeared in the upper-right — JWT authentication, httpOnly cookie security, and token expiry handling form a triangle. The most notable edge: *JWT authentication → httpOnly cookie security* (`implies`, 0.92). The Database cluster sits lower-left. The Language cluster anchors the left. All nodes glow gold. Scrub the timeline from April 1 to April 3 to watch each cluster grow in.
 
-[**→ Open interactive graph: commit 3**](graphs/stage3.html)
+```graphlink
+graphs/stage3.html|Open interactive graph: commit 3
+```
 
 ---
 
@@ -2012,7 +2018,9 @@ Fresh project. Empty PKG.
 
 **`rocky view` after commit 4:** Four clusters now visible. A Performance cluster has formed around cache invalidation, and Redis TTL expiry bridges the Database and Performance anchors. The Language cluster (Rust, tokio, Axum) has shifted slightly amber as their initial high recall starts to decay. Scrub the timeline from April 1 through April 4 to watch each cluster appear: Language → Database → Auth → Performance.
 
-[**→ Open interactive graph: commit 4**](graphs/stage4.html)
+```graphlink
+graphs/stage4.html|Open interactive graph: commit 4
+```
 
 ---
 
@@ -2082,7 +2090,9 @@ Fresh project. Empty PKG.
 
 **`rocky view` after commit 5:** This is when the graph becomes interesting. JWT authentication is the most-connected node — edges radiate outward to token expiry handling, httpOnly cookie security, Redis sorted sets, and Lua scripting. The cross-concept edge between Auth and Database clusters appears in cyan (`implies`), crossing the gap between clusters. The `conflicts_with` edge glows red. Click any node to open its detail panel showing retrievability, stability, review history, and all connected edges.
 
-[**→ Open interactive graph: commit 5**](graphs/stage5.html)
+```graphlink
+graphs/stage5.html|Open interactive graph: commit 5
+```
 
 ---
 
@@ -2129,7 +2139,9 @@ You've been shipping features. It's been 7 days since commit 1.
 
 **`rocky view` after one week:** The same 12 nodes — but now in three colors. The Language cluster (Rust, tokio, Axum) has shifted amber to orange. Rust async/await glows red (gap — below 70%). The Auth and Database clusters are amber. The two Redis topics from this week are still bright gold. This is the core value of the timeline scrubber: it shows current decay state, not just when topics were added.
 
-[**→ Open interactive graph: one week later**](graphs/stage6.html)
+```graphlink
+graphs/stage6.html|Open interactive graph: one week later
+```
 
 ```bash
 ~/taskify $ rocky quiz
@@ -2216,7 +2228,9 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
 
 **`rocky view` after backfill:** Five new nodes appear, clustering near the DevOps and Architecture taxonomy anchors. Docker multi-stage builds links to container image optimization. GitHub Actions workflow syntax connects to CI/CD pipeline design. The graph now spans five distinct clusters. Filter by "DevOps" in the domain filter to highlight only that cluster and its edges.
 
-[**→ Open interactive graph: after backfill**](graphs/stage7.html)
+```graphlink
+graphs/stage7.html|Open interactive graph: after backfill
+```
 
 ---
 
@@ -2240,7 +2254,9 @@ The interactive graph opens in your browser:
 
 The graph is a single self-contained HTML file at `~/.rocky/view.html`.
 
-[**→ Open the full taskify graph (17 topics, all stages)**](graphs/stage7.html)
+```graphlink
+graphs/stage7.html|Open the full taskify graph (17 topics, all stages)
+```
 
 ---
 
