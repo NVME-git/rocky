@@ -1766,6 +1766,10 @@ rocky ls
 
 **`rocky view` after commit 1:** Three nodes cluster in the centre, connected by auto-inferred edges: *tokio runtime → Axum framework* (`depends_on`, strength 0.90), *Rust async/await → tokio runtime* (`depends_on`, strength 0.88). All three glow bright gold. The Language taxonomy node pulls them together on the left side of the canvas.
 
+![rocky view — commit 1: Language cluster](screenshots/stage1.png)
+
+[Open interactive graph →](graphs/stage1.html)
+
 ---
 
 ## Commit 2 — Database and migrations
@@ -1850,7 +1854,11 @@ rocky queue
   Run  rocky quiz  to work through the queue.
 ```
 
-**`rocky view` after commit 2:** Five nodes — the three Rust nodes from commit 1 remain bright gold but have started their slow decay (92%). Two new nodes appear near the Database taxonomy anchor. New edges: *sqlx connection pooling → PostgreSQL transactions* (`implies`, 0.85), *database migrations → sqlx connection pooling* (`depends_on`, 0.80). The PostgreSQL transactions topic appears as a faint outline node — it's queued but not yet in the PKG. Scrub the timeline slider back to "April 1" and watch the Database nodes disappear.
+**`rocky view` after commit 2:** Five nodes — the three Rust nodes from commit 1 remain bright gold but have started their slow decay (92%). Two new nodes appear near the Database taxonomy anchor. New edges: *sqlx connection pooling → database migrations* (`depends_on`, 0.80), *database migrations → sqlx connection pooling* (`implies`, 0.78). Scrub the timeline slider back to "April 1" and watch the Database nodes disappear.
+
+![rocky view — commit 2: Database cluster added](screenshots/stage2.png)
+
+[Open interactive graph →](graphs/stage2.html)
 
 ---
 
@@ -1932,6 +1940,10 @@ rocky stats
 
 **`rocky view` after commit 3:** An Auth cluster has appeared in the upper-right — JWT authentication, httpOnly cookie security, and token expiry handling form a triangle. The most notable edge: *JWT authentication → httpOnly cookie security* (`implies`, 0.92). The Database cluster sits lower-left. The Language cluster anchors the left. All nodes glow gold. Scrub the timeline from April 1 to April 3 to watch each cluster grow in.
 
+![rocky view — commit 3: Auth cluster added](screenshots/stage3.png)
+
+[Open interactive graph →](graphs/stage3.html)
+
 ---
 
 ## Commit 4 — Redis caching
@@ -2007,6 +2019,10 @@ rocky ls
 
 **`rocky view` after commit 4:** Four clusters now visible. A Performance cluster has formed around cache invalidation, and Redis TTL expiry bridges the Database and Performance anchors. The Language cluster (Rust, tokio, Axum) has shifted slightly amber as their initial high recall starts to decay. Scrub the timeline from April 1 through April 4 to watch each cluster appear: Language → Database → Auth → Performance.
 
+![rocky view — commit 4: Performance cluster added](screenshots/stage4.png)
+
+[Open interactive graph →](graphs/stage4.html)
+
 ---
 
 ## Commit 5 — Rate limiting
@@ -2077,7 +2093,11 @@ rocky edges --stats
     part_of              1        0.82
 ```
 
-**`rocky view` after commit 5:** This is when the graph becomes interesting. JWT authentication is the most-connected node — 5 edges radiate outward to token expiry handling, httpOnly cookie security, Redis sorted sets, rate limiting, and Lua scripting. The cross-concept edge between Auth and Performance clusters appears in cyan (`implies`), crossing the gap between the two clusters. The `conflicts_with` edge (between in-memory caching and distributed session state) glows red. Click any node to open its detail panel showing retrievability, stability, review history, and all connected edges.
+**`rocky view` after commit 5:** This is when the graph becomes interesting. JWT authentication is the most-connected node — edges radiate outward to token expiry handling, httpOnly cookie security, Redis sorted sets, and Lua scripting. The cross-concept edge between Auth and Database clusters appears in cyan (`implies`), crossing the gap between clusters. The `conflicts_with` edge glows red. Click any node to open its detail panel showing retrievability, stability, review history, and all connected edges.
+
+![rocky view — commit 5: rate limiting, cross-cluster edges](screenshots/stage5.png)
+
+[Open interactive graph →](graphs/stage5.html)
 
 ---
 
@@ -2126,7 +2146,11 @@ rocky ls
   Lua scripting in Redis      concept        ██████████ 95%  5.5   0.2   1        2026-04-07
 ```
 
-**`rocky view` after one week:** The same 12 nodes — but now in three colors. The Language cluster (Rust, tokio, Axum) has shifted amber to orange. Rust async/await glows red (gap — below 70%). The Auth and Database clusters are amber. The two Redis topics from this week are still bright gold. This is the core value of the timeline scrubber: not only does it show when topics were added — it shows their *current* decay state at any point in time.
+**`rocky view` after one week:** The same 12 nodes — but now in three colors. The Language cluster (Rust, tokio, Axum) has shifted amber to orange. Rust async/await glows red (gap — below 70%). The Auth and Database clusters are amber. The two Redis topics from this week are still bright gold. This is the core value of the timeline scrubber: it shows current decay state, not just when topics were added.
+
+![rocky view — one week later: decay visible](screenshots/stage6.png)
+
+[Open interactive graph →](graphs/stage6.html)
 
 ```bash
 rocky quiz
@@ -2158,7 +2182,7 @@ rocky quiz
   ✓ Rust async/await — stability increased to 6.8 · recall now at 94%
 ```
 
-**`rocky view` after the quiz:** Rust async/await snaps from red back to gold. The node's detail panel shows two review data points: the original session on April 1 (initial stability 4.5) and today's review on April 8 (stability 6.8 — deeper embedding). Click the node and the history tab shows the decay curve between those two points.
+**`rocky view` after the quiz:** Rust async/await snaps from red back to gold. The node's detail panel shows two review data points: the original session on April 1 (initial stability 4.5) and today's review on April 8 (stability 6.8 — deeper embedding). The decay curve between those two points is visible in the timeline scrubber.
 
 ---
 
@@ -2218,7 +2242,11 @@ rocky stats
   Edges: 21 total  ·  Most connected: JWT authentication (6 edges)
 ```
 
-**`rocky view` after backfill:** Five new nodes appear, clustering near the DevOps and Tooling taxonomy anchors. Docker multi-stage builds links to the Architecture and Security clusters via new edges. GitHub Actions workflow syntax connects to the CI/CD node. The graph now has four distinct clusters: Language (left), Auth (upper-right), Database (lower-left), DevOps (top). Cross-cluster edges form a web across the centre. Filter by "Auth" in the domain filter to highlight only those nodes and their edges.
+**`rocky view` after backfill:** Five new nodes appear, clustering near the DevOps and Architecture taxonomy anchors. Docker multi-stage builds links to container image optimization. GitHub Actions workflow syntax connects to CI/CD pipeline design. The graph now spans five distinct clusters. Filter by "DevOps" in the domain filter to highlight only that cluster and its edges.
+
+![rocky view — after backfill: 17 topics, 5 clusters](screenshots/stage7.png)
+
+[Open interactive graph →](graphs/stage7.html)
 
 ---
 
@@ -2238,9 +2266,11 @@ The interactive graph opens in your browser:
 - **Domain filter** — click any domain label to highlight only that cluster and its edges
 - **Search** — type "redis" to highlight all Redis-related nodes
 - **Node detail panel** — click any node to see retrievability score, stability, all connected edges, review history
-- **Timeline scrubber** — drag the range slider to any date to see what your PKG looked like at that point. Scrub from April 1 to April 8 to watch each cluster grow in. Topics not yet learned are dimmed or invisible; newly reviewed topics snap to full brightness.
+- **Timeline scrubber** — drag the range slider to any date to see what your PKG looked like at that point. Scrub from April 1 to April 8 to watch each cluster grow in.
 
-The graph is a single self-contained HTML file at `~/.rocky/view.html`. Open it in any browser, screenshot it, or host it anywhere.
+The graph is a single self-contained HTML file at `~/.rocky/view.html`.
+
+[Open the full taskify graph (17 topics, all stages) →](graphs/stage7.html)
 
 ---
 
