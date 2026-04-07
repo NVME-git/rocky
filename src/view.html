@@ -34,6 +34,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 .domain-btn.active { background: rgba(245,158,11,0.15); border-color: #F59E0B; color: #F59E0B; }
 .domain-btn.all-btn { border-color: #334155; color: #CBD5E1; }
 .domain-btn.all-btn.active { background: rgba(203,213,225,0.1); border-color: #CBD5E1; color: #CBD5E1; }
+#spread-wrap { display: flex; align-items: center; gap: 6px; margin-left: 8px; }
+#spread-wrap label { font-size: 11px; color: #64748B; white-space: nowrap; }
+#spread-slider { accent-color: #F59E0B; width: 80px; cursor: pointer; }
 
 /* ── timeline strip ── */
 #timeline-strip { background: #070B14; border-bottom: 1px solid #1E293B;
@@ -50,6 +53,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 #main { display: flex; flex: 1; overflow: hidden; }
 #graph-container { flex: 1; position: relative; overflow: hidden; }
 svg#graph { width: 100%; height: 100%; }
+
+/* ── taxonomy panel (left) ── */
+#tax-panel { width: 220px; background: #070B14; border-right: 1px solid #1E293B;
+             overflow-y: auto; flex-shrink: 0; display: none; }
+#tax-panel.open { display: block; }
+#tax-inner { padding: 16px; }
+.tax-header { font-size: 11px; color: #64748B; text-transform: uppercase;
+              letter-spacing: 0.5px; margin-bottom: 12px; }
+.tax-count  { font-size: 18px; font-weight: 700; color: #F1F5F9; }
+.tax-count-label { font-size: 11px; color: #64748B; margin-left: 4px; }
+.tax-domain-section { margin-bottom: 14px; }
+.tax-domain-name { font-size: 11px; color: #F59E0B; font-weight: 700;
+                   text-transform: uppercase; letter-spacing: 0.4px;
+                   margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #1E293B; }
+.tax-node-item { font-size: 12px; color: #CBD5E1; padding: 3px 0;
+                 cursor: pointer; border-radius: 3px; }
+.tax-node-item:hover { color: #F1F5F9; }
 
 /* ── side panel ── */
 #panel { width: 300px; background: #070B14; border-left: 1px solid #1E293B;
@@ -137,6 +157,10 @@ svg#graph { width: 100%; height: 100%; }
   <div id="controls">
     <input id="search" type="text" placeholder="Search topics…">
     <div id="domain-filters"></div>
+    <div id="spread-wrap">
+      <label for="spread-slider">Spread</label>
+      <input id="spread-slider" type="range" min="1" max="10" value="5">
+    </div>
   </div>
 </div>
 
@@ -150,6 +174,9 @@ svg#graph { width: 100%; height: 100%; }
 </div>
 
 <div id="main">
+  <div id="tax-panel">
+    <div id="tax-inner"></div>
+  </div>
   <div id="graph-container">
     <svg id="graph"></svg>
     <div class="legend">
@@ -293,24 +320,72 @@ document.getElementById('search').addEventListener('input', e => {
 });
 
 function applyFilters() {
-  const visible = new Set(
-    nodes
-      // Domain and user nodes are always visible
-      .filter(n => n.kind === 'domain' || n.kind === 'user' ||
-        ((!scrubberCutoff || n.created_at <= scrubberCutoff) &&
-         (activeDomains.size > 0 && activeDomains.has(n.domain || 'Other')) &&
-         (!searchTerm || n.topic.toLowerCase().includes(searchTerm))))
-      .map(n => n.id)
+  const isFiltered = activeDomains.size < domains.length || !!searchTerm || !!scrubberCutoff;
+  const visibleTopics = topicNodes.filter(n =>
+    (!scrubberCutoff || n.created_at <= scrubberCutoff) &&
+    (activeDomains.size > 0 && activeDomains.has(n.domain || 'Other')) &&
+    (!searchTerm || n.topic.toLowerCase().includes(searchTerm))
   );
+  const visible = new Set([
+    ...nodes.filter(n => n.kind === 'domain' || n.kind === 'user').map(n => n.id),
+    ...visibleTopics.map(n => n.id),
+  ]);
+
   nodeGroup.selectAll('.node').each(function(d) {
     const show = visible.has(d.id);
     const isStructural = d.kind === 'domain' || d.kind === 'user';
     d3.select(this).classed('dimmed', !show).classed('highlighted', show && !!searchTerm && !isStructural);
   });
-  linkGroup.selectAll('.link').classed('dimmed', d => {
+
+  linkGroup.selectAll('.link').each(function(d) {
     const s = typeof d.source === 'object' ? d.source.id : d.source;
     const t = typeof d.target === 'object' ? d.target.id : d.target;
-    return !visible.has(s) || !visible.has(t);
+    const dimmed = !visible.has(s) || !visible.has(t);
+    d3.select(this)
+      .classed('dimmed', dimmed)
+      .attr('marker-end', dimmed ? null : `url(#arrow-${d.kind})`);
+  });
+
+  // ── taxonomy panel ──────────────────────────────────────────────────────
+  const taxPanel = document.getElementById('tax-panel');
+  const domainFilter = activeDomains.size < domains.length;
+  if (!domainFilter && !searchTerm) {
+    taxPanel.classList.remove('open');
+    return;
+  }
+  taxPanel.classList.add('open');
+
+  // Group visible topics by domain
+  const byDomain = {};
+  visibleTopics.forEach(n => {
+    const d = n.domain || 'Other';
+    if (!byDomain[d]) byDomain[d] = [];
+    byDomain[d].push(n);
+  });
+
+  const total = visibleTopics.length;
+  let html = `<div class="tax-header">
+    <span class="tax-count">${total}</span>
+    <span class="tax-count-label">topic${total !== 1 ? 's' : ''}</span>
+  </div>`;
+
+  Object.entries(byDomain).sort(([a],[b]) => a.localeCompare(b)).forEach(([domain, ns]) => {
+    html += `<div class="tax-domain-section">
+      <div class="tax-domain-name">${domain} (${ns.length})</div>
+      ${ns.sort((a,b) => a.topic.localeCompare(b.topic)).map(n =>
+        `<div class="tax-node-item" data-id="${n.id}">${n.topic}</div>`
+      ).join('')}
+    </div>`;
+  });
+
+  document.getElementById('tax-inner').innerHTML = html;
+
+  // Click a node in the list → select it in the graph
+  document.querySelectorAll('.tax-node-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const n = nodes.find(nd => nd.id === el.dataset.id);
+      if (n) selectNode(n);
+    });
   });
 }
 
@@ -355,19 +430,31 @@ const linkHit = linkGroup.selectAll('.link-hit')
   .attr('stroke', 'transparent').attr('stroke-width', 12).style('cursor', 'pointer')
   .on('click', (e, d) => { e.stopPropagation(); selectEdge(d); });
 
+// spread: 1–10 → multiplier 0.5–3.0
+let spreadMult = 1.0;
+function chargeFor(d) {
+  const base = d.kind === 'user' ? -500 : d.kind === 'domain' ? -300 : -200;
+  return base * spreadMult;
+}
+
 const simulation = d3.forceSimulation(nodes)
   .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
     const s = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
     const t = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
-    if (t && t.kind === 'user') return 100;
-    if (s && s.kind === 'domain') return 70;
-    return 60 + (1 - d.strength) * 40;
+    if (t && t.kind === 'user') return 140;
+    if (s && s.kind === 'domain') return 100;
+    return 90 + (1 - d.strength) * 50;
   }))
-  .force('charge', d3.forceManyBody().strength(d =>
-    d.kind === 'user' ? -300 : d.kind === 'domain' ? -150 : -90
-  ))
+  .force('charge', d3.forceManyBody().strength(chargeFor))
   .force('center', d3.forceCenter(W() / 2, H() / 2))
-  .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 6));
+  // collision radius includes the text label height below the node
+  .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 22));
+
+document.getElementById('spread-slider').addEventListener('input', function() {
+  spreadMult = 0.5 + (this.value - 1) * (2.5 / 9);
+  simulation.force('charge', d3.forceManyBody().strength(chargeFor));
+  simulation.alpha(0.4).restart();
+});
 
 const node = nodeGroup.selectAll('.node')
   .data(nodes).enter().append('g').attr('class', 'node')
