@@ -71,7 +71,8 @@ svg#graph { width: 100%; height: 100%; }
 .panel-section-title { font-size: 11px; color: #64748B; text-transform: uppercase;
                        letter-spacing: 0.5px; margin-bottom: 8px; }
 .edge-item { font-size: 12px; padding: 6px 8px; background: #111827;
-             border-radius: 4px; margin-bottom: 4px; }
+             border-radius: 4px; margin-bottom: 4px; cursor: pointer; }
+.edge-item:hover { background: #1E293B; }
 .edge-kind { display: inline-block; font-size: 10px; padding: 1px 5px;
              border-radius: 3px; margin-right: 6px; font-weight: 600; }
 .edge-kind.implies        { background: rgba(6,182,212,0.15); color: #06B6D4; }
@@ -79,6 +80,16 @@ svg#graph { width: 100%; height: 100%; }
 .edge-kind.conflicts_with { background: rgba(226,75,74,0.15); color: #E24B4A; }
 .edge-kind.part_of        { background: rgba(29,158,117,0.15); color: #1D9E75; }
 .edge-peer { color: #CBD5E1; }
+.link.selected-edge { stroke-width: 3px !important; opacity: 1 !important; }
+.edge-desc { font-size: 11px; color: #64748B; margin-top: 4px; line-height: 1.45; }
+/* edge panel view */
+.panel-edge-nodes { display: flex; align-items: center; gap: 8px;
+                    font-size: 13px; margin-bottom: 16px; flex-wrap: wrap; }
+.panel-edge-node  { color: #F1F5F9; font-weight: 600; }
+.panel-edge-arrow { color: #64748B; font-size: 11px; }
+.panel-edge-reason { font-size: 13px; color: #94A3B8; line-height: 1.6;
+                     background: #0A0E1A; border-radius: 6px; padding: 12px;
+                     border-left: 3px solid var(--edge-color, #06B6D4); }
 
 /* ── review history ── */
 .review-item { margin-bottom: 10px; padding: 10px; background: #0A0E1A;
@@ -160,21 +171,30 @@ svg#graph { width: 100%; height: 100%; }
   <div id="panel">
     <button id="panel-close">✕</button>
     <div id="panel-inner">
-      <div class="panel-topic" id="p-topic"></div>
-      <div class="panel-domain" id="p-domain"></div>
-      <div class="panel-desc" id="p-desc"></div>
-      <div class="panel-row"><span class="panel-label">Retrievability</span><span class="panel-value" id="p-recall"></span></div>
-      <div class="panel-row"><span class="panel-label">Stability</span><span class="panel-value" id="p-stab"></span></div>
-      <div class="panel-row"><span class="panel-label">Last reviewed</span><span class="panel-value" id="p-reviewed"></span></div>
-      <div class="panel-row"><span class="panel-label">Reviews</span><span class="panel-value" id="p-count"></span></div>
-      <div class="panel-row"><span class="panel-label">Kind</span><span class="panel-value" id="p-kind"></span></div>
-      <div class="panel-section">
-        <div class="panel-section-title">Edges</div>
-        <div id="p-edges"></div>
+      <!-- node view -->
+      <div id="panel-node-view">
+        <div class="panel-topic" id="p-topic"></div>
+        <div class="panel-domain" id="p-domain"></div>
+        <div class="panel-desc" id="p-desc"></div>
+        <div class="panel-row"><span class="panel-label">Retrievability</span><span class="panel-value" id="p-recall"></span></div>
+        <div class="panel-row"><span class="panel-label">Stability</span><span class="panel-value" id="p-stab"></span></div>
+        <div class="panel-row"><span class="panel-label">Last reviewed</span><span class="panel-value" id="p-reviewed"></span></div>
+        <div class="panel-row"><span class="panel-label">Reviews</span><span class="panel-value" id="p-count"></span></div>
+        <div class="panel-row"><span class="panel-label">Kind</span><span class="panel-value" id="p-kind"></span></div>
+        <div class="panel-section">
+          <div class="panel-section-title">Edges</div>
+          <div id="p-edges"></div>
+        </div>
+        <div class="panel-section" id="p-reviews-section">
+          <div class="panel-section-title">Review History</div>
+          <div id="p-reviews"></div>
+        </div>
       </div>
-      <div class="panel-section" id="p-reviews-section">
-        <div class="panel-section-title">Review History</div>
-        <div id="p-reviews"></div>
+      <!-- edge view -->
+      <div id="panel-edge-view" style="display:none">
+        <div class="panel-edge-nodes" id="pe-nodes"></div>
+        <div class="panel-edge-reason" id="pe-reason"></div>
+        <div id="pe-strength" style="margin-top:12px;font-size:11px;color:#475569"></div>
       </div>
     </div>
   </div>
@@ -329,6 +349,12 @@ const link = linkGroup.selectAll('.link')
   .attr('stroke-dasharray', d => (edgeStyle[d.kind] || edgeStyle.implies).dash)
   .attr('marker-end', d => `url(#arrow-${d.kind})`);
 
+// Transparent hit-area lines — wide enough to click easily
+const linkHit = linkGroup.selectAll('.link-hit')
+  .data(edges).enter().append('line').attr('class', 'link-hit')
+  .attr('stroke', 'transparent').attr('stroke-width', 12).style('cursor', 'pointer')
+  .on('click', (e, d) => { e.stopPropagation(); selectEdge(d); });
+
 const simulation = d3.forceSimulation(nodes)
   .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
     const s = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
@@ -391,17 +417,21 @@ node.append('text')
   });
 
 simulation.on('tick', () => {
-  link.each(function(d) {
-    const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
-    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-    const srcR = nodeRadius(d.source) + 4;
-    const tgtR = nodeRadius(d.target) + 10;
-    d3.select(this)
-      .attr('x1', d.source.x + dx/dist * srcR)
-      .attr('y1', d.source.y + dy/dist * srcR)
-      .attr('x2', d.target.x - dx/dist * tgtR)
-      .attr('y2', d.target.y - dy/dist * tgtR);
-  });
+  function positionLine(sel) {
+    sel.each(function(d) {
+      const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      const srcR = nodeRadius(d.source) + 4;
+      const tgtR = nodeRadius(d.target) + 10;
+      d3.select(this)
+        .attr('x1', d.source.x + dx/dist * srcR)
+        .attr('y1', d.source.y + dy/dist * srcR)
+        .attr('x2', d.target.x - dx/dist * tgtR)
+        .attr('y2', d.target.y - dy/dist * tgtR);
+    });
+  }
+  positionLine(link);
+  positionLine(linkHit);
   node.attr('transform', d => `translate(${d.x},${d.y})`);
 });
 
@@ -422,6 +452,8 @@ edges.forEach(e => {
 const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
 
 function selectNode(d) {
+  link.classed('selected-edge', false);
+  showNodeView();
   node.classed('selected', n => n.id === d.id);
   document.getElementById('p-topic').textContent = d.topic;
   document.getElementById('p-domain').textContent = d.domain || 'Other';
@@ -436,7 +468,8 @@ function selectNode(d) {
     ? '<div style="color:#64748B;font-size:12px">No edges yet</div>'
     : nodeEdges.map(e => {
         const label = nodeById[e.peer] ? nodeById[e.peer].topic : e.peer;
-        return `<div class="edge-item"><span class="edge-kind ${e.kind}">${e.kind.replace(/_/g,' ')}</span><span class="edge-peer">${label}</span></div>`;
+        const desc = e.description ? `<div class="edge-desc">${e.description}</div>` : '';
+        return `<div class="edge-item" data-edge-id="${e.id}"><span class="edge-kind ${e.kind}">${e.kind.replace(/_/g,' ')}</span><span class="edge-peer">${label}</span>${desc}</div>`;
       }).join('');
   // Review history — hidden for structural (domain/user) nodes
   const reviewSection = document.getElementById('p-reviews-section');
@@ -461,11 +494,47 @@ function selectNode(d) {
   }
   document.getElementById('panel').classList.add('open');
 }
+const edgeColors = { implies: '#06B6D4', depends_on: '#F59E0B', conflicts_with: '#E24B4A', part_of: '#1D9E75' };
+
+function showNodeView()  {
+  document.getElementById('panel-node-view').style.display = '';
+  document.getElementById('panel-edge-view').style.display = 'none';
+}
+function showEdgeView() {
+  document.getElementById('panel-node-view').style.display = 'none';
+  document.getElementById('panel-edge-view').style.display = '';
+}
+
 function closePanel() {
   document.getElementById('panel').classList.remove('open');
   node.classed('selected', false);
+  link.classed('selected-edge', false);
+  showNodeView();
 }
 document.getElementById('panel-close').onclick = closePanel;
+
+function selectEdge(d) {
+  node.classed('selected', false);
+  link.classed('selected-edge', e => e.id === d.id);
+  const src = typeof d.source === 'object' ? d.source : nodeById[d.source];
+  const tgt = typeof d.target === 'object' ? d.target : nodeById[d.target];
+  const srcLabel = src ? src.topic : d.source;
+  const tgtLabel = tgt ? tgt.topic : d.target;
+  const color = edgeColors[d.kind] || '#06B6D4';
+  const kindLabel = d.kind.replace(/_/g, ' ');
+  document.getElementById('pe-nodes').innerHTML =
+    `<span class="panel-edge-node">${srcLabel}</span>` +
+    `<span class="panel-edge-arrow">→</span>` +
+    `<span class="edge-kind ${d.kind}">${kindLabel}</span>` +
+    `<span class="panel-edge-arrow">→</span>` +
+    `<span class="panel-edge-node">${tgtLabel}</span>`;
+  document.getElementById('pe-reason').style.setProperty('--edge-color', color);
+  document.getElementById('pe-reason').innerHTML =
+    d.description || '<em style="color:#475569">No reason recorded.</em>';
+  document.getElementById('pe-strength').textContent = `Strength: ${(d.strength * 100).toFixed(0)}%`;
+  showEdgeView();
+  document.getElementById('panel').classList.add('open');
+}
 
 // ── timeline / scrubber ─────────────────────────────────────────────────────
 // Scrubber positions: one per node sorted by created_at, plus sentinel for "all"

@@ -810,7 +810,7 @@ fn generate_edges_for_new_nodes(db: &Db, teacher: &Teacher, new_topics: &[(Strin
             _ => continue,
         };
 
-        for edge in generated.iter().take(4) {
+        for edge in generated.iter().filter(|e| e.strength >= 0.6).take(4) {
             // Match target topic name to a node in the DB
             let target_node = match db.get_node(&edge.target) {
                 Ok(Some(n)) => n,

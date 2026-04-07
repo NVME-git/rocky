@@ -343,20 +343,23 @@ Rules:
         }
 
         let system = r#"You are building an implication graph for a personal knowledge graph.
-A new topic has just been added. Identify at most 4 meaningful relationships between it and the existing topics.
+A new topic has just been added. Identify at most 4 strongly related topics from the existing list.
 
 Relationship kinds:
 - "implies": understanding the new topic strongly implies you should also understand the target
 - "depends_on": the new topic requires understanding the target as a prerequisite
-- "conflicts_with": these topics involve genuine trade-offs or contradictory approaches
+- "conflicts_with": these topics involve genuine trade-offs or contradictory approaches in practice
 - "part_of": the new topic is a specific instance, specialisation, or subcomponent of the target
 
-Only create relationships where there is a genuine, non-obvious conceptual link. Ignore trivial connections.
-strength: 0.3 (tangential) → 0.7 (closely related) → 1.0 (foundational dependency).
+ONLY include relationships with strength ≥ 0.6 — skip anything tangential or loosely related.
+strength: 0.6 (clearly related) → 0.8 (closely coupled) → 1.0 (foundational dependency).
+
+For "description": explain in one concrete sentence WHY this relationship exists — what breaks or changes
+if you misunderstand one while knowing the other. Do not just restate the topic names.
 
 Return ONLY valid JSON array using the exact topic strings from the existing list:
-[{"target": "<exact topic>", "kind": "implies"|"depends_on"|"conflicts_with"|"part_of", "description": "<one sentence>", "strength": <0.3–1.0>}]
-If no meaningful relationships exist return: []"#;
+[{"target": "<exact topic>", "kind": "implies"|"depends_on"|"conflicts_with"|"part_of", "description": "<one concrete sentence explaining the reason>", "strength": <0.6–1.0>}]
+If no strongly related relationships exist return: []"#;
 
         let existing_list = existing
             .iter()
