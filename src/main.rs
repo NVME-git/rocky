@@ -509,9 +509,11 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
 
     let mut added = 0usize;
     let mut skipped = 0usize;
-    let mut newly_added: Vec<(String, String)> = Vec::new();
 
     // ── Process commits ───────────────────────────────────────────────────────
+    // Nodes are added commit-by-commit, and edges are generated immediately after
+    // each commit so that new nodes can form relationships with all previously
+    // integrated nodes — not just the pre-existing subset.
     for (i, sha) in shas.iter().enumerate() {
         if i > 0 {
             std::thread::sleep(std::time::Duration::from_millis(BACKFILL_COMMIT_DELAY_MS));
@@ -577,6 +579,8 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
 
         println!(" — {} new", new_topics.len());
 
+        // Add this commit's nodes first
+        let mut commit_new: Vec<(String, String)> = Vec::new();
         for t in &new_topics {
             db.add_or_update(
                 &t.topic,
@@ -588,17 +592,15 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
                 None,
             )?;
             println!("    {} {}", "+".truecolor(29, 158, 117), t.topic);
-            newly_added.push((t.topic.clone(), t.description.clone()));
+            commit_new.push((t.topic.clone(), t.description.clone()));
             added += 1;
         }
         skipped += topics.len() - new_topics.len();
-    }
 
-    // ── Generate edges for all new nodes ─────────────────────────────────────
-    if !newly_added.is_empty() {
-        println!("\n  {} Generating edges for {} new topic{}…",
-            "◈".truecolor(6, 182, 212), newly_added.len(), if newly_added.len() == 1 { "" } else { "s" });
-        generate_edges_for_new_nodes(db, teacher, &newly_added, BACKFILL_EDGE_DELAY_MS);
+        // Then generate edges — at this point all prior commits' nodes are in the
+        // DB, so relationships can be found across commits, not just within them
+        println!("    {} linking…", "◈".truecolor(6, 182, 212));
+        generate_edges_for_new_nodes(db, teacher, &commit_new, BACKFILL_EDGE_DELAY_MS);
     }
 
     println!();
