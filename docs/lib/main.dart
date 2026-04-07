@@ -1001,8 +1001,6 @@ class _GraphPreview extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.open_in_new, size: 14, color: AppColors.secondary),
-                  const SizedBox(width: 6),
                   Text(
                     caption,
                     style: TextStyle(
@@ -1012,6 +1010,8 @@ class _GraphPreview extends StatelessWidget {
                       decorationColor: AppColors.secondary,
                     ),
                   ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.open_in_new, size: 12, color: AppColors.secondary),
                 ],
               ),
             ),
