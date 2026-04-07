@@ -480,31 +480,6 @@ class StyledMarkdown extends StatelessWidget {
         tableHeadAlign: TextAlign.left,
         tableCellsPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
-      imageBuilder: (uri, title, alt) {
-        final resolvedUri = uri.hasScheme ? uri : Uri.base.resolveUri(uri);
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.network(
-              resolvedUri.toString(),
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.codeBg,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.codeBorder),
-                ),
-                child: Text(
-                  alt ?? 'Image',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }
