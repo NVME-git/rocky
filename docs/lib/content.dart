@@ -1635,6 +1635,10 @@ Set both to `0` to disable reminders entirely.
 const kWalkthrough = r'''
 # Demo Usecase: A PKG from Scratch
 
+```imagelink
+screenshots/final_PKG.png|graphs/stage7.html|Open the full interactive graph
+```
+
 This is a complete, realistic example of building a Personal Knowledge Graph while working on a Rust REST API called **taskify** — a task management backend with JWT auth, PostgreSQL, Redis caching, and Docker deployment.
 
 We follow 6 commits over one week. At each stage you can see exactly what Rocky does, what the PKG looks like, and how `rocky view` evolves as your knowledge grows.

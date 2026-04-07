@@ -484,6 +484,17 @@ class SectionContent extends StatelessWidget {
       if (part is _TextPart) {
         widgets.add(StyledMarkdown(data: part.text));
         i++;
+      } else if (part is _CodePart && part.language == 'imagelink') {
+        final segs = part.code.trim().split('|');
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: _GraphPreview(
+            imagePath: segs.isNotEmpty ? segs[0].trim() : '',
+            linkPath:  segs.length > 1 ? segs[1].trim() : '',
+            caption:   segs.length > 2 ? segs[2].trim() : 'Open interactive graph',
+          ),
+        ));
+        i++;
       } else if (part is _CodePart) {
         // Combine a bash input block with the immediately following plain
         // output block into a single terminal: input typed, output instant.
@@ -931,6 +942,81 @@ class StyledMarkdown extends StatelessWidget {
           tableCellsPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Graph preview — screenshot with link to live graph
+// ---------------------------------------------------------------------------
+class _GraphPreview extends StatelessWidget {
+  final String imagePath;
+  final String linkPath;
+  final String caption;
+  const _GraphPreview({required this.imagePath, required this.linkPath, required this.caption});
+
+  @override
+  Widget build(BuildContext context) {
+    final imgUrl  = Uri.base.resolve(imagePath).toString();
+    final linkUrl = Uri.base.resolve(linkPath).toString();
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isDark,
+      builder: (_, dark, __) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            onTap: () => _openUrl(linkUrl),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 340),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.divider, width: 1),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.network(
+                  imgUrl,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 160,
+                    color: AppColors.codeBg,
+                    child: Center(
+                      child: Text('Graph preview unavailable',
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () => _openUrl(linkUrl),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.open_in_new, size: 14, color: AppColors.secondary),
+                  const SizedBox(width: 6),
+                  Text(
+                    caption,
+                    style: TextStyle(
+                      color: AppColors.secondary,
+                      fontSize: 13,
+                      decoration: TextDecoration.underline,
+                      decorationColor: AppColors.secondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
