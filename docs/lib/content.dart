@@ -1633,7 +1633,7 @@ Set both to `0` to disable reminders entirely.
 ''';
 
 const kWalkthrough = r'''
-# Example Project Walkthrough: A PKG from Scratch
+# Demo Usecase: A PKG from Scratch
 
 This is a complete, realistic example of building a Personal Knowledge Graph while working on a Rust REST API called **taskify** — a task management backend with JWT auth, PostgreSQL, Redis caching, and Docker deployment.
 

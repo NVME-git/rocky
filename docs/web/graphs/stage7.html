@@ -333,15 +333,15 @@ const simulation = d3.forceSimulation(nodes)
   .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
     const s = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
     const t = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
-    if (t && t.kind === 'user') return 160;
-    if (s && s.kind === 'domain') return 120;
-    return 100 + (1 - d.strength) * 80;
+    if (t && t.kind === 'user') return 100;
+    if (s && s.kind === 'domain') return 70;
+    return 60 + (1 - d.strength) * 40;
   }))
   .force('charge', d3.forceManyBody().strength(d =>
-    d.kind === 'user' ? -800 : d.kind === 'domain' ? -400 : -280
+    d.kind === 'user' ? -300 : d.kind === 'domain' ? -150 : -90
   ))
   .force('center', d3.forceCenter(W() / 2, H() / 2))
-  .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 12));
+  .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 6));
 
 const node = nodeGroup.selectAll('.node')
   .data(nodes).enter().append('g').attr('class', 'node')
@@ -358,14 +358,14 @@ node.append('circle')
   .attr('stroke-width', d => nodeStrokeWidth(d));
 
 node.append('text')
-  .style('font-size', d => d.kind === 'user' ? '11px' : d.kind === 'domain' ? '9px' : '11px')
+  .style('font-size', d => d.kind === 'user' ? '13px' : d.kind === 'domain' ? '11px' : '13px')
   .style('font-weight', d => (d.kind === 'user' || d.kind === 'domain') ? '700' : 'normal')
   .style('fill', d => d.kind === 'user' ? '#0A0E1A' : d.kind === 'domain' ? '#F1F5F9' : '#CBD5E1')
   .each(function(d) {
     const el = d3.select(this);
     if (d.kind === 'user') {
       // Word-wrap to fit inside circle (r=28 → ~8 chars per line at 11px bold)
-      const maxChars = 8, lineH = 13;
+      const maxChars = 9, lineH = 15;
       const words = d.topic.split(/\s+/);
       const lines = [];
       let cur = '';
@@ -383,7 +383,7 @@ node.append('text')
     } else if (d.kind === 'domain') {
       const t = d.topic;
       el.attr('dy', '0').style('dominant-baseline', 'central')
-        .text(t.length > 7 ? t.slice(0, 6) + '…' : t);
+        .text(t.length > 9 ? t.slice(0, 8) + '…' : t);
     } else {
       el.attr('dy', nodeRadius(d) + 14)
         .text(d.topic.length > 22 ? d.topic.slice(0, 20) + '…' : d.topic);

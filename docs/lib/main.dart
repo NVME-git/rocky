@@ -110,7 +110,7 @@ final List<DocSection> kSections = [
   const DocSection('How It Works', Icons.account_tree, kHowItWorks),
   const DocSection('Obsidian', Icons.hub, kObsidian),
   const DocSection('Sync & Backup', Icons.sync, kSync),
-  const DocSection('Example Project Walkthrough', Icons.timeline, kWalkthrough),
+  const DocSection('Demo Usecase', Icons.timeline, kWalkthrough),
 ];
 
 // ---------------------------------------------------------------------------
