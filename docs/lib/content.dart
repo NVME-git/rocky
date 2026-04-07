@@ -1788,9 +1788,17 @@ Fresh project. Empty PKG.
       changed it locally before it hit production. What happens when
       production tries to apply it, question?
 
-  > sqlx tracks migrations by checksum. If the checksum doesn't match it
-    refuses to run — it won't apply a migration it's seen in a different form.
-    You'd need a new migration file to correct the schema.
+  > It would just re-run the migration on production since the file changed.
+
+  ♫ Almost — but there is problem. Rocky must ask more.
+
+  Q3. sqlx stores a checksum of each migration file and tracks which have
+      already run. If the checksum differs from what ran before, what does
+      sqlx do — and why does it refuse rather than re-apply?
+
+  > Oh — sqlx refuses to run it entirely. Re-running a migration that
+    already applied could corrupt the schema. The checksum is a safety
+    guard: it detects edits after the fact and blocks them.
 
   ♫ Is correct, friend! Rocky also learn this hard way.
 
@@ -1873,14 +1881,18 @@ Fresh project. Empty PKG.
       refresh token. Your app loads third-party analytics JavaScript. What's
       the attack surface difference, question?
 
-  > localStorage is accessible to any JavaScript on the page — a compromised
-    third-party script can exfiltrate it. An httpOnly cookie can't be read
-    by JavaScript at all. With third-party JS on the page, httpOnly is the
-    only safe option.
+  > ?
 
-  ♫ Excite excite excite! Friend protect the tokens!
+     Fetching explanation...
 
-  ✓ httpOnly cookie security added to PKG.
+   localStorage lives in the browser's JS heap — any script on the page,
+   including third-party analytics, can read window.localStorage. An XSS
+   payload or compromised analytics snippet silently exfiltrates the token.
+   httpOnly cookies are never exposed to JavaScript at all; the browser
+   attaches them to requests automatically but scripts can't read them.
+   With third-party JS on the page, httpOnly is the only safe choice.
+
+   Saved to PKG — revisit before your next task.
 
   Rocky: New topic — token expiry handling
     ...
@@ -1901,8 +1913,8 @@ Fresh project. Empty PKG.
   ──────────────────────────────────────
 
   Total topics:  8
-  Known:         8
-  Fading:        0
+  Known:         7
+  Fading:        1
   Gaps/weak:     0
 
   Quiz budget: 0/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
@@ -1952,10 +1964,19 @@ Fresh project. Empty PKG.
       local memory. Server B updates user:123. Server A's cache is now stale.
       How does Redis solve this, question?
 
-  > In-memory caches per server can't coordinate. Redis is shared — all
-    servers read from the same instance. With cache-aside, every server
-    checks Redis first; on miss, reads from the DB and populates Redis.
-    All servers immediately see any Redis update or deletion.
+  > Each server could subscribe to a Redis pub/sub channel and invalidate
+    its local cache when it gets the message?
+
+  ♫ That is one approach — but Rocky want simpler answer. Think about
+    where the cache itself lives.
+
+  Q3. The root issue is in-memory caches are per-process and can't see each
+      other. Where does Redis sit relative to your API servers, and why does
+      that eliminate the staleness problem entirely?
+
+  > Redis is shared outside the processes — all servers read and write
+    the same cache. There is no per-server copy to go stale. Cache-aside
+    means any server that updates Redis, all others immediately see it.
 
   ♫ Fist my bump, friend!
 
@@ -1979,7 +2000,7 @@ Fresh project. Empty PKG.
   sqlx connection pooling     implementation █████████░ 90%  4.8   0.3   1        2026-04-02
   database migrations         concept        █████████░ 90%  5.0   0.2   1        2026-04-02
   JWT authentication          pattern        █████████░ 91%  5.2   0.3   1        2026-04-03
-  httpOnly cookie security    concept        █████████░ 91%  5.0   0.3   1        2026-04-03
+  httpOnly cookie security    concept        ███████░░░ 68%  1.8   0.3   1        2026-04-03
   token expiry handling       concept        █████████░ 91%  4.8   0.2   1        2026-04-03
   Redis TTL expiry            implementation ██████████ 96%  5.1   0.3   1        2026-04-04
   cache invalidation          concept        ██████████ 96%  5.2   0.2   1        2026-04-04

@@ -174,7 +174,7 @@ impl Personality {
     /// Show the full welcome banner (used on install).
     pub fn banner(&self) {
         if !self.enabled { return; }
-        println!("{}", ROCKY_BANNER.cyan());
+        println!("{}", ROCKY_BANNER.truecolor(245, 158, 11));
     }
 
     /// Show ASCII Rocky. Pass `excite=true` after big milestones.
@@ -190,17 +190,17 @@ impl Personality {
                 % ASCII_VARIANTS.len();
             ASCII_VARIANTS[idx]
         };
-        println!("{}", art.cyan());
+        println!("{}", art.truecolor(245, 158, 11));
     }
 
     pub fn correct(&self) -> Option<String> {
         if !self.enabled { return None; }
-        Some(pick(CORRECT).green().to_string())
+        Some(pick(CORRECT).truecolor(29, 158, 117).to_string())
     }
 
     pub fn partial(&self) -> Option<String> {
         if !self.enabled { return None; }
-        Some(pick(PARTIAL).yellow().to_string())
+        Some(pick(PARTIAL).truecolor(239, 159, 39).to_string())
     }
 
     pub fn failed(&self) -> Option<String> {
@@ -220,7 +220,7 @@ impl Personality {
 
     pub fn too_easy(&self) -> Option<String> {
         if !self.enabled { return None; }
-        Some(pick(TOO_EASY).green().to_string())
+        Some(pick(TOO_EASY).truecolor(29, 158, 117).to_string())
     }
 
     pub fn session_done(&self, topics_completed: u32) -> Option<String> {
@@ -230,17 +230,17 @@ impl Personality {
         } else {
             pick(SESSION_DONE_FEW)
         };
-        Some(phrase.green().to_string())
+        Some(phrase.truecolor(29, 158, 117).to_string())
     }
 
     pub fn streak(&self, days: u32) -> Option<String> {
         if !self.enabled || days < 2 { return None; }
-        Some(streak_phrase(days).cyan().to_string())
+        Some(streak_phrase(days).truecolor(6, 182, 212).to_string())
     }
 
     pub fn milestone(&self, known: usize) -> Option<String> {
         if !self.enabled { return None; }
-        milestone_phrase(known).map(|s| s.cyan().bold().to_string())
+        milestone_phrase(known).map(|s| s.truecolor(6, 182, 212).bold().to_string())
     }
 
     pub fn pkg_mood(&self, known: usize, total: usize) -> Option<String> {
