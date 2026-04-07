@@ -143,7 +143,7 @@ pub fn push_reminder(db: &Db, cfg: &SyncConfig) -> Option<String> {
             .ok().flatten().unwrap_or_default().parse().unwrap_or(0);
         if sessions >= cfg.remind_push_sessions {
             return Some(format!(
-                "♫ Rocky: {sessions} sessions unsynced — consider `rocky sync --push` to back up, question?"
+                "Rocky: {sessions} sessions unsynced — consider `rocky sync --push` to back up, question?"
             ));
         }
     }
@@ -156,7 +156,7 @@ pub fn push_reminder(db: &Db, cfg: &SyncConfig) -> Option<String> {
                 let days = (today - last_date).num_days() as u32;
                 if days >= cfg.remind_push_days {
                     return Some(format!(
-                        "♫ Rocky: {days} days since last push — consider `rocky sync --push`, question?"
+                        "Rocky: {days} days since last push — consider `rocky sync --push`, question?"
                     ));
                 }
             }
@@ -168,7 +168,7 @@ pub fn push_reminder(db: &Db, cfg: &SyncConfig) -> Option<String> {
                     let days = (today - first_date).num_days() as u32;
                     if days >= cfg.remind_push_days {
                         return Some(format!(
-                            "♫ Rocky: {days} days of commits never pushed — run `rocky sync --push`, question?"
+                            "Rocky: {days} days of commits never pushed — run `rocky sync --push`, question?"
                         ));
                     }
                 }

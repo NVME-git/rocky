@@ -7,7 +7,6 @@ use colored::Colorize;
 // ── ASCII Rocky ───────────────────────────────────────────────────────────────
 
 const ROCKY_CALM: &str = "
-      ♫
    __|__
   /◉   ◉\\
   \\ ─── /
@@ -16,7 +15,6 @@ const ROCKY_CALM: &str = "
 ";
 
 const ROCKY_HAPPY: &str = "
-    ♫   ♫
    __|__
   /^   ^\\
   \\ ─── /
@@ -25,20 +23,17 @@ const ROCKY_HAPPY: &str = "
 ";
 
 const ROCKY_EXCITE: &str = "
-  ♫  ♫  ♫  ♫
   \\(◉ · ◉)/
     \\─────/
      |||||
 ";
 
 const ROCKY_BANNER: &str = "
-   ♫           ♪          ♫
-
      __|__
     /◉   ◉\\         R  O  C  K  Y
     \\ ─── /         Personal Knowledge Graph
      \\_↑_/
-    /|||||\\          Stay sharp. Stay human.
+    /|||||\\          You observe. Question?
 ";
 
 const ASCII_VARIANTS: &[&str] = &[ROCKY_CALM, ROCKY_HAPPY, ROCKY_EXCITE];
@@ -46,77 +41,77 @@ const ASCII_VARIANTS: &[&str] = &[ROCKY_CALM, ROCKY_HAPPY, ROCKY_EXCITE];
 // ── Phrase banks ──────────────────────────────────────────────────────────────
 
 const CORRECT: &[&str] = &[
-    "♫ Fist my bump, friend! Is correct!",
-    "♫ Excite excite excite! Friend get it!",
-    "♫ Yes! Friend brain work excellent!",
-    "♫ Is good! Rocky is very happy!",
-    "♫ You are genius human!",
-    "♫ Amazing! Very good science!",
-    "♫ Rocky knew friend could do!",
-    "♫ Friend learn fast. Rocky is proud.",
-    "♫ Fist my bump! Is exactly right!",
-    "♫ Excite! Friend understand consequence!",
+    "Fist my bump, friend! Is correct!",
+    "Excite excite excite! Friend get it!",
+    "Yes! Friend brain work excellent!",
+    "Is good! Rocky is very happy!",
+    "You are genius human!",
+    "Amazing! Very good science!",
+    "Rocky knew friend could do!",
+    "Friend learn fast. Rocky is proud.",
+    "Fist my bump! Is exactly right!",
+    "Excite! Friend understand consequence!",
 ];
 
 const PARTIAL: &[&str] = &[
-    "♫ Is close! Brain almost have it!",
-    "♫ Good think! More practice, more know!",
-    "♫ Is okay. Science is hard. We figure out.",
-    "♫ Friend try hard. Rocky respect.",
-    "♫ Almost! Keep going, friend.",
-    "♫ Right direction! Just need more depth.",
+    "Is close! Brain almost have it!",
+    "Good think! More practice, more know!",
+    "Is okay. Science is hard. We figure out.",
+    "Friend try hard. Rocky respect.",
+    "Almost! Keep going, friend.",
+    "Right direction! Just need more depth.",
 ];
 
 const FAILED: &[&str] = &[
-    "♫ Is okay! Rocky also not know at first!",
-    "♫ Now friend know. Is good gift.",
-    "♫ Hard topic. But friend will remember.",
-    "♫ We are crew. We solve together.",
-    "♫ Brain need time. Is normal.",
-    "♫ Rocky fail many thing before succeed. Is process.",
+    "Is okay! Rocky also not know at first!",
+    "Now friend know. Is good gift.",
+    "Hard topic. But friend will remember.",
+    "We are crew. We solve together.",
+    "Brain need time. Is normal.",
+    "Rocky fail many thing before succeed. Is process.",
 ];
 
 const SKIPPED: &[&str] = &[
-    "♫ Is okay! Rocky skip hard question sometimes too.",
-    "♫ Next time maybe. No problem.",
-    "♫ Rocky save question for later. Is wise.",
+    "Is okay! Rocky skip hard question sometimes too.",
+    "Next time maybe. No problem.",
+    "Rocky save question for later. Is wise.",
 ];
 
 const IGNORED: &[&str] = &[
-    "♫ Rocky agree. Not important topic.",
-    "♫ Good call, friend. Focus on real science.",
-    "♫ Yes, ignore. Rocky sometimes also get confused.",
+    "Rocky agree. Not important topic.",
+    "Good call, friend. Focus on real science.",
+    "Yes, ignore. Rocky sometimes also get confused.",
 ];
 
 const TOO_EASY: &[&str] = &[
-    "♫ Fist my bump! Friend already know!",
-    "♫ Of course friend know this. Rocky not surprised.",
-    "♫ Brain strong on this one. Excite!",
+    "Fist my bump! Friend already know!",
+    "Of course friend know this. Rocky not surprised.",
+    "Brain strong on this one. Excite!",
 ];
 
 const SESSION_DONE_FEW: &[&str] = &[
-    "♫ Good session! Friend brain stronger now.",
-    "♫ Rocky is pleased. Science happened today.",
-    "♫ We are good crew, friend.",
+    "Good session! Friend brain stronger now.",
+    "Rocky is pleased. Science happened today.",
+    "We are good crew, friend.",
 ];
 
 const SESSION_DONE_MANY: &[&str] = &[
-    "♫ Many topic! Rocky is very impress!",
-    "♫ Excite excite excite! Much learning today!",
-    "♫ All done! Friend brain is strong today!",
-    "♫ Science win today. Is good.",
+    "Many topic! Rocky is very impress!",
+    "Excite excite excite! Much learning today!",
+    "All done! Friend brain is strong today!",
+    "Science win today. Is good.",
 ];
 
 // ── Streak phrases ────────────────────────────────────────────────────────────
 
 fn streak_phrase(days: u32) -> String {
     match days {
-        1 => "♫ First day! Good start, friend.".into(),
-        2 => "♫ Two day in row! Consistency is best science.".into(),
-        3..=6 => format!("♫ {days} day streak! Friend very dedicated!"),
-        7..=13 => format!("♫ {days} day streak! Excite excite! Rocky tell other Eridian!"),
-        14..=29 => format!("♫ {days} day streak!! Friend brain grow very large!"),
-        _ => format!("♫ {days} day streak!!! Rocky is maximum excite! Fist my bump!"),
+        1 => "First day! Good start, friend.".into(),
+        2 => "Two day in row! Consistency is best science.".into(),
+        3..=6 => format!("{days} day streak! Friend very dedicated!"),
+        7..=13 => format!("{days} day streak! Excite excite! Rocky tell other Eridian!"),
+        14..=29 => format!("{days} day streak!! Friend brain grow very large!"),
+        _ => format!("{days} day streak!!! Rocky is maximum excite! Fist my bump!"),
     }
 }
 
@@ -124,12 +119,12 @@ fn streak_phrase(days: u32) -> String {
 
 pub fn milestone_phrase(known: usize) -> Option<&'static str> {
     match known {
-        1 => Some("♫ First topic known! Rocky mark beginning of great friendship!"),
-        5 => Some("♫ Five topic! Friend brain filling up! Excite!"),
-        10 => Some("♫ Ten topic known! Excite excite excite!"),
-        25 => Some("♫ Twenty-five! Friend brain grow very large!"),
-        50 => Some("♫ Fifty topic! Rocky tell other Eridian about friend!"),
-        100 => Some("♫ One hundred topic!! Friend is now expert human! Rocky maximum proud!"),
+        1 => Some("First topic known! Rocky mark beginning of great friendship!"),
+        5 => Some("Five topic! Friend brain filling up! Excite!"),
+        10 => Some("Ten topic known! Excite excite excite!"),
+        25 => Some("Twenty-five! Friend brain grow very large!"),
+        50 => Some("Fifty topic! Rocky tell other Eridian about friend!"),
+        100 => Some("One hundred topic!! Friend is now expert human! Rocky maximum proud!"),
         _ => None,
     }
 }
@@ -138,13 +133,13 @@ pub fn milestone_phrase(known: usize) -> Option<&'static str> {
 
 pub fn pkg_mood(known: usize, total: usize) -> &'static str {
     if total == 0 {
-        return "♫ PKG is empty. Let us begin science, question?";
+        return "PKG is empty. Let us begin science, question?";
     }
     let pct = known * 100 / total;
     match pct {
-        80..=100 => "♫ PKG look strong. Rocky is very please.",
-        50..=79  => "♫ Good progress, friend. Keep science going.",
-        _        => "♫ Many gap. But is okay. We fix together.",
+        80..=100 => "PKG look strong. Rocky is very please.",
+        50..=79  => "Good progress, friend. Keep science going.",
+        _        => "Many gap. But is okay. We fix together.",
     }
 }
 

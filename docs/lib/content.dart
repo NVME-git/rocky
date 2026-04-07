@@ -103,7 +103,6 @@ When you answer well, stability increases and the topic decays slower. When you 
 ## Rocky the alien
 
 ```
-       ♫
      _____
    .'     '.
   /  .   .  \
@@ -116,10 +115,10 @@ When you answer well, stability increases and the topic decays slower. When you 
 
 Rocky has a personality based on Rocky the alien from Andy Weir's [*Project Hail Mary*](https://www.imdb.com/title/tt12042730/) — enthusiastic, direct, and genuinely rooting for you.
 
-- `♫ Fist my bump, friend! Is correct!`
-- `♫ Excite excite excite! Friend get it!`
-- `♫ Is okay! Rocky also not know at first!`
-- `♫ We are crew. We solve together.`
+- `Fist my bump, friend! Is correct!`
+- `Excite excite excite! Friend get it!`
+- `Is okay! Rocky also not know at first!`
+- `We are crew. We solve together.`
 
 Questions end with ", question?" — Rocky's way of asking. Set `personality = false` in `[ui]` config for plain output.
 
@@ -220,7 +219,7 @@ rocky stats
 You should see:
 
 ```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  0
@@ -230,7 +229,7 @@ You should see:
 
   Quiz budget: 3/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
 
-  ♫ PKG is empty. Let us begin science, question?
+  PKG is empty. Let us begin science, question?
 ```
 
 ---
@@ -246,14 +245,12 @@ rocky install        # or: rocky install git
 You'll see:
 
 ```
-   ♫           ♪          ♫
-
      _____
    .'     '.
   /  .   .  \        R  O  C  K  Y
  |  . _____ .|       Personal Knowledge Graph
  |   |     | |
- |   |_____|  |       Stay sharp. Stay human.
+ |   |_____|  |       You observe. Question?
   \   .   .  /
    '.______.'
 
@@ -301,7 +298,7 @@ rocky "add user login with JWT tokens to my Express API"
 Rocky analyses the task, checks your PKG, and quizzes you on anything new or fading:
 
 ```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Task: add user login with JWT tokens to my Express API
@@ -330,7 +327,7 @@ Type your answer and press Enter. Rocky evaluates whether you understand the imp
     without making the user log in again. The server validates the refresh
     token against a database so it can be revoked.
 
-  ♫ Fist my bump, friend! Is correct!
+  Fist my bump, friend! Is correct!
 
   Good — you've covered the refresh flow and revocation. One thing worth
   double-checking: refresh tokens should be stored in httpOnly cookies,
@@ -357,7 +354,7 @@ After a few sessions, see what you know:
 ```bash
 rocky ls
 
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Topic                           Kind           Recall         Stab   Diff  Reviews  Last Reviewed
@@ -538,7 +535,7 @@ PKG summary.
 ```bash
 rocky stats
 
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  24
@@ -550,7 +547,7 @@ rocky stats
 
   Edges: 18 total  ·  Most connected: JWT authentication (4 edges)
 
-  ♫ Good progress, friend. Keep science going.
+  Good progress, friend. Keep science going.
 ```
 
 ---
@@ -788,7 +785,7 @@ Rocky reads the diff for each commit, extracts topics the same way `rocky diff` 
 **Example output:**
 
 ```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Taxonomy skeleton ready.
@@ -1618,7 +1615,7 @@ rocky stats            # all your topics are back
 Rocky tracks how many sessions have passed since your last push and reminds you when the threshold is hit:
 
 ```
-♫ Rocky: 5 sessions unsynced — consider `rocky sync --push` to back up, question?
+Rocky: 5 sessions unsynced — consider `rocky sync --push` to back up, question?
 ```
 
 Configure the threshold in `~/.rocky/.rocky.toml`:
@@ -1654,7 +1651,7 @@ Fresh project. Empty PKG.
 ~/taskify $ rocky install          # install the git hook
 ~/taskify $ rocky stats
 
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  0
@@ -1664,7 +1661,7 @@ Fresh project. Empty PKG.
 
   Quiz budget: 3/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
 
-  ♫ PKG is empty. Let us begin science, question?
+  PKG is empty. Let us begin science, question?
 ```
 
 **`rocky view` at this point:** A blank canvas. A few taxonomy skeleton nodes (Language, Database, Auth…) float at the edges, lightly dimmed. Nothing in the centre.
@@ -1676,7 +1673,7 @@ Fresh project. Empty PKG.
 ```bash
 ~/taskify $ rocky "set up Rust Axum web server with tokio and tower middleware"
 
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Task: set up Rust Axum web server with tokio and tower middleware
@@ -1695,7 +1692,7 @@ Fresh project. Empty PKG.
     select! waits for whichever resolves first and cancels the other. For two
     independent calls where I want both results, join! is correct.
 
-  ♫ Fist my bump, friend! Is correct!
+  Fist my bump, friend! Is correct!
 
   Good distinction. Worth noting: join! doesn't parallelize — both futures
   still run on a single thread unless you spawn tasks. tokio::spawn moves
@@ -1715,7 +1712,7 @@ Fresh project. Empty PKG.
     on your main future. current_thread runs everything on one thread;
     multi_thread (default) uses a thread pool matching your CPU cores.
 
-  ♫ Excite excite excite! Friend get it!
+  Excite excite excite! Friend get it!
 
   ✓ tokio runtime added to PKG.
 
@@ -1731,7 +1728,7 @@ Fresh project. Empty PKG.
     with a response. A Layer wraps a Service to add behaviour (logging,
     auth, etc.). Router::layer applies a tower Layer to all routes.
 
-  ♫ We are crew. We solve together. Is correct!
+  We are crew. We solve together. Is correct!
 
   ✓ Axum framework added to PKG.
 ```
@@ -1782,7 +1779,7 @@ graphs/stage1.html|Open interactive graph: commit 1
     setting — if the pool is exhausted the request blocks until one becomes
     available, and returns an error if it waits longer than connect_timeout.
 
-  ♫ Fist my bump, friend! Is correct!
+  Fist my bump, friend! Is correct!
 
   ✓ sqlx connection pooling added to PKG.
 
@@ -1796,7 +1793,7 @@ graphs/stage1.html|Open interactive graph: commit 1
 
   > It would just re-run the migration on production since the file changed.
 
-  ♫ Almost — but there is problem. Rocky must ask more.
+  Almost — but there is problem. Rocky must ask more.
 
   Q3. sqlx stores a checksum of each migration file and tracks which have
       already run. If the checksum differs from what ran before, what does
@@ -1806,7 +1803,7 @@ graphs/stage1.html|Open interactive graph: commit 1
     already applied could corrupt the schema. The checksum is a safety
     guard: it detects edits after the fact and blocks them.
 
-  ♫ Is correct, friend! Rocky also learn this hard way.
+  Is correct, friend! Rocky also learn this hard way.
 
   ✓ database migrations added to PKG.
 
@@ -1815,7 +1812,7 @@ graphs/stage1.html|Open interactive graph: commit 1
 
   > (Enter — skip, I know this already)
 
-  ♫ Topic queued for later.
+  Topic queued for later.
 ```
 
 ```bash
@@ -1877,7 +1874,7 @@ graphs/stage2.html|Open interactive graph: commit 2
     validates it against a database (so it can be revoked) and issues a new
     access token. The user never sees a login screen.
 
-  ♫ Fist my bump, friend! Is correct!
+  Fist my bump, friend! Is correct!
 
   ✓ JWT authentication added to PKG.
 
@@ -1917,7 +1914,7 @@ graphs/stage2.html|Open interactive graph: commit 2
 ```bash
 ~/taskify $ rocky stats
 
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  8
@@ -1929,7 +1926,7 @@ graphs/stage2.html|Open interactive graph: commit 2
 
   Edges: 6 total  ·  Most connected: JWT authentication (3 edges)
 
-  ♫ Good progress, friend. PKG growing. Keep science going.
+  Good progress, friend. PKG growing. Keep science going.
 ```
 
 **`rocky view` after commit 3:** An Auth cluster has appeared in the upper-right — JWT authentication, httpOnly cookie security, and token expiry handling form a triangle. The most notable edge: *JWT authentication → httpOnly cookie security* (`implies`, 0.92). The Database cluster sits lower-left. The Language cluster anchors the left. All nodes glow gold. Scrub the timeline from April 1 to April 3 to watch each cluster grow in.
@@ -1962,7 +1959,7 @@ graphs/stage3.html|Open interactive graph: commit 3
     Write-through keeps reads fast; invalidation is simpler but causes one
     cache miss after each write.
 
-  ♫ Is correct! Rocky appreciate the trade-off answer.
+  Is correct! Rocky appreciate the trade-off answer.
 
   ✓ Redis TTL expiry added to PKG.
 
@@ -1977,7 +1974,7 @@ graphs/stage3.html|Open interactive graph: commit 3
   > Each server could subscribe to a Redis pub/sub channel and invalidate
     its local cache when it gets the message?
 
-  ♫ That is one approach — but Rocky want simpler answer. Think about
+  That is one approach — but Rocky want simpler answer. Think about
     where the cache itself lives.
 
   Q3. The root issue is in-memory caches are per-process and can't see each
@@ -1988,7 +1985,7 @@ graphs/stage3.html|Open interactive graph: commit 3
     the same cache. There is no per-server copy to go stale. Cache-aside
     means any server that updates Redis, all others immediately see it.
 
-  ♫ Fist my bump, friend!
+  Fist my bump, friend!
 
   ✓ cache invalidation strategies added to PKG.
 ```
@@ -2037,7 +2034,7 @@ graphs/stage4.html|Open interactive graph: commit 4
 
   Rocky: New topic — Lua scripting in Redis
 
-  ♫ Cross-concept edge detected! JWT authentication → rate limiting
+  Cross-concept edge detected! JWT authentication → rate limiting
 
   Q1. You know JWT authentication well. Your rate limiter identifies users
       by their JWT subject claim. A malicious client strips the Authorization
@@ -2049,7 +2046,7 @@ graphs/stage4.html|Open interactive graph: commit 4
     valid JWT is present. Never fall back to IP for authenticated endpoints;
     IP limits only make sense for unauthenticated routes like /login.
 
-  ♫ Excite! Cross-concept question! Friend connect the dots!
+  Excite! Cross-concept question! Friend connect the dots!
 
   ✓ Redis sorted sets added to PKG.
 
@@ -2063,7 +2060,7 @@ graphs/stage4.html|Open interactive graph: commit 4
     can interleave. The script checks, conditionally increments, and returns
     the result as a single atomic operation.
 
-  ♫ Fist my bump! Lua scripts in Redis — atomically or nothing!
+  Fist my bump! Lua scripts in Redis — atomically or nothing!
 
   ✓ Lua scripting in Redis added to PKG.
 ```
@@ -2103,7 +2100,7 @@ You've been shipping features. It's been 7 days since commit 1.
 ```bash
 ~/taskify $ rocky stats
 
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  12
@@ -2115,7 +2112,7 @@ You've been shipping features. It's been 7 days since commit 1.
 
   Edges: 14 total  ·  Most connected: JWT authentication (5 edges)
 
-  ♫ Some topics fading, friend. Time for science.
+  Some topics fading, friend. Time for science.
 ```
 
 ```bash
@@ -2146,7 +2143,7 @@ graphs/stage6.html|Open interactive graph: one week later
 ```bash
 ~/taskify $ rocky quiz
 
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   0 topics in queue.
@@ -2166,7 +2163,7 @@ graphs/stage6.html|Open interactive graph: one week later
     can acquire it. Use tokio::sync::Mutex for async contexts — its lock
     is async-aware and yields the thread instead of blocking it.
 
-  ♫ Fist my bump, friend! Is correct!
+  Fist my bump, friend! Is correct!
 
   ✓ Rust async/await — stability increased to 6.8 · recall now at 94%
 ```
@@ -2182,7 +2179,7 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
 ```bash
 ~/taskify $ rocky backfill --limit 10
 
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Taxonomy skeleton ready.
@@ -2213,7 +2210,7 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
 ```bash
 ~/taskify $ rocky stats
 
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  17

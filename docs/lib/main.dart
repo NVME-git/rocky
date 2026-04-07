@@ -826,10 +826,6 @@ class _TerminalBlockState extends State<TerminalBlock>
           TextSpan(text: promptMatch.group(2),
               style: const TextStyle(color: TermColors.cmdText)),
         ]);
-      } else if (trimmed.startsWith('♫')) {
-        mode = 0;
-        span = TextSpan(text: line,
-            style: const TextStyle(color: TermColors.rockyBrand, fontWeight: FontWeight.w500));
       } else if (trimmed.startsWith('Rocky:')) {
         mode = 0;
         span = TextSpan(text: line,

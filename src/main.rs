@@ -28,7 +28,7 @@ const MAX_QUESTIONS: u32 = 3;
 #[derive(Parser)]
 #[command(
     name = "rocky",
-    about = "Rocky — Personal Knowledge Graph\n\n  ♫  Stay sharp. Stay human.\n\n  Quiz yourself on what your AI agent just built so you never lose the thread.",
+    about = "Rocky — Personal Knowledge Graph\n\n  You observe. Question?\n\n  Quiz yourself on what your AI agent just built so you never lose the thread.",
 )]
 struct Cli {
     /// Task description to analyze before starting work
@@ -949,6 +949,7 @@ fn show_edges(db: &Db, stats: bool) -> Result<()> {
 
 fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, task: &str, mode: &str, edge_reuse: &config::EdgeReuse) -> Result<()> {
     print_header();
+    p.print_rocky(false);
     println!("\n{} {task}\n", "Task:".bold());
 
     if mode == "after" && is_hotfix(task) {
@@ -2330,7 +2331,7 @@ fn queue_for_later(topic: &str, kind: &str, description: &str, context: &str) {
 }
 
 fn print_header() {
-    println!("\n{}  {}", " ♫".truecolor(6, 182, 212), "Rocky · Personal Knowledge Graph".bold());
+    println!("\n  {}", "Rocky · Personal Knowledge Graph".bold());
     println!("{}", " ──────────────────────────────────────".dimmed());
 }
 
