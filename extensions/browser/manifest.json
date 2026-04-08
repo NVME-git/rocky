@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Rocky PKG Browser Extension",
+  "version": "0.1.0",
+  "description": "Add content to your Rocky personal knowledge graph directly from the browser. Capture YouTube videos, articles, and other resources and link them to topics in your PKG.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://youtube.com/*"
+  ],
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "icons/rocky-16.png",
+      "48": "icons/rocky-48.png",
+      "128": "icons/rocky-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*", "https://youtube.com/*"],
+      "js": ["src/content.js"]
+    }
+  ],
+  "icons": {
+    "16": "icons/rocky-16.png",
+    "48": "icons/rocky-48.png",
+    "128": "icons/rocky-128.png"
+  }
+}

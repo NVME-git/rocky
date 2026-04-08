@@ -1,0 +1,118 @@
+{
+  "name": "rocky-vscode",
+  "displayName": "Rocky - Personal Knowledge Graph",
+  "description": "View and explore your Rocky personal knowledge graph (PKG) topics, nodes, and interactive graph directly in VS Code.",
+  "version": "0.1.0",
+  "publisher": "rocky",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Education",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "knowledge graph",
+    "spaced repetition",
+    "learning",
+    "rocky"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rocky-explorer",
+          "title": "Rocky",
+          "icon": "media/rocky-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "rocky-explorer": [
+        {
+          "id": "rockyTopics",
+          "name": "Topics"
+        },
+        {
+          "id": "rockySummary",
+          "name": "Summary"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "rocky.refreshTopics",
+        "title": "Rocky: Refresh Topics",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "rocky.openGraph",
+        "title": "Rocky: Open Knowledge Graph"
+      },
+      {
+        "command": "rocky.showTopicDetail",
+        "title": "Rocky: Show Topic Detail"
+      },
+      {
+        "command": "rocky.openGlobalGraph",
+        "title": "Rocky: Open Global Knowledge Graph"
+      },
+      {
+        "command": "rocky.openLocalGraph",
+        "title": "Rocky: Open Local Knowledge Graph"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "rocky.refreshTopics",
+          "when": "view == rockyTopics",
+          "group": "navigation"
+        },
+        {
+          "command": "rocky.openGraph",
+          "when": "view == rockyTopics",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Rocky",
+      "properties": {
+        "rocky.globalDbPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the global Rocky database (graph.db). Leave empty to use the default (~/.rocky/graph.db)."
+        },
+        "rocky.cliPath": {
+          "type": "string",
+          "default": "rocky",
+          "description": "Path to the Rocky CLI binary. Defaults to 'rocky' (assumes it is on your PATH)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.5",
+    "typescript": "^5.3.3"
+  }
+}

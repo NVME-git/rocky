@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: 360px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+           background: #1e1e2e; color: #cdd6f4; padding: 16px; }
+    h1 { font-size: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    h1 .emoji { font-size: 20px; }
+    .section { margin-bottom: 16px; }
+    label { display: block; font-size: 12px; color: #a6adc8; margin-bottom: 4px; }
+    input, select { width: 100%; padding: 8px; border: 1px solid #45475a; border-radius: 6px;
+                    background: #313244; color: #cdd6f4; font-size: 13px; outline: none; }
+    input:focus, select:focus { border-color: #89b4fa; }
+    .topic-list { max-height: 150px; overflow-y: auto; margin-top: 8px; }
+    .topic-chip { display: inline-block; padding: 3px 10px; margin: 2px; border-radius: 12px;
+                  background: #45475a; font-size: 12px; cursor: pointer; }
+    .topic-chip.selected { background: #89b4fa; color: #1e1e2e; }
+    button { width: 100%; padding: 10px; border: none; border-radius: 6px; cursor: pointer;
+             font-size: 14px; font-weight: 600; background: #89b4fa; color: #1e1e2e; margin-top: 8px; }
+    button:hover { background: #74c7ec; }
+    button:disabled { background: #45475a; color: #6c7086; cursor: not-allowed; }
+    .status { font-size: 12px; color: #a6e3a1; margin-top: 8px; text-align: center; }
+    .status.error { color: #f38ba8; }
+  </style>
+</head>
+<body>
+  <h1><span class="emoji">🪨</span> Rocky</h1>
+
+  <div class="section">
+    <label for="url">Resource URL</label>
+    <input type="text" id="url" placeholder="Auto-detected from current page" readonly />
+  </div>
+
+  <div class="section">
+    <label for="title">Title</label>
+    <input type="text" id="title" placeholder="Auto-detected from page title" />
+  </div>
+
+  <div class="section">
+    <label>Link to Topics</label>
+    <input type="text" id="search" placeholder="Search topics…" />
+    <div class="topic-list" id="topicList">
+      <em style="font-size:12px; color:#6c7086;">Connect to Rocky to load topics</em>
+    </div>
+  </div>
+
+  <button id="addBtn" disabled>Add to Knowledge Graph</button>
+  <div class="status" id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
