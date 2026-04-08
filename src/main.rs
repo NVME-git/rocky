@@ -499,8 +499,9 @@ fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, lim
 
     println!("  Scanning {scope_desc} ({} commits)…\n", shas.len());
 
-    // Snapshot existing node IDs (excluding skeleton) so we know what's truly new
-    let existing_ids: std::collections::HashSet<String> = db
+    // Snapshot existing node IDs (excluding skeleton) so we know what's truly new.
+    // Updated as nodes are added so later commits don't re-process the same topic.
+    let mut existing_ids: std::collections::HashSet<String> = db
         .all_nodes()?
         .into_iter()
         .filter(|n| !n.kind.is_domain())
@@ -595,6 +596,8 @@ fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, lim
                 &repo,
                 cdate,
             )?;
+            // Mark as seen so later commits in this run don't re-process the same topic
+            existing_ids.insert(Db::node_id_static(&t.topic));
             println!("    {} {}", "+".truecolor(29, 158, 117), t.topic);
 
             // Pre-generate question + ideal answer from diff context (silent on failure)
