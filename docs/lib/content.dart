@@ -138,6 +138,8 @@ Questions end with ", question?" — Rocky's way of asking. Set `personality = f
 | **Edge** | A relationship between two topics in the PKG — generated automatically by Rocky after new topics are added |
 | **Edge kind** | The type of relationship: `implies`, `depends_on`, `conflicts_with`, or `part_of` |
 | **Cross-concept question** | A question that bridges two related topics — asked when Rocky detects a relevant edge and both topics have strong recall |
+| **Repo tag** | The git project a topic originated from — parsed from the remote URL. Makes the PKG filterable by project |
+| **Canonical Q&A** | A pre-generated question and ideal answer stored in the node at creation time, using the commit diff and project README as context |
 ''';
 
 const kInstallation = r'''
@@ -782,6 +784,13 @@ rocky backfill --all-authors --limit 50
 
 Rocky reads the diff for each commit, extracts topics the same way `rocky diff` does, and adds any that aren't already in your PKG. It sets initial retrievability to 0.5 (neutral — you saw the code but weren't quizzed). Edges are generated for all new topics after the scan completes.
 
+Each new topic is enriched at insertion time:
+
+- **Commit date** — `created_at` and `last_reviewed` are set to the actual commit date, not today. A topic from six months ago decays correctly from when you first encountered it.
+- **Repo tag** — the node is tagged with the project name (parsed from the git remote URL). Topics accumulate in one PKG across all your projects, and you can filter by repo in `rocky view`.
+- **Canonical Q&A** — Rocky generates a question and ideal answer for each new topic using the commit diff and a cached summary of the project README. These are stored in the node and used as the first question next time you're quizzed on the topic.
+- **Project summary** — Rocky reads your README, summarises it, and caches the summary in `~/.rocky/summaries/<repo>.txt`. The summary is shown in `rocky view` when you filter by that repo.
+
 **Example output:**
 
 ```
@@ -790,6 +799,9 @@ Rocky reads the diff for each commit, extracts topics the same way `rocky diff` 
 
   Taxonomy skeleton ready.
   Scanning last 10 commits by alex@example.com (10 commits)…
+
+  Project: Rust REST API — task management backend with JWT auth,
+           PostgreSQL, Redis caching, and Docker deployment.
 
   [1/10] a3f8c12 init: Axum server scaffold with tokio runtime — no new topics
   [2/10] b7d4e19 feat: sqlx PgPool + migration runner — no new topics
@@ -911,9 +923,15 @@ rocky view
 
 Rocky writes the graph to `~/.rocky/view.html` and opens it automatically.
 
-**Graph** — D3.js force simulation. Drag nodes, zoom in/out, filter by domain, search topics by name. Click any node to open a detail panel showing retrievability, stability, review history, and all connected edges.
+**Graph** — D3.js force simulation. Drag nodes, zoom in/out, filter by domain, search topics by name. Click any node to open a detail panel showing retrievability, stability, review history, all connected edges, and — when available — the pre-generated question and ideal answer for that topic. Click any edge to see the reason Rocky created it.
+
+**Spread slider** — controls the repulsion force between nodes. Drag right to spread the graph out; drag left to pull clusters together. Useful when many nodes overlap after a large backfill.
 
 **Timeline scrubber** — a range slider below the controls lets you rewind your knowledge graph to any point in time. As you scrub backward, nodes dim and disappear (topics you hadn't learned yet). Scrub forward to watch them light up — your personal growth, visualised. The current node count and date are shown next to the scrubber.
+
+**Domain panel** — a list on the left shows every active domain with a count of visible nodes. Click a domain to highlight only that cluster and its edges.
+
+**Repo filter** — when your PKG contains topics from more than one project, repo filter buttons appear in the controls. Click a repo to show only its topics and display the project summary at the top of the graph. Works across projects accumulated over time via `rocky backfill`.
 
 ---
 
@@ -1241,16 +1259,21 @@ Seed your PKG from your git history without any interactive Q&A. Useful when you
 1. Run `rocky backfill` (optionally with `--all-authors` or `--limit N`)
 2. Resolve author filter (default: current `git user.email` only)
 3. Fetch all matching commit SHAs from `git log`, oldest first
-4. For each commit:
-   - Read the commit diff
+4. Detect the project name from the git remote URL (fallback: directory name)
+5. Load or create the project README summary, cached in `~/.rocky/summaries/<repo>.txt`
+6. For each commit:
+   - Read the commit date and diff
    - Extract topics using code-aware analysis (same as `rocky diff`)
-   - For each topic not already in the PKG → add it with retrievability 0.5, no Q&A
+   - For each topic not already in the PKG:
+     - Add it with retrievability 0.5, `created_at` and `last_reviewed` set to the commit date, tagged with the repo name
+     - Generate a canonical question and ideal answer using the diff + commit message + README summary
+     - Store the Q&A in the node for use in future quiz sessions
    - Print `+ topic name` for each new topic added
-5. After all commits: generate edges for all newly added topics in bulk
-6. Print summary: `✓ Added N new topics · M already in PKG`
-7. Prompt to run `rocky quiz` to start reviewing
+7. After all commits: generate edges for all newly added topics in bulk
+8. Print summary: `✓ Added N new topics · M already in PKG`
+9. Prompt to run `rocky quiz` to start reviewing
 
-Backfill never overwrites existing PKG entries — if a topic is already in your PKG, it's counted as "already in PKG" and skipped.
+Backfill never overwrites existing PKG entries — if a topic is already in your PKG, it's counted as "already in PKG" and skipped. Each topic is owned by the first commit that introduced it; later commits that mention the same topic do not update it.
 
 ---
 
@@ -2185,6 +2208,9 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
   Taxonomy skeleton ready.
   Scanning last 10 commits by alex@example.com (10 commits)…
 
+  Project: Rust REST API — task management backend with JWT auth,
+           PostgreSQL, Redis caching, and Docker deployment.
+
   [1/10] a3f8c12 init: Axum server scaffold with tokio runtime — no new topics
   [2/10] b7d4e19 feat: sqlx PgPool + migration runner — no new topics
   [3/10] c1a2d83 feat: JWT auth middleware with refresh token rotation — no new topics
@@ -2203,9 +2229,11 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
 
   ◈ Generating edges for 5 new topics…
 
-  ✓ Added 5 new topics · 47 already in PKG
+  ✓ Added 5 new topics · 12 already in PKG
   Run  rocky quiz  to start reviewing them.
 ```
+
+Rocky tagged each new node as `taskify`, set `created_at` and `last_reviewed` to the actual commit date (not today), and generated a canonical question and ideal answer from the diff context. The Docker topic from March is already decaying correctly — its retrievability is calculated from March, not April.
 
 ```bash
 ~/taskify $ rocky stats
@@ -2231,6 +2259,49 @@ graphs/stage7.html|Open interactive graph: after backfill
 
 ---
 
+## Backfilling a second project
+
+Your PKG lives at `~/.rocky` — it spans all your projects. Change directory to another repo and run `rocky backfill` there. Rocky will detect a different project name, summarise its README, and tag all new topics accordingly.
+
+```bash
+~/taskify $ cd ~/home-bank
+~/home-bank $ rocky backfill
+
+  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
+
+  Taxonomy skeleton ready.
+  Scanning all commits by alex@example.com (66 commits)…
+
+  Project: Python data pipeline that transforms raw bank statements into
+           standardised, categorised transactions — supports CSV/PDF ingestion,
+           multi-account double-entry bookkeeping, and Pandas-based analysis.
+
+  [1/66] f3d26e5 Initial commit: Enhanced home banking system — 3 new
+    + CSV parsing
+    + transaction categorisation
+    + double-entry bookkeeping
+  [2/66] 5a92f2b feat: Add transaction categorization script — 2 new
+    + Pandas DataFrame operations
+    + project structure
+  ...
+
+  ◈ Generating edges for 12 new topics…
+
+  ✓ Added 12 new topics · 17 already in PKG
+  Run  rocky quiz  to start reviewing them.
+```
+
+Now open `rocky view`. Two repo filter buttons appear in the controls — **taskify** and **home-bank**. Click **home-bank** and:
+
+- Only the 12 home-bank topics are shown, with edges between them
+- The project summary appears at the top: *"Python data pipeline that transforms raw bank statements..."*
+- Click **CSV parsing** — the detail panel shows the canonical question Rocky generated from the initial commit diff: *"Your CSV parser works on sample files but fails silently on production exports from a different bank. What are the three most common CSV format variations that break naive parsers, question?"*
+
+Click **All** to return to the full cross-project view. The timeline scrubber now shows topics appearing from October 2025 (home-bank's first commit) through April 2026 (taskify's latest).
+
+---
+
 ## Viewing the full graph
 
 ```bash
@@ -2244,15 +2315,18 @@ The interactive graph opens in your browser:
 - **Nodes** — colored by recall: gold (≥90%), amber (70–90%), red (<70%)
 - **Node size** — proportional to stability (deeper knowledge = bigger node)
 - **Edges** — colored by kind: cyan (`implies`), yellow (`depends_on`), red (`conflicts_with`), green (`part_of`)
-- **Domain filter** — click any domain label to highlight only that cluster and its edges
+- **Spread slider** — controls node repulsion; drag right to spread the graph, left to cluster it
+- **Domain panel** — left sidebar showing active domains and node counts; click to highlight a cluster
+- **Repo filter** — filter the graph to a single project; shows the project summary and only that repo's topics
 - **Search** — type "redis" to highlight all Redis-related nodes
-- **Node detail panel** — click any node to see retrievability score, stability, all connected edges, review history
-- **Timeline scrubber** — drag the range slider to any date to see what your PKG looked like at that point. Scrub from April 1 to April 8 to watch each cluster grow in.
+- **Node detail panel** — click any node to see retrievability score, stability, all connected edges, review history, and the pre-generated question + ideal answer
+- **Edge detail** — click any edge to see the reason Rocky created it
+- **Timeline scrubber** — drag the range slider to any date to see what your PKG looked like at that point. Scrub from October 2025 to April 2026 to watch both projects grow in.
 
 The graph is a single self-contained HTML file at `~/.rocky/view.html`.
 
 ```graphlink
-graphs/stage7.html|Open the full taskify graph (17 topics, all stages)
+graphs/stage7.html|Open the full demo graph (21 topics, taskify + home-bank)
 ```
 
 ---
@@ -2281,4 +2355,6 @@ graphs/stage7.html|Open the full taskify graph (17 topics, all stages)
 ```
 
 This is your knowledge graph for one project, one week in. Each edge is a relationship Rocky inferred from the topics in your code — the ones worth understanding together, not just in isolation.
+
+After backfilling **home-bank**, four more topics appear in the Data domain: CSV parsing, transaction categorisation, Pandas DataFrame operations, and double-entry bookkeeping. They carry commit dates from October 2025 — Rocky knows exactly how long ago you last touched that code.
 ''';
