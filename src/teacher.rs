@@ -264,7 +264,16 @@ referencing the specific context from the diff.
 Return ONLY valid JSON:
 {"question": "<the question>", "answer": "<ideal answer>"}"#;
 
-        let diff_excerpt = if diff.len() > 2500 { &diff[..2500] } else { diff };
+        let diff_excerpt = if diff.len() > 2500 {
+            let boundary = diff.char_indices()
+                .map(|(i, _)| i)
+                .take_while(|&i| i <= 2500)
+                .last()
+                .unwrap_or(0);
+            &diff[..boundary]
+        } else {
+            diff
+        };
         let project = if project_summary.is_empty() { "unknown project" } else { project_summary };
 
         let user = format!(
