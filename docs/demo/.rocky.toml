@@ -1,0 +1,23 @@
+[llm]
+provider = "claude"
+model    = "claude-sonnet-4-6"
+
+[session]
+daily_budget    = 3
+min_gap_minutes = 120
+
+[export]
+pkg_dir = "~/.rocky/pkg"
+
+[edges]
+reuse = "off"
+
+[ui]
+personality = true
+name        = "alex"
+
+[sync]
+enabled          = false
+auto_commit      = true
+commit_visible   = true
+remind_push_sessions = 5

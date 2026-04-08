@@ -1,0 +1,465 @@
+{
+  "version": 1,
+  "exported_at": "2026-04-08T12:00:00+00:00",
+  "session_state": {
+    "total_quizzes": "8",
+    "daily_budget_date": "2026-04-08",
+    "daily_budget_remaining": "0"
+  },
+  "nodes": [
+    {
+      "id": "rust-async/await",
+      "topic": "Rust async/await",
+      "kind": "concept",
+      "domain": "Language",
+      "description": "Rust async/await builds on zero-cost state machines \u2014 when you write async fn, the compiler generates a state machine, not threads.",
+      "difficulty": 0.3,
+      "stability": 4.5,
+      "last_reviewed": "2026-04-01",
+      "last_encountered": "2026-04-01",
+      "review_count": 1,
+      "contexts": [
+        "set up Rust Axum web server with tokio and tower middleware"
+      ],
+      "created_at": "2026-04-01"
+    },
+    {
+      "id": "tokio-runtime",
+      "topic": "tokio runtime",
+      "kind": "concept",
+      "domain": "Language",
+      "description": "The async executor that drives Rust futures \u2014 manages the thread pool and event loop.",
+      "difficulty": 0.3,
+      "stability": 4.5,
+      "last_reviewed": "2026-04-01",
+      "last_encountered": "2026-04-01",
+      "review_count": 1,
+      "contexts": [
+        "set up Rust Axum web server with tokio and tower middleware"
+      ],
+      "created_at": "2026-04-01"
+    },
+    {
+      "id": "axum-framework",
+      "topic": "Axum framework",
+      "kind": "concept",
+      "domain": "Language",
+      "description": "A Rust web framework built on hyper and tower \u2014 composable routing with extractors and type-safe middleware.",
+      "difficulty": 0.3,
+      "stability": 4.5,
+      "last_reviewed": "2026-04-01",
+      "last_encountered": "2026-04-01",
+      "review_count": 1,
+      "contexts": [
+        "set up Rust Axum web server with tokio and tower middleware"
+      ],
+      "created_at": "2026-04-01"
+    },
+    {
+      "id": "sqlx-connection-pooling",
+      "topic": "sqlx connection pooling",
+      "kind": "implementation",
+      "domain": "Database",
+      "description": "Async database driver for Rust with compile-time query checking \u2014 PgPool manages a pool of reusable PostgreSQL connections.",
+      "difficulty": 0.3,
+      "stability": 4.8,
+      "last_reviewed": "2026-04-02",
+      "last_encountered": "2026-04-02",
+      "review_count": 1,
+      "contexts": [
+        "add PostgreSQL with sqlx \u2014 migrations, connection pool, CRUD queries"
+      ],
+      "created_at": "2026-04-02"
+    },
+    {
+      "id": "database-migrations",
+      "topic": "database migrations",
+      "kind": "concept",
+      "domain": "Database",
+      "description": "Versioned, incremental changes to your database schema \u2014 tracked so they apply once and in order across all environments.",
+      "difficulty": 0.3,
+      "stability": 5,
+      "last_reviewed": "2026-04-02",
+      "last_encountered": "2026-04-02",
+      "review_count": 1,
+      "contexts": [
+        "add PostgreSQL with sqlx \u2014 migrations, connection pool, CRUD queries"
+      ],
+      "created_at": "2026-04-02"
+    },
+    {
+      "id": "jwt-authentication",
+      "topic": "JWT authentication",
+      "kind": "pattern",
+      "domain": "Auth",
+      "description": "Stateless token-based auth where the server signs a payload the client stores and sends back on every request.",
+      "difficulty": 0.3,
+      "stability": 5.2,
+      "last_reviewed": "2026-04-03",
+      "last_encountered": "2026-04-03",
+      "review_count": 1,
+      "contexts": [
+        "implement JWT authentication with refresh token rotation"
+      ],
+      "created_at": "2026-04-03"
+    },
+    {
+      "id": "httponly-cookie-security",
+      "topic": "httpOnly cookie security",
+      "kind": "concept",
+      "domain": "Auth",
+      "description": "Cookies with the HttpOnly flag cannot be read by JavaScript \u2014 only sent by the browser automatically on requests to the matching domain.",
+      "difficulty": 0.3,
+      "stability": 5,
+      "last_reviewed": "2026-04-03",
+      "last_encountered": "2026-04-03",
+      "review_count": 1,
+      "contexts": [
+        "implement JWT authentication with refresh token rotation"
+      ],
+      "created_at": "2026-04-03"
+    },
+    {
+      "id": "token-expiry-handling",
+      "topic": "token expiry handling",
+      "kind": "concept",
+      "domain": "Auth",
+      "description": "Managing the lifecycle of short-lived access tokens and long-lived refresh tokens to maintain seamless sessions.",
+      "difficulty": 0.3,
+      "stability": 4.8,
+      "last_reviewed": "2026-04-03",
+      "last_encountered": "2026-04-03",
+      "review_count": 1,
+      "contexts": [
+        "implement JWT authentication with refresh token rotation"
+      ],
+      "created_at": "2026-04-03"
+    },
+    {
+      "id": "redis-ttl-expiry",
+      "topic": "Redis TTL expiry",
+      "kind": "implementation",
+      "domain": "Performance",
+      "description": "Time-based automatic key removal in Redis \u2014 keys expire and are deleted after a configured duration.",
+      "difficulty": 0.3,
+      "stability": 5.1,
+      "last_reviewed": "2026-04-04",
+      "last_encountered": "2026-04-04",
+      "review_count": 1,
+      "contexts": [
+        "add Redis caching layer with TTL-based invalidation"
+      ],
+      "created_at": "2026-04-04"
+    },
+    {
+      "id": "cache-invalidation",
+      "topic": "cache invalidation",
+      "kind": "concept",
+      "domain": "Performance",
+      "description": "Approaches for keeping a cache consistent with its source of truth \u2014 write-through, cache-aside, TTL expiry, and explicit invalidation.",
+      "difficulty": 0.3,
+      "stability": 5.2,
+      "last_reviewed": "2026-04-04",
+      "last_encountered": "2026-04-04",
+      "review_count": 1,
+      "contexts": [
+        "add Redis caching layer with TTL-based invalidation"
+      ],
+      "created_at": "2026-04-04"
+    },
+    {
+      "id": "redis-sorted-sets",
+      "topic": "Redis sorted sets",
+      "kind": "implementation",
+      "domain": "Database",
+      "description": "A Redis data structure mapping member strings to floating-point scores \u2014 ordered by score, O(log N) insert and rank queries.",
+      "difficulty": 0.3,
+      "stability": 5.3,
+      "last_reviewed": "2026-04-05",
+      "last_encountered": "2026-04-05",
+      "review_count": 1,
+      "contexts": [
+        "implement rate limiting with Redis sorted sets and Lua scripting"
+      ],
+      "created_at": "2026-04-05"
+    },
+    {
+      "id": "lua-scripting-in-redis",
+      "topic": "Lua scripting in Redis",
+      "kind": "concept",
+      "domain": "Database",
+      "description": "Redis executes Lua scripts atomically \u2014 the entire script runs as a single operation, preventing race conditions.",
+      "difficulty": 0.3,
+      "stability": 5.5,
+      "last_reviewed": "2026-04-05",
+      "last_encountered": "2026-04-05",
+      "review_count": 1,
+      "contexts": [
+        "implement rate limiting with Redis sorted sets and Lua scripting"
+      ],
+      "created_at": "2026-04-05"
+    },
+    {
+      "id": "docker-multi-stage-builds",
+      "topic": "Docker multi-stage builds",
+      "kind": "implementation",
+      "domain": "DevOps",
+      "description": "Build stages that produce smaller final images by discarding build tools and dev dependencies.",
+      "difficulty": 0.3,
+      "stability": 2,
+      "last_reviewed": "2026-04-08",
+      "last_encountered": "2026-04-08",
+      "review_count": 0,
+      "contexts": [
+        "backfill: feat: Docker multi-stage build"
+      ],
+      "created_at": "2026-04-08"
+    },
+    {
+      "id": "container-image-optimization",
+      "topic": "container image optimization",
+      "kind": "concept",
+      "domain": "DevOps",
+      "description": "Techniques to reduce Docker image size \u2014 multi-stage builds, .dockerignore, minimal base images.",
+      "difficulty": 0.3,
+      "stability": 2,
+      "last_reviewed": "2026-04-08",
+      "last_encountered": "2026-04-08",
+      "review_count": 0,
+      "contexts": [
+        "backfill: feat: Docker multi-stage build"
+      ],
+      "created_at": "2026-04-08"
+    },
+    {
+      "id": "github-actions-workflow-syntax",
+      "topic": "GitHub Actions workflow syntax",
+      "kind": "implementation",
+      "domain": "DevOps",
+      "description": "YAML-based CI/CD pipeline definition \u2014 jobs, steps, runners, secrets, matrix builds.",
+      "difficulty": 0.3,
+      "stability": 2,
+      "last_reviewed": "2026-04-08",
+      "last_encountered": "2026-04-08",
+      "review_count": 0,
+      "contexts": [
+        "backfill: ci: add GitHub Actions workflow"
+      ],
+      "created_at": "2026-04-08"
+    },
+    {
+      "id": "ci/cd-pipeline-design",
+      "topic": "CI/CD pipeline design",
+      "kind": "concept",
+      "domain": "Architecture",
+      "description": "Automated build, test, and deploy pipelines \u2014 fast feedback loops, environment promotion, rollback.",
+      "difficulty": 0.3,
+      "stability": 2,
+      "last_reviewed": "2026-04-08",
+      "last_encountered": "2026-04-08",
+      "review_count": 0,
+      "contexts": [
+        "backfill: ci: add GitHub Actions workflow"
+      ],
+      "created_at": "2026-04-08"
+    },
+    {
+      "id": "openapi-specification",
+      "topic": "OpenAPI specification",
+      "kind": "concept",
+      "domain": "API",
+      "description": "Machine-readable REST API description format \u2014 enables client generation, interactive docs, and contract testing.",
+      "difficulty": 0.3,
+      "stability": 2,
+      "last_reviewed": "2026-04-08",
+      "last_encountered": "2026-04-08",
+      "review_count": 0,
+      "contexts": [
+        "backfill: docs: add OpenAPI spec and Swagger UI"
+      ],
+      "created_at": "2026-04-08"
+    },
+    {
+      "id": "language",
+      "topic": "Language",
+      "kind": "domain",
+      "domain": "Language",
+      "description": "Language domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "database",
+      "topic": "Database",
+      "kind": "domain",
+      "domain": "Database",
+      "description": "Database domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "auth",
+      "topic": "Auth",
+      "kind": "domain",
+      "domain": "Auth",
+      "description": "Auth domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "api",
+      "topic": "API",
+      "kind": "domain",
+      "domain": "API",
+      "description": "API domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "frontend",
+      "topic": "Frontend",
+      "kind": "domain",
+      "domain": "Frontend",
+      "description": "Frontend domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "devops",
+      "topic": "DevOps",
+      "kind": "domain",
+      "domain": "DevOps",
+      "description": "DevOps domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "architecture",
+      "topic": "Architecture",
+      "kind": "domain",
+      "domain": "Architecture",
+      "description": "Architecture domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "performance",
+      "topic": "Performance",
+      "kind": "domain",
+      "domain": "Performance",
+      "description": "Performance domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "security",
+      "topic": "Security",
+      "kind": "domain",
+      "domain": "Security",
+      "description": "Security domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "testing",
+      "topic": "Testing",
+      "kind": "domain",
+      "domain": "Testing",
+      "description": "Testing domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "tooling",
+      "topic": "Tooling",
+      "kind": "domain",
+      "domain": "Tooling",
+      "description": "Tooling domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "data",
+      "topic": "Data",
+      "kind": "domain",
+      "domain": "Data",
+      "description": "Data domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    },
+    {
+      "id": "other",
+      "topic": "Other",
+      "kind": "domain",
+      "domain": "Other",
+      "description": "Other domain",
+      "difficulty": 0,
+      "stability": 999,
+      "last_reviewed": "",
+      "last_encountered": "",
+      "review_count": 0,
+      "contexts": [],
+      "created_at": "2026-03-01"
+    }
+  ]
+}

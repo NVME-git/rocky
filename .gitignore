@@ -8,5 +8,6 @@ docs/.packages
 docs/.flutter-plugins
 docs/.flutter-plugins-dependencies
 docs/pubspec.lock
+docs/web/graphs/
 .rocky
 .rocky-project
