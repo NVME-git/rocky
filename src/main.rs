@@ -2169,7 +2169,6 @@ fn install_claude_hook() -> Result<(bool, String)> {
     }
 
     let entry = serde_json::json!({
-        "matcher": "RockyHook",
         "hooks": [{"command": cmd, "type": "command"}]
     });
     arr.push(entry);
