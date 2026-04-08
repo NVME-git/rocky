@@ -775,7 +775,7 @@ mod tests {
     fn add_and_retrieve_node() {
         let (db, _dir) = open_temp_db();
         db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
-            "Stateless token auth", "test task", None).unwrap();
+            "Stateless token auth", "test task", None, "", None).unwrap();
 
         let node = db.get_node("JWT authentication").unwrap().unwrap();
         assert_eq!(node.topic, "JWT authentication");
@@ -788,7 +788,7 @@ mod tests {
     fn node_id_is_slugified() {
         let (db, _dir) = open_temp_db();
         db.add_or_update("Redis TTL expiry", 0.8, &Kind::Implementation, "Database",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
 
         // Lookup by original topic name should find it
         let node = db.get_node("Redis TTL expiry").unwrap().unwrap();
@@ -800,7 +800,7 @@ mod tests {
         let (db, _dir) = open_temp_db();
         for _ in 0..3 {
             db.add_or_update("SQL indexes", 0.9, &Kind::Concept, "Database",
-                "desc", "ctx", None).unwrap();
+                "desc", "ctx", None, "", None).unwrap();
         }
         let node = db.get_node("SQL indexes").unwrap().unwrap();
         assert_eq!(node.review_count, 3);
@@ -810,11 +810,11 @@ mod tests {
     fn search_finds_substring_match() {
         let (db, _dir) = open_temp_db();
         db.add_or_update("Redis TTL expiry", 0.8, &Kind::Concept, "Database",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
         db.add_or_update("Redis pub/sub", 0.8, &Kind::Concept, "Database",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
         db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
 
         let results = db.search_nodes("redis").unwrap();
         assert_eq!(results.len(), 2);
@@ -827,7 +827,7 @@ mod tests {
     fn delete_removes_node() {
         let (db, _dir) = open_temp_db();
         db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
 
         db.delete_node("jwt-authentication").unwrap();
         assert!(db.get_node("JWT authentication").unwrap().is_none());
@@ -838,7 +838,7 @@ mod tests {
         let (db, _dir) = open_temp_db();
         // Add one topic reviewed today — will be "known"
         db.add_or_update("fresh topic", 0.9, &Kind::Concept, "Other",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
 
         let (total, known, _stale, _gaps) = db.summary().unwrap();
         assert_eq!(total, 1);
@@ -861,9 +861,9 @@ mod tests {
     fn pkg_json_export_import_round_trip() {
         let (db, dir) = open_temp_db();
         db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
-            "Token auth", "test task", None).unwrap();
+            "Token auth", "test task", None, "", None).unwrap();
         db.add_or_update("SQL indexes", 0.7, &Kind::Concept, "Database",
-            "Index desc", "other task", None).unwrap();
+            "Index desc", "other task", None, "", None).unwrap();
 
         let json_path = dir.path().join("pkg.json");
         db.export_pkg_json(&json_path).unwrap();
@@ -882,7 +882,7 @@ mod tests {
     fn set_domain_updates_existing_node() {
         let (db, _dir) = open_temp_db();
         db.add_or_update("some topic", 0.8, &Kind::Concept, "",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
 
         db.set_domain("some-topic", "Language").unwrap();
         let node = db.get_node("some topic").unwrap().unwrap();

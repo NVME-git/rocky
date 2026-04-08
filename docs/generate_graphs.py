@@ -22,6 +22,11 @@ TEMPLATE = os.path.join(REPO, "src", "view.html")
 OUT_DIR = os.path.join(REPO, "docs", "web", "graphs")
 USER_NAME = "alex"
 
+# Project summaries loaded into the view (mirrors ~/.rocky/summaries/*.txt)
+SUMMARIES = {
+    "taskify": "Rust REST API — task management backend with JWT auth, PostgreSQL, Redis caching, and Docker deployment",
+}
+
 # ── Stage definitions ─────────────────────────────────────────────────────────
 # Each stage lists which topic IDs are visible at that point in the walkthrough.
 
@@ -139,6 +144,9 @@ def load_demo_data():
             "last_reviewed": row["last_reviewed"],
             "review_count": row["review_count"],
             "created_at": row["created_at"],
+            "canonical_question": row["canonical_question"],
+            "canonical_answer": row["canonical_answer"],
+            "repo": row["repo"],
             "contexts": contexts,
             "reviews": reviews,
         }
@@ -183,6 +191,9 @@ def build_stage_json(all_nodes, all_edges, topic_ids):
             "last_reviewed": n["last_reviewed"],
             "review_count": n["review_count"],
             "created_at": n["created_at"],
+            "repo": n["repo"],
+            "canonical_question": n["canonical_question"],
+            "canonical_answer": n["canonical_answer"],
             "reviews": n["reviews"],
         })
 
@@ -255,7 +266,7 @@ def build_stage_json(all_nodes, all_edges, topic_ids):
             "strength": 1.0,
         })
 
-    return {"nodes": nodes_json, "edges": edges_json, "userName": USER_NAME}
+    return {"nodes": nodes_json, "edges": edges_json, "userName": USER_NAME, "summaries": SUMMARIES}
 
 
 def main():

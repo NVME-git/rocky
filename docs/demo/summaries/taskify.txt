@@ -1,0 +1,1 @@
+Rust REST API — task management backend with JWT auth, PostgreSQL, Redis caching, and Docker deployment
