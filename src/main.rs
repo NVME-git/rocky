@@ -2418,7 +2418,7 @@ fn detect_repo_name() -> String {
 /// Get the date of a specific commit SHA.
 fn commit_date(sha: &str) -> Option<chrono::NaiveDate> {
     use std::process::Command;
-    let out = Command::new("git").args(["log", "-1", "--pretty=%Y-%m-%d", sha]).output().ok()?;
+    let out = Command::new("git").args(["log", "-1", "--date=short", "--format=%ad", sha]).output().ok()?;
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
     chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()
 }
