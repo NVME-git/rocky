@@ -202,6 +202,7 @@ Rules:
         question: &str,
         answer: &str,
         description: &str,
+        canonical_answer: Option<&str>,
     ) -> Result<EvalResult> {
         let system = r#"You are evaluating whether a developer genuinely understands the implications
 of a technical topic based on their answer to a Socratic question.
@@ -211,6 +212,9 @@ Evaluate on:
 2. Do they show awareness of how this affects related systems?
 3. Is there evidence they could reason through related problems?
 
+If an ideal answer is provided, use it as a reference for what a complete answer looks like —
+but do not penalise for different phrasing or approach, only for missing key insights.
+
 Return ONLY valid JSON:
 {
   "score": <0.0 to 1.0>,
@@ -219,13 +223,68 @@ Return ONLY valid JSON:
   "followup": "<a follow-up question if score < 0.65, else null>"
 }"#;
 
+        let ideal = canonical_answer
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("\n\nIdeal answer (reference): {s}"))
+            .unwrap_or_default();
+
         let user = format!(
-            "Topic: {topic}\nDescription: {description}\nQuestion asked: {question}\nDeveloper's answer: {answer}"
+            "Topic: {topic}\nDescription: {description}\nQuestion asked: {question}\nDeveloper's answer: {answer}{ideal}"
         );
 
         let raw = self.ask(system, &user)?;
         let cleaned = strip_code_fence(&raw);
         Ok(serde_json::from_str(cleaned)?)
+    }
+
+    /// Pre-generate a question + ideal answer at topic creation time using full diff context.
+    /// Returns (question, ideal_answer). Fails silently — never blocks node insertion.
+    pub fn generate_question_and_answer(
+        &self,
+        topic: &str,
+        description: &str,
+        commit_msg: &str,
+        diff: &str,
+        project_summary: &str,
+    ) -> Result<(String, String)> {
+        let system = r#"You are a Socratic technical mentor pre-generating a quiz question for a developer's personal knowledge graph.
+
+Generate ONE question that forces the developer to reason about the IMPLICATIONS and CONSEQUENCES of this topic — not just recall facts.
+The question must be grounded in the actual code changes shown in the diff.
+
+Rules:
+- Ask about what breaks, changes, or becomes constrained when using this approach in their specific code
+- Ask about trade-offs visible from the diff, or when NOT to use this approach
+- Do NOT ask "what is X" or "define X"
+- 1-2 sentences, specific to the code shown
+
+Also write an ideal answer: 3-5 sentences demonstrating genuine understanding of consequences and trade-offs,
+referencing the specific context from the diff.
+
+Return ONLY valid JSON:
+{"question": "<the question>", "answer": "<ideal answer>"}"#;
+
+        let diff_excerpt = if diff.len() > 2500 { &diff[..2500] } else { diff };
+        let project = if project_summary.is_empty() { "unknown project" } else { project_summary };
+
+        let user = format!(
+            "Topic: {topic}\nDescription: {description}\n\nProject: {project}\nCommit: {commit_msg}\n\nDiff:\n{diff_excerpt}"
+        );
+
+        let raw = self.ask(system, &user)?;
+        let cleaned = strip_code_fence(&raw);
+        #[derive(Deserialize)]
+        struct QA { question: String, answer: String }
+        let qa: QA = serde_json::from_str(cleaned)
+            .map_err(|e| anyhow!("QA parse failed: {e} — raw: {raw}"))?;
+        Ok((qa.question, qa.answer))
+    }
+
+    /// Summarise a README into 2-3 sentences for use as project context.
+    pub fn summarize_readme(&self, readme: &str) -> Result<String> {
+        let system = "Summarise this software project's README in 2-3 sentences covering: what it does, its main technologies/stack, and its primary purpose. Be specific and technical. Return only the summary, no preamble.";
+        let excerpt = if readme.len() > 4000 { &readme[..4000] } else { readme };
+        self.ask(system, excerpt)
     }
 
     pub fn generate_explanation(

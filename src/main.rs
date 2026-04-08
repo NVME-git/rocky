@@ -286,7 +286,7 @@ fn run() -> Result<()> {
             run_view(&db, &cfg)?;
         }
         Some(Cmd::Backfill { all_authors, limit }) => {
-            run_backfill(&db, &make_teacher(&cfg)?, all_authors, limit)?;
+            run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit)?;
         }
         None => {
             if let Some(msg) = cli.after {
@@ -441,7 +441,7 @@ const BACKFILL_COMMIT_DELAY_MS: u64 = 1_000;
 // Pause between edge-generation calls after all nodes are added
 const BACKFILL_EDGE_DELAY_MS: u64 = 800;
 
-fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usize>) -> Result<()> {
+fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, limit: Option<usize>) -> Result<()> {
     use std::process::Command;
 
     print_header();
@@ -507,19 +507,23 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
         .map(|n| Db::node_id_static(&n.topic))
         .collect();
 
+    let repo = detect_repo_name();
+    let project_summary = load_or_create_project_summary(&cfg.rocky_dir, &repo, teacher);
+    if !project_summary.is_empty() {
+        println!("  {}", format!("Project: {project_summary}").dimmed());
+    }
+
     let mut added = 0usize;
     let mut skipped = 0usize;
 
     // ── Process commits ───────────────────────────────────────────────────────
-    // Nodes are added commit-by-commit, and edges are generated immediately after
-    // each commit so that new nodes can form relationships with all previously
-    // integrated nodes — not just the pre-existing subset.
     for (i, sha) in shas.iter().enumerate() {
         if i > 0 {
             std::thread::sleep(std::time::Duration::from_millis(BACKFILL_COMMIT_DELAY_MS));
         }
 
         let short = &sha[..7];
+        let cdate = commit_date(sha);
 
         let msg_out = Command::new("git")
             .args(["log", "-1", "--pretty=%B", sha])
@@ -527,7 +531,6 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
         let commit_msg = String::from_utf8_lossy(&msg_out.stdout).trim().to_string();
         let commit_label = commit_msg.lines().next().unwrap_or(short).to_string();
 
-        // Diff (smaller limit to keep Ollama requests fast)
         let raw_diff = {
             let diff_out = Command::new("git")
                 .args(["diff", &format!("{sha}^"), sha, "--"])
@@ -551,7 +554,6 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
         print!("  [{}/{}] {short} {}", i + 1, shas.len(), commit_label.dimmed());
         let _ = std::io::Write::flush(&mut std::io::stdout());
 
-        // Extract topics — retry once on failure after a short pause
         let topics = match teacher.extract_topics_from_diff(&commit_msg, &diff) {
             Ok(t) => t,
             Err(_) => {
@@ -579,7 +581,7 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
 
         println!(" — {} new", new_topics.len());
 
-        // Add this commit's nodes first
+        // Insert nodes with commit date and repo tag
         let mut commit_new: Vec<(String, String)> = Vec::new();
         for t in &new_topics {
             db.add_or_update(
@@ -589,16 +591,24 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
                 &t.domain,
                 &t.description,
                 &commit_label,
-                None,
+                cdate,
+                &repo,
+                cdate,
             )?;
             println!("    {} {}", "+".truecolor(29, 158, 117), t.topic);
+
+            // Pre-generate question + ideal answer from diff context (silent on failure)
+            if let Ok((q, a)) = teacher.generate_question_and_answer(
+                &t.topic, &t.description, &commit_msg, &diff, &project_summary,
+            ) {
+                db.set_canonical_qa(&t.topic, &q, &a).ok();
+            }
+
             commit_new.push((t.topic.clone(), t.description.clone()));
             added += 1;
         }
         skipped += topics.len() - new_topics.len();
 
-        // Then generate edges — at this point all prior commits' nodes are in the
-        // DB, so relationships can be found across commits, not just within them
         println!("    {} linking…", "◈".truecolor(6, 182, 212));
         generate_edges_for_new_nodes(db, teacher, &commit_new, BACKFILL_EDGE_DELAY_MS);
     }
@@ -669,6 +679,9 @@ fn run_view(db: &Db, cfg: &Config) -> Result<()> {
             "retrievability": r, "classification": cls,
             "last_reviewed": n.last_reviewed.to_string(),
             "review_count": n.review_count, "created_at": n.created_at.to_string(),
+            "repo": n.repo,
+            "canonical_question": n.canonical_question,
+            "canonical_answer": n.canonical_answer,
             "reviews": reviews,
         })
     }).collect();
@@ -721,7 +734,26 @@ fn run_view(db: &Db, cfg: &Config) -> Result<()> {
         }));
     }
 
-    let data = json!({ "nodes": nodes_json, "edges": edges_json, "userName": user_name });
+    // Load cached project summaries for all repos present in the PKG
+    let summaries_dir = cfg.rocky_dir.join("summaries");
+    let mut repo_summaries: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    if let Ok(entries) = std::fs::read_dir(&summaries_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("txt") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if let Ok(summary) = std::fs::read_to_string(&path) {
+                        repo_summaries.insert(stem.to_string(), serde_json::Value::String(summary.trim().to_string()));
+                    }
+                }
+            }
+        }
+    }
+    let data = json!({
+        "nodes": nodes_json, "edges": edges_json,
+        "userName": user_name,
+        "summaries": repo_summaries,
+    });
     let data_str = serde_json::to_string(&data)?;
 
     let html = build_view_html(&data_str);
@@ -953,6 +985,8 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
     print_header();
     p.print_rocky(false);
     println!("\n{} {task}\n", "Task:".bold());
+    let repo = detect_repo_name();
+    let commit_dt = head_commit_date();
 
     if mode == "after" && is_hotfix(task) {
         println!("  {}", "Hotfix detected — Rocky stepping back.".dimmed());
@@ -1033,7 +1067,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                         &topic_info.domain,
                         &topic_info.description,
                         task,
-                        None,
+                        None, "", None,
                     )?;
                     session.record_quiz()?;
                     quizzed += 1;
@@ -1046,7 +1080,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse)?;
+                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse, &repo, commit_dt)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -1100,6 +1134,8 @@ fn run_socratic_loop(
     known_topics: &[String],
     p: &personality::Personality,
     edge_reuse: &config::EdgeReuse,
+    repo: &str,
+    node_date: Option<chrono::NaiveDate>,
 ) -> Result<(bool, bool)> {
     let topic = &topic_info.topic;
     println!("\n{} New topic — {topic}", "Rocky:".truecolor(6, 182, 212).bold());
@@ -1173,9 +1209,19 @@ fn run_socratic_loop(
                 }
             }
         }
-        // Fall back to standard single-concept question
+        // Use pre-generated canonical question if available, otherwise generate live
+        if let Ok(Some(ref n)) = db.get_node(topic) {
+            if !n.canonical_question.is_empty() {
+                break 'q n.canonical_question.clone();
+            }
+        }
         teacher.generate_question(topic, &topic_info.description, task, known_topics, 1)?
     };
+
+    // Load canonical answer for use as evaluator reference
+    let canonical_answer: Option<String> = db.get_node(topic).ok()
+        .flatten()
+        .and_then(|n| if n.canonical_answer.is_empty() { None } else { Some(n.canonical_answer) });
 
     while questions_asked < MAX_QUESTIONS {
         questions_asked += 1;
@@ -1227,7 +1273,7 @@ fn run_socratic_loop(
                 &topic_info.domain,
                 &topic_info.description,
                 task,
-                None,
+                node_date, repo, node_date,
             )?;
             if let Some(msg) = p.too_easy() { println!("   {msg}"); }
             else { println!("{}", "   Marked as known.".truecolor(29, 158, 117)); }
@@ -1254,7 +1300,7 @@ fn run_socratic_loop(
                 &topic_info.domain,
                 &topic_info.description,
                 task,
-                None,
+                node_date, repo, node_date,
             )?;
             db.add_review(&Db::node_id_static(topic), &question, "", &explanation, 0.2).ok();
             return Ok((true, true));
@@ -1265,8 +1311,10 @@ fn run_socratic_loop(
         last_answer = answer.to_string();
 
         println!("{}", "   Evaluating...".dimmed());
-        let result =
-            teacher.evaluate_answer(topic, &question, answer, &topic_info.description)?;
+        let result = teacher.evaluate_answer(
+            topic, &question, answer, &topic_info.description,
+            canonical_answer.as_deref(),
+        )?;
         total_score += result.score;
 
         println!("\n   {}", result.feedback.truecolor(6, 182, 212));
@@ -1279,7 +1327,7 @@ fn run_socratic_loop(
                 &topic_info.domain,
                 &topic_info.description,
                 task,
-                None,
+                node_date, repo, node_date,
             )?;
             db.add_review(&Db::node_id_static(topic), &question, answer, &result.feedback, result.score).ok();
             if let Some(msg) = p.correct() { println!("   {msg}"); }
@@ -1324,7 +1372,7 @@ fn run_socratic_loop(
         &topic_info.domain,
         &topic_info.description,
         task,
-        None,
+        node_date, repo, node_date,
     )?;
     db.add_review(&Db::node_id_static(topic), &last_question, &last_answer, &explanation, avg_score).ok();
     Ok((true, true))
@@ -1409,7 +1457,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
             description: node.description.clone(),
         };
         let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
-        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse)?;
+        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
         if completed {
             session.record_quiz()?;
         }
@@ -1506,7 +1554,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 domain: String::new(),
                 description: description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
             if completed {
                 session.record_quiz()?;
                 // Remove from queue now that it has been properly reviewed
@@ -1541,7 +1589,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             let reminder = teacher.generate_reminder(topic, node, context)?;
             println!("\n  {} {reminder}\n", "Rocky:".truecolor(239, 159, 39).bold());
             db.add_or_update(
-                topic, 0.5, &node.kind, &node.domain, &node.description, context, None,
+                topic, 0.5, &node.kind, &node.domain, &node.description, context, None, "", None,
             )?;
             session.record_quiz()?;
         } else {
@@ -1553,7 +1601,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             domain: node.domain.clone(),
                 description: node.description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -1572,7 +1620,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             .collect();
 
         for topic_info in new_from_prompts {
-            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse)?;
+            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse, "", None)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -1850,7 +1898,7 @@ fn run_diff(
                         &topic_info.domain,
                         &topic_info.description,
                         &label,
-                        None,
+                        None, "", None,
                     )?;
                     session.record_quiz()?;
                     quizzed += 1;
@@ -1863,7 +1911,7 @@ fn run_diff(
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse)?;
+                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse, "", None)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -2329,6 +2377,91 @@ fn build_commit_message(db: &Db) -> String {
 fn queue_for_later(topic: &str, kind: &str, description: &str, context: &str) {
     if let Some(log) = local_log::LocalLog::open_if_configured() {
         log.queue_topic(topic, kind, description, context).ok();
+    }
+}
+
+// ── project / repo helpers ────────────────────────────────────────────────────
+
+/// Derive a short repo name from the git remote URL or fall back to the top-level dir name.
+fn detect_repo_name() -> String {
+    use std::process::Command;
+    if let Ok(out) = Command::new("git").args(["remote", "get-url", "origin"]).output() {
+        if out.status.success() {
+            let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let name = url.trim_end_matches(".git")
+                .rsplit('/')
+                .next()
+                .or_else(|| url.trim_end_matches(".git").rsplit(':').next()
+                    .and_then(|s| s.split('/').last()))
+                .unwrap_or("")
+                .to_string();
+            if !name.is_empty() { return name; }
+        }
+    }
+    if let Ok(out) = Command::new("git").args(["rev-parse", "--show-toplevel"]).output() {
+        if out.status.success() {
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if let Some(name) = std::path::Path::new(&path).file_name().and_then(|n| n.to_str()) {
+                return name.to_string();
+            }
+        }
+    }
+    std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Get the date of a specific commit SHA.
+fn commit_date(sha: &str) -> Option<chrono::NaiveDate> {
+    use std::process::Command;
+    let out = Command::new("git").args(["log", "-1", "--pretty=%Y-%m-%d", sha]).output().ok()?;
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()
+}
+
+/// Get the date of the HEAD commit.
+fn head_commit_date() -> Option<chrono::NaiveDate> {
+    commit_date("HEAD")
+}
+
+/// Load the project summary from cache, regenerating if the README has changed.
+/// Cached in `<rocky_dir>/summaries/<repo>.txt`.
+fn load_or_create_project_summary(
+    rocky_dir: &std::path::Path,
+    repo: &str,
+    teacher: &teacher::Teacher,
+) -> String {
+    let summaries_dir = rocky_dir.join("summaries");
+    let _ = std::fs::create_dir_all(&summaries_dir);
+    let summary_path = summaries_dir.join(format!("{repo}.txt"));
+    let hash_path    = summaries_dir.join(format!("{repo}.hash"));
+
+    let readme = std::fs::read_to_string("README.md")
+        .or_else(|_| std::fs::read_to_string("README"))
+        .or_else(|_| std::fs::read_to_string("readme.md"))
+        .unwrap_or_default();
+
+    if readme.is_empty() {
+        return std::fs::read_to_string(&summary_path).unwrap_or_default();
+    }
+
+    let fingerprint = format!("{}:{}", readme.len(), &readme[..readme.len().min(100)]);
+    let cached_hash = std::fs::read_to_string(&hash_path).unwrap_or_default();
+
+    if cached_hash.trim() == fingerprint.trim() {
+        if let Ok(s) = std::fs::read_to_string(&summary_path) {
+            if !s.trim().is_empty() { return s; }
+        }
+    }
+
+    match teacher.summarize_readme(&readme) {
+        Ok(summary) => {
+            let _ = std::fs::write(&summary_path, &summary);
+            let _ = std::fs::write(&hash_path, fingerprint);
+            summary
+        }
+        Err(_) => std::fs::read_to_string(&summary_path).unwrap_or_default(),
     }
 }
 
