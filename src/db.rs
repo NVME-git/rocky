@@ -80,17 +80,20 @@ CREATE TABLE IF NOT EXISTS session_state (
 );
 
 CREATE TABLE IF NOT EXISTS nodes (
-    id               TEXT PRIMARY KEY,
-    topic            TEXT NOT NULL,
-    kind             TEXT NOT NULL DEFAULT 'concept',
-    domain           TEXT NOT NULL DEFAULT '',
-    description      TEXT NOT NULL DEFAULT '',
-    difficulty       REAL NOT NULL DEFAULT 0.3,
-    stability        REAL NOT NULL DEFAULT 2.0,
-    last_reviewed    TEXT NOT NULL,
-    last_encountered TEXT NOT NULL,
-    review_count     INTEGER NOT NULL DEFAULT 0,
-    created_at       TEXT NOT NULL
+    id                   TEXT PRIMARY KEY,
+    topic                TEXT NOT NULL,
+    kind                 TEXT NOT NULL DEFAULT 'concept',
+    domain               TEXT NOT NULL DEFAULT '',
+    description          TEXT NOT NULL DEFAULT '',
+    difficulty           REAL NOT NULL DEFAULT 0.3,
+    stability            REAL NOT NULL DEFAULT 2.0,
+    last_reviewed        TEXT NOT NULL,
+    last_encountered     TEXT NOT NULL,
+    review_count         INTEGER NOT NULL DEFAULT 0,
+    created_at           TEXT NOT NULL,
+    canonical_question   TEXT NOT NULL DEFAULT '',
+    canonical_answer     TEXT NOT NULL DEFAULT '',
+    repo                 TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS contexts (
@@ -152,12 +155,11 @@ impl Db {
     fn init(&self) -> Result<()> {
         let conn = self.connect()?;
         conn.execute_batch(SCHEMA)?;
-        // Migration: add domain column to existing databases
-        let _ = conn.execute(
-            "ALTER TABLE nodes ADD COLUMN domain TEXT NOT NULL DEFAULT ''",
-            [],
-        );
-        // Migration: add last_fired_session column to edges
+        // Migrations for existing databases (all idempotent — ignored if column already exists)
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN domain TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN canonical_question TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN canonical_answer TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN repo TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE edges ADD COLUMN last_fired_session INTEGER", []);
         Ok(())
     }
@@ -205,6 +207,9 @@ impl Db {
             review_count: row.get("review_count")?,
             contexts,
             created_at: Self::parse_date(&row.get::<_, String>("created_at")?),
+            canonical_question: row.get::<_, String>("canonical_question").unwrap_or_default(),
+            canonical_answer: row.get::<_, String>("canonical_answer").unwrap_or_default(),
+            repo: row.get::<_, String>("repo").unwrap_or_default(),
         })
     }
 
@@ -241,12 +246,17 @@ impl Db {
         description: &str,
         context: &str,
         last_reviewed_override: Option<NaiveDate>,
+        repo: &str,
+        created_at_override: Option<NaiveDate>,
     ) -> Result<()> {
         let node_id = Self::node_id(topic);
         let reviewed = last_reviewed_override
             .unwrap_or_else(|| Local::now().date_naive())
             .to_string();
         let today = Self::today();
+        let created_at = created_at_override
+            .map(|d| d.to_string())
+            .unwrap_or_else(|| today.clone());
 
         let conn = self.connect()?;
 
@@ -263,7 +273,6 @@ impl Db {
         if let Some(node) = existing {
             let r = fsrs::retrievability(node.stability, node.last_reviewed);
             let (new_s, new_d) = fsrs::update_after_review(node.stability, node.difficulty, r, score);
-            // Only update domain if the stored one is empty and we have a real value
             let effective_domain = if !domain.is_empty() && node.domain.is_empty() {
                 domain
             } else if !node.domain.is_empty() {
@@ -271,6 +280,8 @@ impl Db {
             } else {
                 domain
             };
+            // repo only backfills if not already set
+            let effective_repo = if !repo.is_empty() && node.repo.is_empty() { repo } else { &node.repo };
             conn.execute(
                 "UPDATE nodes SET
                     stability        = ?1,
@@ -280,9 +291,10 @@ impl Db {
                     review_count     = review_count + 1,
                     kind             = ?5,
                     domain           = ?6,
-                    description      = CASE WHEN description = '' THEN ?7 ELSE description END
-                 WHERE id = ?8",
-                params![new_s, new_d, reviewed, today, kind.as_str(), effective_domain, description, node_id],
+                    description      = CASE WHEN description = '' THEN ?7 ELSE description END,
+                    repo             = ?8
+                 WHERE id = ?9",
+                params![new_s, new_d, reviewed, today, kind.as_str(), effective_domain, description, effective_repo, node_id],
             )?;
         } else {
             let mut stability = fsrs::initial_stability(kind);
@@ -294,9 +306,9 @@ impl Db {
             conn.execute(
                 "INSERT INTO nodes
                     (id, topic, kind, domain, description, difficulty, stability,
-                     last_reviewed, last_encountered, review_count, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 0.3, ?6, ?7, ?8, 1, ?9)",
-                params![node_id, topic, kind.as_str(), domain, description, stability, reviewed, today, today],
+                     last_reviewed, last_encountered, review_count, created_at, repo)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0.3, ?6, ?7, ?8, 1, ?9, ?10)",
+                params![node_id, topic, kind.as_str(), domain, description, stability, reviewed, today, created_at, repo],
             )?;
         }
 
@@ -312,6 +324,16 @@ impl Db {
             obsidian::write_node(&node, &self.pkg_dir).ok();
         }
 
+        Ok(())
+    }
+
+    pub fn set_canonical_qa(&self, topic: &str, question: &str, answer: &str) -> Result<()> {
+        let node_id = Self::node_id(topic);
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE nodes SET canonical_question = ?1, canonical_answer = ?2 WHERE id = ?3",
+            params![question, answer, node_id],
+        )?;
         Ok(())
     }
 

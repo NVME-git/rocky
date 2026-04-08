@@ -71,6 +71,23 @@ svg#graph { width: 100%; height: 100%; }
                  cursor: pointer; border-radius: 3px; }
 .tax-node-item:hover { color: #F1F5F9; }
 
+/* ── repo filter ── */
+#repo-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.repo-btn { background: #111827; border: 1px solid #1E293B; border-radius: 4px;
+            color: #94A3B8; padding: 3px 8px; font-size: 11px; cursor: pointer;
+            transition: all 0.15s; white-space: nowrap; }
+.repo-btn:hover { border-color: #06B6D4; color: #06B6D4; }
+.repo-btn.active { background: rgba(6,182,212,0.12); border-color: #06B6D4; color: #06B6D4; }
+/* ── project summary bar ── */
+#summary-bar { background: #070B14; border-bottom: 1px solid #1E293B;
+               padding: 6px 16px; font-size: 11px; color: #475569;
+               display: none; flex-shrink: 0; }
+#summary-bar.visible { display: block; }
+/* ── canonical Q&A in panel ── */
+.panel-qa-section { margin-top: 14px; }
+.panel-qa-q { font-size: 12px; color: #06B6D4; line-height: 1.5; margin-bottom: 6px; font-style: italic; }
+.panel-qa-a { font-size: 11px; color: #64748B; line-height: 1.5;
+              border-left: 2px solid #1E293B; padding-left: 8px; }
 /* ── side panel ── */
 #panel { width: 300px; background: #070B14; border-left: 1px solid #1E293B;
          overflow-y: auto; flex-shrink: 0; display: none; position: relative; }
@@ -157,12 +174,16 @@ svg#graph { width: 100%; height: 100%; }
   <div id="controls">
     <input id="search" type="text" placeholder="Search topics…">
     <div id="domain-filters"></div>
+    <div id="repo-filters"></div>
     <div id="spread-wrap">
       <label for="spread-slider">Spread</label>
       <input id="spread-slider" type="range" min="1" max="10" value="5">
     </div>
   </div>
 </div>
+
+<!-- project summary bar -->
+<div id="summary-bar"></div>
 
 <!-- always-visible scrubber strip -->
 <div id="timeline-strip">
@@ -208,6 +229,12 @@ svg#graph { width: 100%; height: 100%; }
         <div class="panel-row"><span class="panel-label">Last reviewed</span><span class="panel-value" id="p-reviewed"></span></div>
         <div class="panel-row"><span class="panel-label">Reviews</span><span class="panel-value" id="p-count"></span></div>
         <div class="panel-row"><span class="panel-label">Kind</span><span class="panel-value" id="p-kind"></span></div>
+        <div class="panel-section" id="p-qa-section" style="display:none">
+          <div class="panel-section-title">Quiz Question</div>
+          <div class="panel-qa-q" id="p-qa-q"></div>
+          <div class="panel-section-title" style="margin-top:8px">Ideal Answer</div>
+          <div class="panel-qa-a" id="p-qa-a"></div>
+        </div>
         <div class="panel-section">
           <div class="panel-section-title">Edges</div>
           <div id="p-edges"></div>
@@ -312,6 +339,57 @@ domains.forEach(d => {
   filterEl.appendChild(btn);
 });
 
+// ── repo filter ─────────────────────────────────────────────────────────────
+const summaries = PKG.summaries || {};
+const repos = [...new Set(topicNodes.map(n => n.repo).filter(Boolean))].sort();
+let activeRepos = new Set(repos);
+
+if (repos.length > 1) {
+  const repoEl = document.getElementById('repo-filters');
+  const allRepoBtn = document.createElement('button');
+  allRepoBtn.className = 'repo-btn active';
+  allRepoBtn.textContent = 'All projects';
+  allRepoBtn.onclick = () => {
+    activeRepos = new Set(repos);
+    document.querySelectorAll('.repo-btn:not([data-repo="all"])').forEach(b => b.classList.add('active'));
+    allRepoBtn.classList.add('active');
+    updateSummaryBar(null);
+    applyFilters();
+  };
+  allRepoBtn.dataset.repo = 'all';
+  repoEl.appendChild(allRepoBtn);
+  repos.forEach(r => {
+    const btn = document.createElement('button');
+    btn.className = 'repo-btn active';
+    btn.textContent = r;
+    btn.onclick = () => {
+      if (activeRepos.size === repos.length) {
+        activeRepos = new Set([r]);
+        document.querySelectorAll('.repo-btn:not([data-repo="all"])').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        allRepoBtn.classList.remove('active');
+      } else {
+        if (activeRepos.has(r)) { activeRepos.delete(r); btn.classList.remove('active'); }
+        else { activeRepos.add(r); btn.classList.add('active'); }
+        allRepoBtn.classList.toggle('active', activeRepos.size === repos.length);
+      }
+      updateSummaryBar(activeRepos.size === 1 ? [...activeRepos][0] : null);
+      applyFilters();
+    };
+    repoEl.appendChild(btn);
+  });
+}
+
+function updateSummaryBar(repo) {
+  const bar = document.getElementById('summary-bar');
+  if (repo && summaries[repo]) {
+    bar.textContent = summaries[repo];
+    bar.classList.add('visible');
+  } else {
+    bar.classList.remove('visible');
+  }
+}
+
 // ── search ──────────────────────────────────────────────────────────────────
 let searchTerm = '';
 document.getElementById('search').addEventListener('input', e => {
@@ -324,6 +402,7 @@ function applyFilters() {
   const visibleTopics = topicNodes.filter(n =>
     (!scrubberCutoff || n.created_at <= scrubberCutoff) &&
     (activeDomains.size > 0 && activeDomains.has(n.domain || 'Other')) &&
+    (activeRepos.size === 0 || !n.repo || activeRepos.has(n.repo)) &&
     (!searchTerm || n.topic.toLowerCase().includes(searchTerm))
   );
   const visible = new Set([
@@ -549,7 +628,17 @@ function selectNode(d) {
   document.getElementById('p-stab').textContent = d.stability.toFixed(1) + 'd';
   document.getElementById('p-reviewed').textContent = d.last_reviewed;
   document.getElementById('p-count').textContent = d.review_count;
-  document.getElementById('p-kind').textContent = d.kind;
+  document.getElementById('p-kind').textContent = d.kind
+    + (d.repo ? ` · ${d.repo}` : '');
+  // Canonical question + ideal answer
+  const qaSection = document.getElementById('p-qa-section');
+  if (d.canonical_question) {
+    document.getElementById('p-qa-q').textContent = d.canonical_question;
+    document.getElementById('p-qa-a').textContent = d.canonical_answer || '—';
+    qaSection.style.display = '';
+  } else {
+    qaSection.style.display = 'none';
+  }
   const nodeEdges = edgeIndex[d.id] || [];
   document.getElementById('p-edges').innerHTML = nodeEdges.length === 0
     ? '<div style="color:#64748B;font-size:12px">No edges yet</div>'
