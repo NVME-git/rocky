@@ -2146,18 +2146,32 @@ fn install_claude_hook() -> Result<(bool, String)> {
         .and_then(|p| p.to_str().map(|s| s.to_string()))
         .unwrap_or_else(|| "rocky".to_string());
     let cmd = format!("{rocky_bin} hook");
-    let entry = serde_json::json!({"command": cmd});
 
-    // Also accept the old "rocky hook" entry as already-installed
+    // Check if already installed in either the new nested format or the old flat format
     let already = arr.iter().any(|v| {
-        v.get("command").and_then(|c| c.as_str())
-            .map(|c| c == cmd || c == "rocky hook")
-            .unwrap_or(false)
+        // New format: {"matcher": "RockyHook", "hooks": [{"command": "...", "type": "command"}]}
+        let in_nested = v.get("hooks")
+            .and_then(|h| h.as_array())
+            .map(|hooks| hooks.iter().any(|h| {
+                h.get("command").and_then(|c| c.as_str())
+                    .map(|c| c == cmd || c.ends_with("/rocky hook") || c == "rocky hook")
+                    .unwrap_or(false)
+            }))
+            .unwrap_or(false);
+        // Old flat format: {"command": "..."}
+        let in_flat = v.get("command").and_then(|c| c.as_str())
+            .map(|c| c == cmd || c == "rocky hook" || c.ends_with("/rocky hook"))
+            .unwrap_or(false);
+        in_nested || in_flat
     });
     if already {
         return Ok((false, "Claude Code hook already installed".into()));
     }
 
+    let entry = serde_json::json!({
+        "matcher": "RockyHook",
+        "hooks": [{"command": cmd, "type": "command"}]
+    });
     arr.push(entry);
 
     if let Some(parent) = path.parent() {
@@ -2185,12 +2199,21 @@ fn uninstall_claude_hook() -> Result<(bool, String)> {
         .and_then(|v| v.as_array_mut())
     {
         let before = arr.len();
-        // Remove any entry whose command ends with "rocky hook" (handles full path or plain)
+        // Remove any Rocky hook entry — new nested format or old flat format
         arr.retain(|v| {
-            !v.get("command")
+            let is_flat = v.get("command")
                 .and_then(|c| c.as_str())
                 .map(|c| c == "rocky hook" || c.ends_with("/rocky hook"))
-                .unwrap_or(false)
+                .unwrap_or(false);
+            let is_nested = v.get("hooks")
+                .and_then(|h| h.as_array())
+                .map(|hooks| hooks.iter().any(|h| {
+                    h.get("command").and_then(|c| c.as_str())
+                        .map(|c| c == "rocky hook" || c.ends_with("/rocky hook"))
+                        .unwrap_or(false)
+                }))
+                .unwrap_or(false);
+            !is_flat && !is_nested
         });
         arr.len() < before
     } else {
