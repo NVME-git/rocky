@@ -1,0 +1,3 @@
+graph.db
+*.db-shm
+*.db-wal
