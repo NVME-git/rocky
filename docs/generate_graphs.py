@@ -25,6 +25,7 @@ USER_NAME = "alex"
 # Project summaries loaded into the view (mirrors ~/.rocky/summaries/*.txt)
 SUMMARIES = {
     "taskify": "Rust REST API — task management backend with JWT auth, PostgreSQL, Redis caching, and Docker deployment",
+    "home-bank": "Python data pipeline — personal finance tracker that imports bank CSV exports, categorises transactions with a rule-based engine, and models accounts with double-entry bookkeeping",
 }
 
 # ── Stage definitions ─────────────────────────────────────────────────────────
@@ -73,6 +74,9 @@ STAGE_TOPICS = {
         "docker-multi-stage-builds", "container-image-optimization",
         "github-actions-workflow-syntax", "ci/cd-pipeline-design",
         "openapi-specification",
+        # home-bank project — second repo in the PKG, shows multi-repo filter
+        "csv-parsing", "transaction-categorisation",
+        "pandas-dataframe-operations", "double-entry-bookkeeping",
     ],
 }
 
@@ -146,6 +150,7 @@ def load_demo_data():
             "created_at": row["created_at"],
             "canonical_question": row["canonical_question"],
             "canonical_answer": row["canonical_answer"],
+            "canonical_clue": row["canonical_clue"] if "canonical_clue" in row.keys() else "",
             "repo": row["repo"],
             "contexts": contexts,
             "reviews": reviews,
@@ -194,6 +199,7 @@ def build_stage_json(all_nodes, all_edges, topic_ids):
             "repo": n["repo"],
             "canonical_question": n["canonical_question"],
             "canonical_answer": n["canonical_answer"],
+            "canonical_clue": n.get("canonical_clue", ""),
             "reviews": n["reviews"],
         })
 

@@ -140,6 +140,7 @@ Questions end with ", question?" — Rocky's way of asking. Set `personality = f
 | **Cross-concept question** | A question that bridges two related topics — asked when Rocky detects a relevant edge and both topics have strong recall |
 | **Repo tag** | The git project a topic originated from — parsed from the remote URL. Makes the PKG filterable by project |
 | **Canonical Q&A** | A pre-generated question and ideal answer stored in the node at creation time, using the commit diff and project README as context |
+| **Canonical clue** | A short hint stored alongside canonical Q&A — shown when you type `c` during a quiz. Generated at backfill time, or on-demand for manually-added topics |
 ''';
 
 const kInstallation = r'''
@@ -342,10 +343,16 @@ Type your answer and press Enter. Rocky evaluates whether you understand the imp
 
 At any question you can:
 
-- **Type your answer** and press Enter
-- **Press Enter** with nothing to skip (queues the topic for later)
-- **Type `i`** to ignore the topic (useful when Rocky picks up a hallucinated or irrelevant topic)
-- **Type `k`** if you already know this well (Rocky records it without a full Q&A)
+- **Type your answer** and press Enter — Rocky evaluates and gives feedback
+- **Press Enter** with nothing to skip — queues the topic for later
+- **`i`** — ignore the topic (useful when Rocky picks up a hallucinated or irrelevant topic)
+- **`e`** — too easy, mark as known without a full Q&A
+- **`s`** — regenerate a simpler version of the question
+- **`h`** — regenerate a harder version with edge cases and deeper implications
+- **`c`** — show a short clue without giving away the answer
+- **`?`** — show a full explanation and mark with low confidence
+
+Each question shows whether it's **(canonical)** — specific to your actual commit diff — or **(generated)** — created live from the topic description.
 
 ---
 
@@ -526,7 +533,13 @@ During any question, you have these choices:
 | Type your answer + Enter | Rocky evaluates and gives feedback |
 | Enter (blank) | Skip — topic is queued for later |
 | `i` | Ignore — dismiss the topic entirely (useful for hallucinated topics) |
-| `k` | Mark as known — Rocky records it without a full Q&A |
+| `e` | Too easy — mark as known without a full Q&A |
+| `s` | Simpler — regenerate the question at lower difficulty |
+| `h` | Harder — regenerate the question with edge cases and deeper implications |
+| `c` | Clue — show a short hint without giving away the answer |
+| `?` | Explain — show a full explanation and mark with low confidence |
+
+Each question also shows whether it is **(canonical)** — pre-generated at backfill time from the actual commit diff — or **(generated)** — generated live. Canonical questions are more specific to your actual code.
 
 ---
 
@@ -780,6 +793,9 @@ rocky backfill --limit 20
 
 # Scan last 50 commits from all contributors
 rocky backfill --all-authors --limit 50
+
+# Retroactively generate clues for nodes that have canonical Q&A but no clue yet
+rocky backfill --fill-clues
 ```
 
 Rocky reads the diff for each commit, extracts topics the same way `rocky diff` does, and adds any that aren't already in your PKG. It sets initial retrievability to 0.5 (neutral — you saw the code but weren't quizzed). Edges are generated for all new topics after the scan completes.
@@ -788,7 +804,7 @@ Each new topic is enriched at insertion time:
 
 - **Commit date** — `created_at` and `last_reviewed` are set to the actual commit date, not today. A topic from six months ago decays correctly from when you first encountered it.
 - **Repo tag** — the node is tagged with the project name (parsed from the git remote URL). Topics accumulate in one PKG across all your projects, and you can filter by repo in `rocky view`.
-- **Canonical Q&A** — Rocky generates a question and ideal answer for each new topic using the commit diff and a cached summary of the project README. These are stored in the node and used as the first question next time you're quizzed on the topic.
+- **Canonical Q&A** — Rocky generates a question, ideal answer, and a short clue for each new topic using the commit diff and a cached summary of the project README. These are stored in the node: the question is used next time you're quizzed; the clue is shown when you type `c`; the ideal answer guides evaluation.
 - **Project summary** — Rocky reads your README, summarises it, and caches the summary in `~/.rocky/summaries/<repo>.txt`. The summary is shown in `rocky view` when you filter by that repo.
 
 **Example output:**
@@ -1266,8 +1282,8 @@ Seed your PKG from your git history without any interactive Q&A. Useful when you
    - Extract topics using code-aware analysis (same as `rocky diff`)
    - For each topic not already in the PKG:
      - Add it with retrievability 0.5, `created_at` and `last_reviewed` set to the commit date, tagged with the repo name
-     - Generate a canonical question and ideal answer using the diff + commit message + README summary
-     - Store the Q&A in the node for use in future quiz sessions
+     - Generate a canonical question, ideal answer, and short clue using the diff + commit message + README summary
+     - Store all three in the node: the question is used at quiz time, the clue is available on request, the answer guides evaluation
    - Print `+ topic name` for each new topic added
 7. After all commits: generate edges for all newly added topics in bulk
 8. Print summary: `✓ Added N new topics · M already in PKG`
@@ -1659,9 +1675,12 @@ const kWalkthrough = r'''
 graphs/stage7.html|Open the full interactive graph
 ```
 
-This is a complete, realistic example of building a Personal Knowledge Graph while working on a Rust REST API called **taskify** — a task management backend with JWT auth, PostgreSQL, Redis caching, and Docker deployment.
+This is a complete, realistic example of building a Personal Knowledge Graph across two projects:
 
-We follow 6 commits over one week. At each stage you can see exactly what Rocky does, what the PKG looks like, and how `rocky view` evolves as your knowledge grows.
+- **taskify** — a Rust REST API with JWT auth, PostgreSQL, Redis caching, and Docker deployment
+- **home-bank** — a Python data pipeline that imports bank CSV exports, categorises transactions, and models accounts with double-entry bookkeeping
+
+We follow commits across both projects. The full interactive graph (stage 7) shows 21 topics across both repos — use the **repo filter** buttons to isolate either project and see its summary.
 
 ---
 

@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     created_at           TEXT NOT NULL,
     canonical_question   TEXT NOT NULL DEFAULT '',
     canonical_answer     TEXT NOT NULL DEFAULT '',
+    canonical_clue       TEXT NOT NULL DEFAULT '',
     repo                 TEXT NOT NULL DEFAULT ''
 );
 
@@ -159,6 +160,7 @@ impl Db {
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN domain TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN canonical_question TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN canonical_answer TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN canonical_clue TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN repo TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE edges ADD COLUMN last_fired_session INTEGER", []);
         Ok(())
@@ -209,6 +211,7 @@ impl Db {
             created_at: Self::parse_date(&row.get::<_, String>("created_at")?),
             canonical_question: row.get::<_, String>("canonical_question").unwrap_or_default(),
             canonical_answer: row.get::<_, String>("canonical_answer").unwrap_or_default(),
+            canonical_clue: row.get::<_, String>("canonical_clue").unwrap_or_default(),
             repo: row.get::<_, String>("repo").unwrap_or_default(),
         })
     }
@@ -327,12 +330,12 @@ impl Db {
         Ok(())
     }
 
-    pub fn set_canonical_qa(&self, topic: &str, question: &str, answer: &str) -> Result<()> {
+    pub fn set_canonical_qa(&self, topic: &str, question: &str, answer: &str, clue: &str) -> Result<()> {
         let node_id = Self::node_id(topic);
         let conn = self.connect()?;
         conn.execute(
-            "UPDATE nodes SET canonical_question = ?1, canonical_answer = ?2 WHERE id = ?3",
-            params![question, answer, node_id],
+            "UPDATE nodes SET canonical_question = ?1, canonical_answer = ?2, canonical_clue = ?3 WHERE id = ?4",
+            params![question, answer, clue, node_id],
         )?;
         Ok(())
     }
@@ -548,6 +551,19 @@ impl Db {
     }
 
     /// Returns nodes that have no domain assigned yet.
+    /// Nodes that have a canonical question but no clue yet — targets for retroactive clue generation.
+    pub fn nodes_missing_clue(&self) -> Result<Vec<Node>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT * FROM nodes WHERE canonical_question != '' AND canonical_clue = '' ORDER BY topic"
+        )?;
+        let nodes = stmt
+            .query_map([], |row| Self::row_to_node(&conn, row))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(nodes)
+    }
+
     pub fn undomained_nodes(&self) -> Result<Vec<Node>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare("SELECT * FROM nodes WHERE domain = '' ORDER BY topic")?;

@@ -19,7 +19,7 @@ use config::Config;
 use db::Db;
 use node::Kind;
 use session::Session;
-use teacher::{Teacher, TopicInfo};
+use teacher::{Difficulty, Teacher, TopicInfo};
 
 const MAX_QUESTIONS: u32 = 3;
 
@@ -129,6 +129,9 @@ enum Cmd {
         /// Maximum number of commits to scan (default: all)
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
+        /// Retroactively generate missing clues for nodes that already have canonical Q&A
+        #[arg(long)]
+        fill_clues: bool,
     },
 }
 
@@ -285,8 +288,8 @@ fn run() -> Result<()> {
         Some(Cmd::View) => {
             run_view(&db, &cfg)?;
         }
-        Some(Cmd::Backfill { all_authors, limit }) => {
-            run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit)?;
+        Some(Cmd::Backfill { all_authors, limit, fill_clues }) => {
+            run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit, fill_clues)?;
         }
         None => {
             if let Some(msg) = cli.after {
@@ -441,8 +444,34 @@ const BACKFILL_COMMIT_DELAY_MS: u64 = 1_000;
 // Pause between edge-generation calls after all nodes are added
 const BACKFILL_EDGE_DELAY_MS: u64 = 800;
 
-fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, limit: Option<usize>) -> Result<()> {
+fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, limit: Option<usize>, fill_clues: bool) -> Result<()> {
     use std::process::Command;
+
+    // ── Fill-clues mode: retroactively generate clues for existing canonical nodes ──
+    if fill_clues {
+        let missing = db.nodes_missing_clue()?;
+        if missing.is_empty() {
+            println!("  {} All canonical nodes already have clues.", "✓".truecolor(29, 158, 117));
+            return Ok(());
+        }
+        println!("  Generating clues for {} node(s)...\n", missing.len());
+        let mut filled = 0usize;
+        for node in &missing {
+            print!("    {} {}... ", "·".dimmed(), node.topic);
+            io::stdout().flush()?;
+            match teacher.generate_clue(&node.topic, &node.description, &node.canonical_question) {
+                Ok(clue) => {
+                    db.set_canonical_qa(&node.topic, &node.canonical_question, &node.canonical_answer, &clue).ok();
+                    filled += 1;
+                    println!("{}", "done".truecolor(29, 158, 117));
+                }
+                Err(e) => println!("{}", format!("failed ({e})").truecolor(231, 130, 132)),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        println!("\n  {} {}/{} clues generated.", "✓".truecolor(29, 158, 117), filled, missing.len());
+        return Ok(());
+    }
 
     print_header();
 
@@ -600,11 +629,11 @@ fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, lim
             existing_ids.insert(Db::node_id_static(&t.topic));
             println!("    {} {}", "+".truecolor(29, 158, 117), t.topic);
 
-            // Pre-generate question + ideal answer from diff context (silent on failure)
-            if let Ok((q, a)) = teacher.generate_question_and_answer(
+            // Pre-generate question + ideal answer + clue from diff context (silent on failure)
+            if let Ok((q, a, clue)) = teacher.generate_question_and_answer(
                 &t.topic, &t.description, &commit_msg, &diff, &project_summary,
             ) {
-                db.set_canonical_qa(&t.topic, &q, &a).ok();
+                db.set_canonical_qa(&t.topic, &q, &a, &clue).ok();
             }
 
             commit_new.push((t.topic.clone(), t.description.clone()));
@@ -1218,21 +1247,39 @@ fn run_socratic_loop(
                 break 'q n.canonical_question.clone();
             }
         }
-        teacher.generate_question(topic, &topic_info.description, task, known_topics, 1)?
+        teacher.generate_question(topic, &topic_info.description, task, known_topics, 1, Difficulty::Normal)?
     };
 
-    // Load canonical answer for use as evaluator reference
-    let canonical_answer: Option<String> = db.get_node(topic).ok()
+    // Track whether the initial question was canonical (pre-generated from diff)
+    let is_canonical = db.get_node(topic).ok()
         .flatten()
-        .and_then(|n| if n.canonical_answer.is_empty() { None } else { Some(n.canonical_answer) });
+        .map(|n| !n.canonical_question.is_empty() && n.canonical_question == question)
+        .unwrap_or(false);
+
+    // Load canonical answer and clue for use as evaluator reference and hint
+    let (canonical_answer, canonical_clue): (Option<String>, Option<String>) = db.get_node(topic).ok()
+        .flatten()
+        .map(|n| (
+            if n.canonical_answer.is_empty() { None } else { Some(n.canonical_answer) },
+            if n.canonical_clue.is_empty() { None } else { Some(n.canonical_clue) },
+        ))
+        .unwrap_or((None, None));
+
+    // Track current difficulty for adaptive re-generation
+    let mut current_difficulty = Difficulty::Normal;
 
     while questions_asked < MAX_QUESTIONS {
         questions_asked += 1;
         let display_q = p.format_question(&question);
-        println!("{} {display_q}", format!("Q{questions_asked}.").bold());
+        let source_label = if is_canonical && questions_asked == 1 && current_difficulty == Difficulty::Normal {
+            " (canonical)".dimmed().to_string()
+        } else {
+            " (generated)".dimmed().to_string()
+        };
+        println!("{}{} {display_q}", format!("Q{questions_asked}.").bold(), source_label);
         println!(
             "{}",
-            "   [e] too easy  [?] explain it  [i] not relevant  or type your answer:".dimmed()
+            "   [e] too easy  [s] simpler  [h] harder  [c] clue  [?] explain it  [i] not relevant  or type your answer:".dimmed()
         );
         print!("   > ");
         io::stdout().flush()?;
@@ -1260,6 +1307,43 @@ fn run_socratic_loop(
             if let Some(msg) = p.ignored() { println!("   {msg}"); }
             else { println!("{}", "   Ignored — not added to PKG.".dimmed()); }
             return Ok((false, false));
+        }
+
+        // Simpler — regenerate with reduced difficulty
+        if answer.eq_ignore_ascii_case("s") {
+            println!("{}", "   Generating a simpler question...".dimmed());
+            current_difficulty = Difficulty::Simpler;
+            question = teacher.generate_question(
+                topic, &topic_info.description, task, known_topics, questions_asked, Difficulty::Simpler,
+            ).unwrap_or(question);
+            questions_asked -= 1;
+            continue;
+        }
+
+        // Harder — regenerate with increased difficulty
+        if answer.eq_ignore_ascii_case("h") {
+            println!("{}", "   Generating a harder question...".dimmed());
+            current_difficulty = Difficulty::Harder;
+            question = teacher.generate_question(
+                topic, &topic_info.description, task, known_topics, questions_asked, Difficulty::Harder,
+            ).unwrap_or(question);
+            questions_asked -= 1;
+            continue;
+        }
+
+        // Clue — show precomputed clue or generate one at runtime
+        if answer.eq_ignore_ascii_case("c") {
+            if let Some(ref clue) = canonical_clue {
+                println!("\n   {}\n", format!("Clue: {clue}").truecolor(167, 139, 250));
+            } else {
+                println!("{}", "   Generating clue...".dimmed());
+                match teacher.generate_clue(topic, &topic_info.description, &question) {
+                    Ok(clue) => println!("\n   {}\n", format!("Clue: {clue}").truecolor(167, 139, 250)),
+                    Err(_) => println!("{}", "   Could not generate clue.".dimmed()),
+                }
+            }
+            questions_asked -= 1;
+            continue;
         }
 
         // Fire the cross-concept edge (if any) the first time the user gives a real answer

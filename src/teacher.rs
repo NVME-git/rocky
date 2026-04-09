@@ -7,6 +7,13 @@ use serde_json::{json, Value};
 
 use crate::node::Node;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Difficulty {
+    Simpler,
+    Normal,
+    Harder,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct GeneratedEdge {
     pub target: String,
@@ -169,8 +176,15 @@ Example output:
         context: &str,
         known_topics: &[String],
         question_num: u32,
+        difficulty: Difficulty,
     ) -> Result<String> {
-        let system = r#"You are a Socratic technical mentor. Your job is to generate ONE question
+        let difficulty_hint = match difficulty {
+            Difficulty::Normal => "".to_string(),
+            Difficulty::Simpler => "\nDifficulty adjustment: make the question SIMPLER — focus on the core mechanic or most basic consequence, avoiding edge cases. Suitable for someone just starting to understand this topic.".to_string(),
+            Difficulty::Harder => "\nDifficulty adjustment: make the question HARDER — push into edge cases, subtle failure modes, or interactions with other systems. Assume solid foundational understanding.".to_string(),
+        };
+
+        let system = format!(r#"You are a Socratic technical mentor. Your job is to generate ONE question
 that forces a developer to reason about the IMPLICATIONS and CONSEQUENCES of a technical topic,
 not just recall facts.
 
@@ -181,7 +195,7 @@ Rules:
 - Do NOT ask "what is X" or "define X" — assume basic awareness
 - The question should be specific to their task context
 - Keep it to 1-2 sentences
-- Return ONLY the question, no preamble"#;
+- Return ONLY the question, no preamble{difficulty_hint}"#);
 
         let known_str = if known_topics.is_empty() {
             "none yet".to_string()
@@ -193,6 +207,15 @@ Rules:
             "Topic: {topic}\nDescription: {description}\nTask context: {context}\nDeveloper's known topics: {known_str}\nQuestion number: {question_num} (vary difficulty/angle if > 1)"
         );
 
+        self.ask(&system, &user)
+    }
+
+    /// Generate a short clue at runtime (used for manually-added topics without canonical clue).
+    pub fn generate_clue(&self, topic: &str, description: &str, question: &str) -> Result<String> {
+        let system = "You are a Socratic technical mentor. The developer is stuck on a quiz question. \
+Give a SHORT clue (1-2 sentences) that nudges them in the right direction without giving away the answer. \
+Focus on the core concept or the most important thing to think about. Return ONLY the clue, no preamble.";
+        let user = format!("Topic: {topic}\nDescription: {description}\nQuestion: {question}");
         self.ask(system, &user)
     }
 
@@ -237,8 +260,8 @@ Return ONLY valid JSON:
         Ok(serde_json::from_str(cleaned)?)
     }
 
-    /// Pre-generate a question + ideal answer at topic creation time using full diff context.
-    /// Returns (question, ideal_answer). Fails silently — never blocks node insertion.
+    /// Pre-generate a question + ideal answer + clue at topic creation time using full diff context.
+    /// Returns (question, ideal_answer, clue). Fails silently — never blocks node insertion.
     pub fn generate_question_and_answer(
         &self,
         topic: &str,
@@ -246,7 +269,7 @@ Return ONLY valid JSON:
         commit_msg: &str,
         diff: &str,
         project_summary: &str,
-    ) -> Result<(String, String)> {
+    ) -> Result<(String, String, String)> {
         let system = r#"You are a Socratic technical mentor pre-generating a quiz question for a developer's personal knowledge graph.
 
 Generate ONE question that forces the developer to reason about the IMPLICATIONS and CONSEQUENCES of this topic — not just recall facts.
@@ -261,8 +284,11 @@ Rules:
 Also write an ideal answer: 3-5 sentences demonstrating genuine understanding of consequences and trade-offs,
 referencing the specific context from the diff.
 
+Also write a short clue (1-2 sentences) that nudges the developer in the right direction without giving away
+the answer — something they can ask for if they get stuck.
+
 Return ONLY valid JSON:
-{"question": "<the question>", "answer": "<ideal answer>"}"#;
+{"question": "<the question>", "answer": "<ideal answer>", "clue": "<short clue>"}"#;
 
         let diff_excerpt = if diff.len() > 2500 {
             let boundary = diff.char_indices()
@@ -283,10 +309,10 @@ Return ONLY valid JSON:
         let raw = self.ask(system, &user)?;
         let cleaned = strip_code_fence(&raw);
         #[derive(Deserialize)]
-        struct QA { question: String, answer: String }
+        struct QA { question: String, answer: String, clue: Option<String> }
         let qa: QA = serde_json::from_str(cleaned)
             .map_err(|e| anyhow!("QA parse failed: {e} — raw: {raw}"))?;
-        Ok((qa.question, qa.answer))
+        Ok((qa.question, qa.answer, qa.clue.unwrap_or_default()))
     }
 
     /// Summarise a README into 2-3 sentences for use as project context.
