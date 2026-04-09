@@ -1968,7 +1968,8 @@ fn run_export(db: &Db, cfg: &Config) -> Result<()> {
         );
         return Ok(());
     }
-    let count = obsidian::write_all(&nodes, &cfg.pkg_dir)?;
+    let edges = db.get_all_edges().unwrap_or_default();
+    let count = obsidian::write_all(&nodes, &edges, &cfg.pkg_dir)?;
     println!(
         "  {} Exported {count} topic{} + dashboard to {}",
         "✓".truecolor(29, 158, 117),
@@ -2278,7 +2279,8 @@ fn run_sync(db: &Db, cfg: &Config, init: Option<Option<String>>, push: bool, sta
 
     // Write pkg.json then commit
     let nodes = db.all_nodes()?;
-    obsidian::write_all(&nodes, &cfg.pkg_dir)?;
+    let edges = db.get_all_edges().unwrap_or_default();
+    obsidian::write_all(&nodes, &edges, &cfg.pkg_dir)?;
     db.export_pkg_json(&cfg.pkg_dir.join("pkg.json"))?;
 
     let msg = build_commit_message(db);
@@ -2372,7 +2374,8 @@ fn auto_sync(db: &Db, cfg: &Config) {
     if !sync::is_git_repo(&cfg.rocky_dir) { return; }
 
     let nodes = match db.all_nodes() { Ok(n) => n, Err(_) => return };
-    obsidian::write_all(&nodes, &cfg.pkg_dir).ok();
+    let edges = db.get_all_edges().unwrap_or_default();
+    obsidian::write_all(&nodes, &edges, &cfg.pkg_dir).ok();
     db.export_pkg_json(&cfg.pkg_dir.join("pkg.json")).ok();
 
     let msg = build_commit_message(db);
