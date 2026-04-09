@@ -260,6 +260,25 @@ def build_stage_json(all_nodes, all_edges, topic_ids):
         if src in visible_ids and tgt in visible_ids:
             edges_json.append(e)
 
+    # Add synthetic topic→domain edges (mirrors DB edges created by rocky when topics are added)
+    for tid in topic_ids:
+        if tid not in all_nodes:
+            continue
+        domain = all_nodes[tid]["domain"]
+        if not domain:
+            continue
+        did = domain.lower()
+        if did not in visible_ids:
+            continue
+        edges_json.append({
+            "id": f"{tid}-{did}-part_of",
+            "source": tid,
+            "target": did,
+            "kind": "part_of",
+            "description": f"{all_nodes[tid]['topic']} is a topic within the {domain} domain.",
+            "strength": 1.0,
+        })
+
     # Add synthetic domain→user edges
     for domain in active_domains:
         did = domain.lower()
