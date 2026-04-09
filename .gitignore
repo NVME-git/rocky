@@ -11,3 +11,12 @@ docs/pubspec.lock
 docs/web/graphs/
 .rocky
 .rocky-project
+
+# VS Code extension
+extensions/vscode/out/
+extensions/vscode/node_modules/
+extensions/vscode/*.vsix
+
+# Browser extension
+extensions/browser/node_modules/
+extensions/browser/dist/

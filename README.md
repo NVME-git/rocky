@@ -780,6 +780,24 @@ This writes the hook entry to `~/.claude/settings.json` automatically. Remove it
 
 ---
 
+## Extensions
+
+Rocky includes extensions for VS Code and the browser, located in the [`extensions/`](extensions/) directory.
+
+### VS Code Extension
+
+View and explore your personal knowledge graph directly in VS Code — browse topics by domain, see retrievability stats, and visualise the interactive knowledge graph.
+
+→ **[VS Code Extension documentation](extensions/vscode/README.md)**
+
+### Browser Extension
+
+Add content to your knowledge graph while browsing. Capture YouTube videos, articles, and other resources and link them to PKG topics.
+
+→ **[Browser Extension documentation](extensions/browser/README.md)**
+
+---
+
 ## License
 
 MIT
