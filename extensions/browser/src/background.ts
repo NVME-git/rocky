@@ -54,7 +54,7 @@ async function handleAddResource(message: {
   // For now, store the resource locally for later sync.
   const data = await chrome.storage.local.get("pendingResources");
   const pending: Array<{ url: string; title: string; topics: string[]; addedAt: string }> =
-    data.pendingResources ?? [];
+    (data["pendingResources"] as Array<{ url: string; title: string; topics: string[]; addedAt: string }>) ?? [];
 
   pending.push({
     url: message.url,

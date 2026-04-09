@@ -26,7 +26,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Load topics from storage (synced from Rocky)
   const data = await chrome.storage.local.get("rockyTopics");
-  const topics: string[] = data.rockyTopics ?? [];
+  const topics: string[] = (data["rockyTopics"] as string[]) ?? [];
 
   function renderTopics(filter: string): void {
     const filtered = filter
