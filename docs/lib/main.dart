@@ -121,6 +121,8 @@ final List<DocSection> kSections = [
   const DocSection('Obsidian', Icons.hub, kObsidian),
   const DocSection('Sync & Backup', Icons.sync, kSync),
   const DocSection('Demo Usecase', Icons.timeline, kWalkthrough),
+  const DocSection('Roadmap', Icons.map_outlined, kRoadmap),
+  const DocSection('References', Icons.menu_book_outlined, kReferences),
 ];
 
 // ---------------------------------------------------------------------------
