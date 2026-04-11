@@ -143,11 +143,10 @@ svg#graph { width: 100%; height: 100%; }
 .review-score.gap   { background: rgba(226,75,74,0.15);   color: #E24B4A; }
 
 /* ── graph elements ── */
-.link { stroke-opacity: 0.6; transition: stroke-opacity 0.25s; }
+/* Removed CSS transitions on tick-driven elements to avoid costly repaint storms */
+.link { stroke-opacity: 0.6; }
 .link.dimmed { stroke-opacity: 0.05; }
-.node circle { cursor: pointer; transition: opacity 0.35s; }
-.node text   { transition: opacity 0.35s; }
-.node circle:hover { stroke: #F59E0B !important; stroke-width: 2px; }
+.node circle { cursor: pointer; }
 .node.selected circle { stroke: #F59E0B !important; stroke-width: 2.5px; }
 .node.dimmed circle { opacity: 0.18; }
 .node.dimmed text   { opacity: 0.12; }
@@ -282,14 +281,21 @@ function nodeStrokeWidth(d) {
 // ── stats ───────────────────────────────────────────────────────────────────
 const nodes = PKG.nodes;
 const edges = PKG.edges;
+
+// Pre-cache radius on every node so tick/positionLine never recompute it.
+nodes.forEach(n => { n._r = nodeRadius(n); });
+
+// Fast O(1) node lookup — hoisted here so forceLink distance can use it.
+const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
+
 const topicNodes = nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
 document.getElementById('s-total').textContent = topicNodes.length;
 document.getElementById('s-known').textContent = topicNodes.filter(n => n.classification === 'known').length;
 document.getElementById('s-fading').textContent = topicNodes.filter(n => n.classification === 'stale').length;
 document.getElementById('s-gap').textContent = topicNodes.filter(n => n.classification === 'gap').length;
 document.getElementById('s-edges').textContent = edges.filter(e => {
-  const s = nodes.find(n => n.id === (typeof e.source === 'object' ? e.source.id : e.source));
-  const t = nodes.find(n => n.id === (typeof e.target === 'object' ? e.target.id : e.target));
+  const s = nodeById[typeof e.source === 'object' ? e.source.id : e.source];
+  const t = nodeById[typeof e.target === 'object' ? e.target.id : e.target];
   return s && t && s.kind !== 'domain' && s.kind !== 'user' && t.kind !== 'domain' && t.kind !== 'user';
 }).length;
 
@@ -392,9 +398,13 @@ function updateSummaryBar(repo) {
 
 // ── search ──────────────────────────────────────────────────────────────────
 let searchTerm = '';
+let _searchTimer = null;
 document.getElementById('search').addEventListener('input', e => {
-  searchTerm = e.target.value.toLowerCase().trim();
-  applyFilters();
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => {
+    searchTerm = e.target.value.toLowerCase().trim();
+    applyFilters();
+  }, 120);
 });
 
 function applyFilters() {
@@ -410,19 +420,33 @@ function applyFilters() {
     ...visibleTopics.map(n => n.id),
   ]);
 
+  // Mark each node with its current visibility so the tick handler can skip
+  // position updates for nodes hidden from view.
+  nodes.forEach(n => { n._visible = visible.has(n.id); });
+
   nodeGroup.selectAll('.node').each(function(d) {
     const show = visible.has(d.id);
     const isStructural = d.kind === 'domain' || d.kind === 'user';
-    d3.select(this).classed('dimmed', !show).classed('highlighted', show && !!searchTerm && !isStructural);
+    const el = d3.select(this);
+    el.classed('dimmed', !show)
+      .classed('highlighted', show && !!searchTerm && !isStructural)
+      // Use display:none for filtered-out topic nodes so the browser skips
+      // paint entirely instead of rendering them at near-zero opacity.
+      .attr('display', (!show && !isStructural) ? 'none' : null);
   });
 
-  linkGroup.selectAll('.link').each(function(d) {
+  linkGroup.selectAll('.link, .link-hit').each(function(d) {
     const s = typeof d.source === 'object' ? d.source.id : d.source;
     const t = typeof d.target === 'object' ? d.target.id : d.target;
     const dimmed = !visible.has(s) || !visible.has(t);
-    d3.select(this)
-      .classed('dimmed', dimmed)
-      .attr('marker-end', dimmed ? null : `url(#arrow-${d.kind})`);
+    // Propagate visibility onto the datum so renderTick can skip hidden edges.
+    d._visible = !dimmed;
+    const el = d3.select(this);
+    if (el.classed('link')) {
+      el.classed('dimmed', dimmed)
+        .attr('marker-end', dimmed ? null : `url(#arrow-${d.kind})`);
+    }
+    el.attr('display', dimmed ? 'none' : null);
   });
 
   // ── taxonomy panel ──────────────────────────────────────────────────────
@@ -474,7 +498,7 @@ const container = document.getElementById('graph-container');
 const W = () => container.clientWidth;
 const H = () => container.clientHeight;
 
-const g = svg.append('g');
+const g = svg.append('g').attr('class', 'graph-root');
 svg.call(d3.zoom().scaleExtent([0.2, 4]).on('zoom', e => g.attr('transform', e.transform)));
 
 const defs = svg.append('defs');
@@ -517,17 +541,21 @@ function chargeFor(d) {
 }
 
 const simulation = d3.forceSimulation(nodes)
+  // Settle ~2× faster than D3's default alphaDecay (0.0228) so large graphs
+  // stop ticking sooner after load and after user interactions.
+  .alphaDecay(0.04)
   .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
-    const s = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
-    const t = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
+    // Use pre-built lookup object for O(1) access instead of O(n) Array.find.
+    const s = typeof d.source === 'object' ? d.source : nodeById[d.source];
+    const t = typeof d.target === 'object' ? d.target : nodeById[d.target];
     if (t && t.kind === 'user') return 140;
     if (s && s.kind === 'domain') return 100;
     return 90 + (1 - d.strength) * 50;
   }))
   .force('charge', d3.forceManyBody().strength(chargeFor))
   .force('center', d3.forceCenter(W() / 2, H() / 2))
-  // collision radius includes the text label height below the node
-  .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 22));
+  // Use cached _r instead of recomputing nodeRadius each time.
+  .force('collision', d3.forceCollide().radius(d => d._r + 22));
 
 document.getElementById('spread-slider').addEventListener('input', function() {
   spreadMult = 0.5 + (this.value - 1) * (2.5 / 9);
@@ -544,7 +572,7 @@ const node = nodeGroup.selectAll('.node')
   .on('click', (e, d) => { e.stopPropagation(); selectNode(d); });
 
 node.append('circle')
-  .attr('r', d => nodeRadius(d))
+  .attr('r', d => d._r)
   .attr('fill', d => nodeColor(d))
   .attr('stroke', d => nodeStroke(d))
   .attr('stroke-width', d => nodeStrokeWidth(d));
@@ -577,29 +605,54 @@ node.append('text')
       el.attr('dy', '0').style('dominant-baseline', 'central')
         .text(t.length > 9 ? t.slice(0, 8) + '…' : t);
     } else {
-      el.attr('dy', nodeRadius(d) + 14)
+      el.attr('dy', d._r + 14)
         .text(d.topic.length > 22 ? d.topic.slice(0, 20) + '…' : d.topic);
     }
   });
 
+// rAF-throttled tick handler: coalesce multiple physics steps into a single
+// DOM write per animation frame, and skip nodes/edges hidden by filters.
+let _rafPending = false;
 simulation.on('tick', () => {
-  function positionLine(sel) {
-    sel.each(function(d) {
-      const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
-      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-      const srcR = nodeRadius(d.source) + 4;
-      const tgtR = nodeRadius(d.target) + 10;
-      d3.select(this)
-        .attr('x1', d.source.x + dx/dist * srcR)
-        .attr('y1', d.source.y + dy/dist * srcR)
-        .attr('x2', d.target.x - dx/dist * tgtR)
-        .attr('y2', d.target.y - dy/dist * tgtR);
-    });
-  }
-  positionLine(link);
-  positionLine(linkHit);
-  node.attr('transform', d => `translate(${d.x},${d.y})`);
+  if (_rafPending) return;
+  _rafPending = true;
+  requestAnimationFrame(() => {
+    _rafPending = false;
+    renderTick();
+  });
 });
+
+function renderTick() {
+  link.each(function(d) {
+    if (d._visible === false) return; // skip hidden edges
+    const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const srcR = d.source._r + 4;
+    const tgtR = d.target._r + 10;
+    const el = this;
+    el.setAttribute('x1', d.source.x + dx / dist * srcR);
+    el.setAttribute('y1', d.source.y + dy / dist * srcR);
+    el.setAttribute('x2', d.target.x - dx / dist * tgtR);
+    el.setAttribute('y2', d.target.y - dy / dist * tgtR);
+  });
+  linkHit.each(function(d) {
+    if (d._visible === false) return;
+    const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const srcR = d.source._r + 4;
+    const tgtR = d.target._r + 10;
+    const el = this;
+    el.setAttribute('x1', d.source.x + dx / dist * srcR);
+    el.setAttribute('y1', d.source.y + dy / dist * srcR);
+    el.setAttribute('x2', d.target.x - dx / dist * tgtR);
+    el.setAttribute('y2', d.target.y - dy / dist * tgtR);
+  });
+  // Only update transform for nodes currently visible to skip paint work.
+  node.each(function(d) {
+    if (d._visible === false) return;
+    this.setAttribute('transform', `translate(${d.x},${d.y})`);
+  });
+}
 
 svg.on('click', () => closePanel());
 window.addEventListener('resize', () => {
@@ -615,7 +668,7 @@ edges.forEach(e => {
   if (edgeIndex[s]) edgeIndex[s].push({ ...e, peer: t });
   if (edgeIndex[t]) edgeIndex[t].push({ ...e, peer: s });
 });
-const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
+// nodeById is declared near the top of the script block.
 
 function selectNode(d) {
   link.classed('selected-edge', false);
