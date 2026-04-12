@@ -147,6 +147,7 @@ svg#graph { width: 100%; height: 100%; }
 .link { stroke-opacity: 0.6; }
 .link.dimmed { stroke-opacity: 0.05; }
 .node circle { cursor: pointer; }
+.node circle:hover { stroke: #F59E0B !important; stroke-width: 2px; }
 .node.selected circle { stroke: #F59E0B !important; stroke-width: 2.5px; }
 .node.dimmed circle { opacity: 0.18; }
 .node.dimmed text   { opacity: 0.12; }
@@ -283,7 +284,7 @@ const nodes = PKG.nodes;
 const edges = PKG.edges;
 
 // Pre-cache radius on every node so tick/positionLine never recompute it.
-nodes.forEach(n => { n._r = nodeRadius(n); });
+nodes.forEach(n => { n._r = nodeRadius(n); n._visible = true; });
 
 // Fast O(1) node lookup — hoisted here so forceLink distance can use it.
 const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
@@ -664,7 +665,6 @@ edges.forEach(e => {
   if (edgeIndex[s]) edgeIndex[s].push({ ...e, peer: t });
   if (edgeIndex[t]) edgeIndex[t].push({ ...e, peer: s });
 });
-// nodeById is declared near the top of the script block.
 
 function selectNode(d) {
   link.classed('selected-edge', false);
