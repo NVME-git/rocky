@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rocky — Knowledge Graph</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.3/pixi.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -52,7 +53,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 /* ── main ── */
 #main { display: flex; flex: 1; overflow: hidden; }
 #graph-container { flex: 1; position: relative; overflow: hidden; }
-svg#graph { width: 100%; height: 100%; }
+#graph-container canvas { display: block; }
 
 /* ── taxonomy panel (left) ── */
 #tax-panel { width: 220px; background: #070B14; border-right: 1px solid #1E293B;
@@ -117,7 +118,6 @@ svg#graph { width: 100%; height: 100%; }
 .edge-kind.conflicts_with { background: rgba(226,75,74,0.15); color: #E24B4A; }
 .edge-kind.part_of        { background: rgba(29,158,117,0.15); color: #1D9E75; }
 .edge-peer { color: #CBD5E1; }
-.link.selected-edge { stroke-width: 3px !important; opacity: 1 !important; }
 .edge-desc { font-size: 11px; color: #64748B; margin-top: 4px; line-height: 1.45; }
 /* edge panel view */
 .panel-edge-nodes { display: flex; align-items: center; gap: 8px;
@@ -142,23 +142,14 @@ svg#graph { width: 100%; height: 100%; }
 .review-score.stale { background: rgba(239,159,39,0.15);  color: #EF9F27; }
 .review-score.gap   { background: rgba(226,75,74,0.15);   color: #E24B4A; }
 
-/* ── graph elements ── */
-/* Removed CSS transitions on tick-driven elements to avoid costly repaint storms */
-.link { stroke-opacity: 0.6; }
-.link.dimmed { stroke-opacity: 0.05; }
-.node circle { cursor: pointer; }
-.node circle:hover { stroke: #F59E0B !important; stroke-width: 2px; }
-.node.selected circle { stroke: #F59E0B !important; stroke-width: 2.5px; }
-.node.dimmed circle { opacity: 0.18; }
-.node.dimmed text   { opacity: 0.12; }
-.node.highlighted circle { stroke: #F59E0B; stroke-width: 2px; }
-.node text { pointer-events: none; font-size: 13px; fill: #CBD5E1; text-anchor: middle; }
-
+/* ── legend ── */
 .legend { position: absolute; bottom: 16px; left: 16px; background: rgba(7,11,20,0.85);
-          border: 1px solid #1E293B; border-radius: 6px; padding: 10px 14px; }
+          border: 1px solid #1E293B; border-radius: 6px; padding: 10px 14px;
+          pointer-events: none; z-index: 10; }
 .legend-title { font-size: 10px; color: #64748B; margin-bottom: 6px; text-transform: uppercase; }
 .legend-row { display: flex; align-items: center; gap: 8px; font-size: 11px;
               color: #94A3B8; margin-bottom: 4px; }
+.legend-swatch { display: inline-block; width: 22px; height: 3px; border-radius: 1px; }
 </style>
 </head>
 <body>
@@ -199,25 +190,17 @@ svg#graph { width: 100%; height: 100%; }
     <div id="tax-inner"></div>
   </div>
   <div id="graph-container">
-    <svg id="graph"></svg>
+    <!-- PixiJS canvas injected by script -->
     <div class="legend">
       <div class="legend-title">Edge types</div>
-      <div class="legend-row">
-        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#06B6D4" stroke-width="1.5"/></svg>implies
-      </div>
-      <div class="legend-row">
-        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="6,3"/></svg>depends on
-      </div>
-      <div class="legend-row">
-        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="2,4"/></svg>part of
-      </div>
-      <div class="legend-row">
-        <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#E24B4A" stroke-width="1.5" stroke-dasharray="2,2"/></svg>conflicts
-      </div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#06B6D4"></span>implies</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#F59E0B"></span>depends on</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#1D9E75"></span>part of</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#E24B4A"></span>conflicts</div>
     </div>
   </div>
   <div id="panel">
-    <button id="panel-close">✕</button>
+    <button id="panel-close">&#10005;</button>
     <div id="panel-inner">
       <!-- node view -->
       <div id="panel-node-view">
@@ -257,36 +240,61 @@ svg#graph { width: 100%; height: 100%; }
 <script>
 const PKG = __DATA_JSON__;
 
-// ── colour helpers ──────────────────────────────────────────────────────────
-function nodeColor(d) {
-  if (d.kind === 'user')   return '#F59E0B';
-  if (d.kind === 'domain') return '#1E293B';
-  const r = d.retrievability;
-  if (r >= 0.7) return d3.interpolateRgb('#EF9F27', '#1D9E75')((r - 0.7) / 0.3);
-  return d3.interpolateRgb('#E24B4A', '#EF9F27')(r / 0.7);
+// ═══════════════════��═══════════════════════════════════════════════════════════
+// DATA & HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function lerpColor(a, b, t) {
+  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+  return ((Math.round(ar + (br - ar) * t) << 16) |
+          (Math.round(ag + (bg - ag) * t) << 8) |
+           Math.round(ab + (bb - ab) * t));
 }
+
+function nodeColorHex(d) {
+  if (d.kind === 'user')   return 0xF59E0B;
+  if (d.kind === 'domain') return 0x1E293B;
+  const r = d.retrievability;
+  if (r >= 0.7) return lerpColor(0xEF9F27, 0x1D9E75, (r - 0.7) / 0.3);
+  return lerpColor(0xE24B4A, 0xEF9F27, r / 0.7);
+}
+
+function nodeColorCSS(d) {
+  const hex = nodeColorHex(d).toString(16).padStart(6, '0');
+  return '#' + hex;
+}
+
 function nodeRadius(d) {
   if (d.kind === 'user')   return 28;
   if (d.kind === 'domain') return 18;
   return Math.max(6, Math.min(22, 6 + d.stability * 1.2));
 }
-function nodeStroke(d) {
-  if (d.kind === 'user')   return '#F59E0B';
-  if (d.kind === 'domain') return '#475569';
-  return '#0A0E1A';
+
+function nodeStrokeHex(d) {
+  if (d.kind === 'user')   return 0xF59E0B;
+  if (d.kind === 'domain') return 0x475569;
+  return 0x0A0E1A;
 }
+
 function nodeStrokeWidth(d) {
   return (d.kind === 'user' || d.kind === 'domain') ? 2 : 1.5;
 }
 
-// ── stats ───────────────────────────────────────────────────────────────────
+const edgeColorMap = {
+  implies: 0x06B6D4, depends_on: 0xF59E0B,
+  conflicts_with: 0xE24B4A, part_of: 0x1D9E75,
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATA INIT & STATS
+// ═════════════════════════════════════════════��═════════════════════════════════
+
 const nodes = PKG.nodes;
 const edges = PKG.edges;
 
-// Pre-cache radius on every node so tick/positionLine never recompute it.
-nodes.forEach(n => { n._r = nodeRadius(n); n._visible = true; });
+nodes.forEach(n => { n._r = nodeRadius(n); n._visible = true; n._colorHex = nodeColorHex(n); });
 
-// Fast O(1) node lookup — hoisted here so forceLink distance can use it.
 const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
 
 const topicNodes = nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
@@ -300,10 +308,16 @@ document.getElementById('s-edges').textContent = edges.filter(e => {
   return s && t && s.kind !== 'domain' && s.kind !== 'user' && t.kind !== 'domain' && t.kind !== 'user';
 }).length;
 
-// ── domain filter ───────────────────────────────────────────────────────────
-const domains = [...new Set(topicNodes.map(n => n.domain || 'Other'))].sort();
+// ═══════════════════════════════════════════════════════════════════════════════
+// DOMAIN FILTER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const TAXONOMY = ['Language','Database','Auth','API','Frontend','DevOps','Architecture','Performance','Security','Testing','Tooling','Data','Other'];
+const taxonomySet = new Set(TAXONOMY);
+topicNodes.forEach(n => { if (!n.domain || !taxonomySet.has(n.domain)) n.domain = 'Other'; });
+const domains = TAXONOMY.filter(d => topicNodes.some(n => n.domain === d));
 let activeDomains = new Set(domains);
-let scrubberCutoff = null; // null = show all
+let scrubberCutoff = null;
 
 const filterEl = document.getElementById('domain-filters');
 const allBtn = document.createElement('button');
@@ -312,7 +326,6 @@ allBtn.textContent = 'All';
 allBtn.onclick = () => {
   const allActive = activeDomains.size === domains.length;
   if (allActive) {
-    // Deselect all — user can then click individual domains
     activeDomains = new Set();
     document.querySelectorAll('.domain-btn:not(.all-btn)').forEach(b => b.classList.remove('active'));
     allBtn.classList.remove('active');
@@ -331,7 +344,6 @@ domains.forEach(d => {
   btn.onclick = () => {
     const wasAllActive = activeDomains.size === domains.length;
     if (wasAllActive) {
-      // Exclusive select: deselect all, activate only this one
       activeDomains = new Set([d]);
       document.querySelectorAll('.domain-btn:not(.all-btn)').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -346,7 +358,10 @@ domains.forEach(d => {
   filterEl.appendChild(btn);
 });
 
-// ── repo filter ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// REPO FILTER
+// ═══════════════════════════════════════════════════════════════════════════════
+
 const summaries = PKG.summaries || {};
 const repos = [...new Set(topicNodes.map(n => n.repo).filter(Boolean))].sort();
 let activeRepos = new Set(repos);
@@ -397,7 +412,10 @@ function updateSummaryBar(repo) {
   }
 }
 
-// ── search ──────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// SEARCH
+// ═══════════════════════════════════════════════════════════════════════════════
+
 let searchTerm = '';
 let _searchTimer = null;
 document.getElementById('search').addEventListener('input', e => {
@@ -408,8 +426,480 @@ document.getElementById('search').addEventListener('input', e => {
   }, 120);
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PIXI.JS SETUP
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const container = document.getElementById('graph-container');
+const app = new PIXI.Application({
+  background: 0x0A0E1A,
+  resizeTo: container,
+  antialias: true,
+  resolution: window.devicePixelRatio || 1,
+  autoDensity: true,
+});
+container.insertBefore(app.view, container.firstChild);
+
+// World container — zoom/pan transform applied here
+const world = new PIXI.Container();
+app.stage.addChild(world);
+
+// Layers
+const edgeGfx = new PIXI.Graphics();
+world.addChild(edgeGfx);
+const nodeLayer = new PIXI.Container();
+world.addChild(nodeLayer);
+const labelLayer = new PIXI.Container();
+world.addChild(labelLayer);
+const highlightGfx = new PIXI.Graphics();
+world.addChild(highlightGfx);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CREATE NODE GRAPHICS & LABELS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const nodeGfxMap = new Map();
+const labelMap = new Map();
+
+nodes.forEach(n => {
+  // Circle
+  const g = new PIXI.Graphics();
+  g.lineStyle(nodeStrokeWidth(n), nodeStrokeHex(n));
+  g.beginFill(n._colorHex);
+  g.drawCircle(0, 0, n._r);
+  g.endFill();
+  nodeLayer.addChild(g);
+  nodeGfxMap.set(n.id, g);
+
+  // Label
+  const fontSize = n.kind === 'user' ? 13 : n.kind === 'domain' ? 11 : 12;
+  const fontWeight = (n.kind === 'user' || n.kind === 'domain') ? 'bold' : 'normal';
+  const fillColor = n.kind === 'user' ? 0x0A0E1A : n.kind === 'domain' ? 0xF1F5F9 : 0xCBD5E1;
+  const truncLen = n.kind === 'domain' ? 9 : 22;
+  const displayText = n.topic.length > truncLen ? n.topic.slice(0, truncLen - 2) + '…' : n.topic;
+
+  const label = new PIXI.Text(displayText, {
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    fill: fillColor,
+    align: 'center',
+  });
+  label.resolution = 2;
+  label.anchor.set(0.5, 0);
+
+  if (n.kind === 'user' || n.kind === 'domain') {
+    label.anchor.set(0.5, 0.5);
+    label.position.set(0, 0);
+  } else {
+    label.position.set(0, n._r + 6);
+  }
+  label.visible = false;
+  labelLayer.addChild(label);
+  labelMap.set(n.id, label);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FORCE SIMULATION (D3)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let spreadMult = 1.0;
+function chargeFor(d) {
+  const base = d.kind === 'user' ? -500 : d.kind === 'domain' ? -300 : -200;
+  return base * spreadMult;
+}
+
+const simulation = d3.forceSimulation(nodes)
+  .alphaDecay(0.04)
+  .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
+    const s = typeof d.source === 'object' ? d.source : nodeById[d.source];
+    const t = typeof d.target === 'object' ? d.target : nodeById[d.target];
+    if (t && t.kind === 'user') return 140;
+    if (s && s.kind === 'domain') return 100;
+    return 90 + (1 - d.strength) * 50;
+  }))
+  .force('charge', d3.forceManyBody().strength(chargeFor))
+  .force('center', d3.forceCenter(0, 0))
+  .force('collision', d3.forceCollide().radius(d => d._r + 22));
+
+document.getElementById('spread-slider').addEventListener('input', function() {
+  spreadMult = 0.5 + (this.value - 1) * (2.5 / 9);
+  simulation.force('charge', d3.forceManyBody().strength(chargeFor));
+  simulation.alpha(0.4).restart();
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LOD SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let currentLod = -1;
+let currentScale = 1;
+
+function checkLod(k) {
+  currentScale = k;
+  const newLod = k < 0.45 ? 0 : k < 1.0 ? 1 : 2;
+  if (newLod !== currentLod) {
+    currentLod = newLod;
+    applyLod();
+  }
+  // Smooth label alpha within L1 range
+  if (newLod === 1) {
+    const alpha = Math.min(1, (k - 0.45) / 0.55);
+    nodes.forEach(n => {
+      if (n.kind !== 'domain' && n.kind !== 'user') {
+        const lbl = labelMap.get(n.id);
+        if (lbl) lbl.alpha = alpha;
+      }
+    });
+  }
+  dirty = true;
+}
+
+function applyLod() {
+  nodes.forEach(n => {
+    const lbl = labelMap.get(n.id);
+    if (!lbl) return;
+
+    if (n.kind === 'domain' || n.kind === 'user') {
+      // Structural labels: visible at L1+
+      lbl.visible = n._visible && currentLod >= 1;
+      lbl.alpha = 1;
+    } else {
+      // Topic labels: fade in during L1, full at L2
+      lbl.visible = n._visible && currentLod >= 1;
+      if (currentLod === 1) {
+        lbl.alpha = Math.min(1, (currentScale - 0.45) / 0.55);
+      } else {
+        lbl.alpha = 1;
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RENDER LOOP
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let dirty = true;
+let hoveredNode = null;
+let hoverConnectedIds = new Set();
+let selectedNodeId = null;
+let selectedEdgeId = null;
+
+function setHoveredNode(n) {
+  if (hoveredNode === n) return;
+  hoveredNode = n;
+  hoverConnectedIds.clear();
+  if (n) {
+    hoverConnectedIds.add(n.id);
+    edges.forEach(e => {
+      const sid = typeof e.source === 'object' ? e.source.id : e.source;
+      const tid = typeof e.target === 'object' ? e.target.id : e.target;
+      if (sid === n.id) hoverConnectedIds.add(tid);
+      if (tid === n.id) hoverConnectedIds.add(sid);
+    });
+  }
+  dirty = true;
+}
+
+function drawEdges() {
+  edgeGfx.clear();
+  const k = currentScale;
+  // LOD-based base alpha
+  const baseAlpha = k < 0.3 ? 0.04 : k < 0.6 ? 0.04 + (k - 0.3) * 1.2 : k < 1.0 ? 0.4 : 0.6;
+
+  edges.forEach(e => {
+    if (e._visible === false) return;
+    const s = e.source, t = e.target;
+    if (s.x == null || t.x == null) return;
+
+    const color = edgeColorMap[e.kind] || 0x06B6D4;
+    let alpha = baseAlpha * Math.max(0.4, e.strength);
+    let width = k < 0.5 ? 0.5 : Math.max(0.8, e.strength * 2.5);
+
+    // Hover: highlight connected edges, dim rest
+    if (hoveredNode) {
+      const sid = typeof s === 'object' ? s.id : s;
+      const tid = typeof t === 'object' ? t.id : t;
+      if (sid === hoveredNode.id || tid === hoveredNode.id) {
+        alpha = 0.9;
+        width = Math.max(2, e.strength * 3);
+      } else {
+        alpha *= 0.12;
+      }
+    }
+
+    // Selected edge highlight
+    if (selectedEdgeId && e.id === selectedEdgeId) {
+      alpha = 1;
+      width = 3;
+    }
+
+    edgeGfx.lineStyle(width, color, alpha);
+    edgeGfx.moveTo(s.x, s.y);
+    edgeGfx.lineTo(t.x, t.y);
+
+    // Arrowheads at L2
+    if (currentLod >= 2 && width >= 1) {
+      const dx = t.x - s.x, dy = t.y - s.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const ux = dx / dist, uy = dy / dist;
+      const tipX = t.x - ux * (t._r + 6);
+      const tipY = t.y - uy * (t._r + 6);
+      const sz = 5;
+      edgeGfx.beginFill(color, alpha);
+      edgeGfx.drawPolygon([
+        tipX, tipY,
+        tipX - ux * sz - uy * sz * 0.5, tipY - uy * sz + ux * sz * 0.5,
+        tipX - ux * sz + uy * sz * 0.5, tipY - uy * sz - ux * sz * 0.5,
+      ]);
+      edgeGfx.endFill();
+    }
+  });
+}
+
+function updateNodePositions() {
+  const isHovering = !!hoveredNode;
+  nodes.forEach(n => {
+    const g = nodeGfxMap.get(n.id);
+    const lbl = labelMap.get(n.id);
+    if (!g) return;
+
+    if (!n._visible) {
+      g.visible = false;
+      if (lbl) lbl.visible = false;
+      return;
+    }
+
+    g.visible = true;
+    g.position.set(n.x, n.y);
+
+    if (lbl) {
+      if (n.kind === 'user' || n.kind === 'domain') {
+        lbl.position.set(n.x, n.y);
+      } else {
+        lbl.position.set(n.x, n.y + n._r + 6);
+      }
+    }
+
+    // Hover dimming
+    if (isHovering) {
+      const connected = hoverConnectedIds.has(n.id);
+      g.alpha = connected ? 1 : 0.15;
+      if (lbl && lbl.visible) lbl.alpha = connected ? lbl.alpha : 0.08;
+    } else {
+      g.alpha = 1;
+    }
+  });
+}
+
+function drawHighlights() {
+  highlightGfx.clear();
+
+  // Hover ring
+  if (hoveredNode && hoveredNode._visible) {
+    highlightGfx.lineStyle(2.5, 0xF59E0B, 1);
+    highlightGfx.drawCircle(hoveredNode.x, hoveredNode.y, hoveredNode._r + 2);
+  }
+
+  // Selection ring
+  if (selectedNodeId) {
+    const sn = nodeById[selectedNodeId];
+    if (sn && sn._visible) {
+      highlightGfx.lineStyle(2.5, 0xF59E0B, 0.8);
+      highlightGfx.drawCircle(sn.x, sn.y, sn._r + 3);
+    }
+  }
+}
+
+function render() {
+  drawEdges();
+  updateNodePositions();
+  drawHighlights();
+}
+
+// Main render loop — only draws when dirty
+app.ticker.add(() => {
+  if (!dirty) return;
+  dirty = false;
+  render();
+});
+
+// Simulation ticks → mark dirty
+simulation.on('tick', () => { dirty = true; });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ZOOM & PAN (D3 zoom on canvas)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let currentTransform = d3.zoomIdentity;
+
+const zoomBehavior = d3.zoom()
+  .scaleExtent([0.08, 5])
+  .on('zoom', ({ transform }) => {
+    currentTransform = transform;
+    world.position.set(transform.x, transform.y);
+    world.scale.set(transform.k);
+    checkLod(transform.k);
+    dirty = true;
+  });
+
+// Start with the viewport centered so the simulation forms in the middle of screen
+const initTx = container.clientWidth / 2;
+const initTy = container.clientHeight / 2;
+currentTransform = d3.zoomIdentity.translate(initTx, initTy);
+world.position.set(initTx, initTy);
+d3.select(app.view).call(zoomBehavior).call(zoomBehavior.transform, currentTransform);
+checkLod(1);
+
+// ═════════════════════════════════════════��═════════════════════════════════════
+// HIT TESTING
+// ══════════════════════════════════════════════���════════════════════════════════
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - currentTransform.x) / currentTransform.k,
+    y: (sy - currentTransform.y) / currentTransform.k,
+  };
+}
+
+function hitTestNode(wx, wy) {
+  let closest = null, minDist = Infinity;
+  for (const n of nodes) {
+    if (!n._visible || n.x == null) continue;
+    const dx = wx - n.x, dy = wy - n.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const hitR = n._r + 4;
+    if (dist < hitR && dist < minDist) {
+      minDist = dist;
+      closest = n;
+    }
+  }
+  return closest;
+}
+
+function hitTestEdge(wx, wy) {
+  const threshold = 10 / currentTransform.k; // scale-aware hit area
+  let closest = null, minDist = threshold;
+  for (const e of edges) {
+    if (e._visible === false) continue;
+    const sx = e.source.x, sy = e.source.y;
+    const tx = e.target.x, ty = e.target.y;
+    if (sx == null || tx == null) continue;
+    const dist = pointToSegmentDist(wx, wy, sx, sy, tx, ty);
+    if (dist < minDist) {
+      minDist = dist;
+      closest = e;
+    }
+  }
+  return closest;
+}
+
+function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+  let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const nx = x1 + t * dx, ny = y1 + t * dy;
+  return Math.sqrt((px - nx) ** 2 + (py - ny) ** 2);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DRAG (D3 drag with custom subject)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const dragBehavior = d3.drag()
+  .container(app.view)
+  .subject(event => {
+    const rect = app.view.getBoundingClientRect();
+    const sx = event.sourceEvent.clientX - rect.left;
+    const sy = event.sourceEvent.clientY - rect.top;
+    const w = screenToWorld(sx, sy);
+    return hitTestNode(w.x, w.y);
+  })
+  .on('start', (event) => {
+    if (!event.subject) return;
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    event.subject.fx = event.subject.x;
+    event.subject.fy = event.subject.y;
+  })
+  .on('drag', (event) => {
+    if (!event.subject) return;
+    const rect = app.view.getBoundingClientRect();
+    const sx = event.sourceEvent.clientX - rect.left;
+    const sy = event.sourceEvent.clientY - rect.top;
+    const w = screenToWorld(sx, sy);
+    event.subject.fx = w.x;
+    event.subject.fy = w.y;
+    dirty = true;
+  })
+  .on('end', (event) => {
+    if (!event.subject) return;
+    if (!event.active) simulation.alphaTarget(0);
+    event.subject.fx = null;
+    event.subject.fy = null;
+  });
+
+d3.select(app.view).call(dragBehavior);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CLICK & HOVER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let pointerDownPos = null;
+
+app.view.addEventListener('pointerdown', e => {
+  pointerDownPos = { x: e.clientX, y: e.clientY };
+});
+
+app.view.addEventListener('pointerup', e => {
+  if (!pointerDownPos) return;
+  const dx = e.clientX - pointerDownPos.x;
+  const dy = e.clientY - pointerDownPos.y;
+  if (dx * dx + dy * dy > 9) return; // was a drag, not a click
+
+  const rect = app.view.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  const w = screenToWorld(sx, sy);
+
+  const hitNode = hitTestNode(w.x, w.y);
+  if (hitNode) {
+    selectNode(hitNode);
+    return;
+  }
+
+  const hitEdge = hitTestEdge(w.x, w.y);
+  if (hitEdge) {
+    selectEdge(hitEdge);
+    return;
+  }
+
+  closePanel();
+});
+
+app.view.addEventListener('pointermove', e => {
+  const rect = app.view.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  const w = screenToWorld(sx, sy);
+
+  const hit = hitTestNode(w.x, w.y);
+  app.view.style.cursor = hit ? 'pointer' : 'default';
+  setHoveredNode(hit);
+});
+
+app.view.addEventListener('pointerleave', () => {
+  setHoveredNode(null);
+  app.view.style.cursor = 'default';
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FILTERS (apply visibility to PixiJS objects)
+// ═══════════════════════════════════════════════════════════════════════════════
+
 function applyFilters() {
-  const isFiltered = activeDomains.size < domains.length || !!searchTerm || !!scrubberCutoff;
   const visibleTopics = topicNodes.filter(n =>
     (!scrubberCutoff || n.created_at <= scrubberCutoff) &&
     (activeDomains.size > 0 && activeDomains.has(n.domain || 'Other')) &&
@@ -421,36 +911,24 @@ function applyFilters() {
     ...visibleTopics.map(n => n.id),
   ]);
 
-  // Mark each node with its current visibility so the tick handler can skip
-  // position updates for nodes hidden from view.
-  nodes.forEach(n => { n._visible = visible.has(n.id); });
-
-  nodeGroup.selectAll('.node').each(function(d) {
-    const show = visible.has(d.id);
-    const isStructural = d.kind === 'domain' || d.kind === 'user';
-    const el = d3.select(this);
-    el.classed('dimmed', !show)
-      .classed('highlighted', show && !!searchTerm && !isStructural)
-      // Use display:none for filtered-out topic nodes so the browser skips
-      // paint entirely instead of rendering them at near-zero opacity.
-      .attr('display', (!show && !isStructural) ? 'none' : null);
+  nodes.forEach(n => {
+    n._visible = visible.has(n.id);
+    const g = nodeGfxMap.get(n.id);
+    if (g) g.visible = n._visible;
+    const lbl = labelMap.get(n.id);
+    if (lbl) lbl.visible = n._visible && currentLod >= 1;
   });
 
-  linkGroup.selectAll('.link, .link-hit').each(function(d) {
-    const s = typeof d.source === 'object' ? d.source.id : d.source;
-    const t = typeof d.target === 'object' ? d.target.id : d.target;
-    const dimmed = !visible.has(s) || !visible.has(t);
-    // Propagate visibility onto the datum so renderTick can skip hidden edges.
-    d._visible = !dimmed;
-    const el = d3.select(this);
-    if (el.classed('link')) {
-      el.classed('dimmed', dimmed)
-        .attr('marker-end', dimmed ? null : `url(#arrow-${d.kind})`);
-    }
-    el.attr('display', dimmed ? 'none' : null);
+  edges.forEach(e => {
+    const sid = typeof e.source === 'object' ? e.source.id : e.source;
+    const tid = typeof e.target === 'object' ? e.target.id : e.target;
+    e._visible = visible.has(sid) && visible.has(tid);
   });
 
-  // ── taxonomy panel ──────────────────────────────────────────────────────
+  applyLod(); // re-apply LOD to respect new visibility
+  dirty = true;
+
+  // ── taxonomy panel ──
   const taxPanel = document.getElementById('tax-panel');
   const domainFilter = activeDomains.size < domains.length;
   if (!domainFilter && !searchTerm) {
@@ -459,7 +937,6 @@ function applyFilters() {
   }
   taxPanel.classList.add('open');
 
-  // Group visible topics by domain
   const byDomain = {};
   visibleTopics.forEach(n => {
     const d = n.domain || 'Other';
@@ -483,8 +960,6 @@ function applyFilters() {
   });
 
   document.getElementById('tax-inner').innerHTML = html;
-
-  // Click a node in the list → select it in the graph
   document.querySelectorAll('.tax-node-item').forEach(el => {
     el.addEventListener('click', () => {
       const n = nodes.find(nd => nd.id === el.dataset.id);
@@ -493,170 +968,10 @@ function applyFilters() {
   });
 }
 
-// ── D3 force graph ──────────────────────────────────────────────────────────
-const svg = d3.select('#graph');
-const container = document.getElementById('graph-container');
-const W = () => container.clientWidth;
-const H = () => container.clientHeight;
+// ══════════════════════════════════════════════════════════════════════════���════
+// SIDE PANEL
+// ═══════════════════════════════════════════════════════════════════════════════
 
-const g = svg.append('g').attr('class', 'graph-root');
-svg.call(d3.zoom().scaleExtent([0.2, 4]).on('zoom', e => g.attr('transform', e.transform)));
-
-const defs = svg.append('defs');
-const arrowColors = { implies: '#06B6D4', depends_on: '#F59E0B', conflicts_with: '#E24B4A', part_of: '#1D9E75' };
-['implies','depends_on','conflicts_with','part_of'].forEach(k => {
-  defs.append('marker').attr('id', 'arrow-' + k)
-    .attr('viewBox', '0 -5 10 10').attr('refX', 0).attr('refY', 0)
-    .attr('markerWidth', 6).attr('markerHeight', 6).attr('orient', 'auto')
-    .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', arrowColors[k]);
-});
-
-const linkGroup = g.append('g');
-const nodeGroup = g.append('g');
-
-const edgeStyle = {
-  implies:        { dash: null,  color: '#06B6D4' },
-  depends_on:     { dash: '6,3', color: '#F59E0B' },
-  part_of:        { dash: '2,4', color: '#1D9E75' },
-  conflicts_with: { dash: '2,2', color: '#E24B4A' },
-};
-
-const link = linkGroup.selectAll('.link')
-  .data(edges).enter().append('line').attr('class', 'link')
-  .attr('stroke', d => (edgeStyle[d.kind] || edgeStyle.implies).color)
-  .attr('stroke-width', d => Math.max(1, d.strength * 2.5))
-  .attr('stroke-dasharray', d => (edgeStyle[d.kind] || edgeStyle.implies).dash)
-  .attr('marker-end', d => `url(#arrow-${d.kind})`);
-
-// Transparent hit-area lines — wide enough to click easily
-const linkHit = linkGroup.selectAll('.link-hit')
-  .data(edges).enter().append('line').attr('class', 'link-hit')
-  .attr('stroke', 'transparent').attr('stroke-width', 12).style('cursor', 'pointer')
-  .on('click', (e, d) => { e.stopPropagation(); selectEdge(d); });
-
-// spread: 1–10 → multiplier 0.5–3.0
-let spreadMult = 1.0;
-function chargeFor(d) {
-  const base = d.kind === 'user' ? -500 : d.kind === 'domain' ? -300 : -200;
-  return base * spreadMult;
-}
-
-const simulation = d3.forceSimulation(nodes)
-  // Settle ~2× faster than D3's default alphaDecay (0.0228) so large graphs
-  // stop ticking sooner after load and after user interactions.
-  .alphaDecay(0.04)
-  .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
-    // Use pre-built lookup object for O(1) access instead of O(n) Array.find.
-    const s = typeof d.source === 'object' ? d.source : nodeById[d.source];
-    const t = typeof d.target === 'object' ? d.target : nodeById[d.target];
-    if (t && t.kind === 'user') return 140;
-    if (s && s.kind === 'domain') return 100;
-    return 90 + (1 - d.strength) * 50;
-  }))
-  .force('charge', d3.forceManyBody().strength(chargeFor))
-  .force('center', d3.forceCenter(W() / 2, H() / 2))
-  // Use cached _r instead of recomputing nodeRadius each time.
-  .force('collision', d3.forceCollide().radius(d => d._r + 22));
-
-document.getElementById('spread-slider').addEventListener('input', function() {
-  spreadMult = 0.5 + (this.value - 1) * (2.5 / 9);
-  simulation.force('charge', d3.forceManyBody().strength(chargeFor));
-  simulation.alpha(0.4).restart();
-});
-
-const node = nodeGroup.selectAll('.node')
-  .data(nodes).enter().append('g').attr('class', 'node')
-  .call(d3.drag()
-    .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-    .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
-    .on('end',   (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }))
-  .on('click', (e, d) => { e.stopPropagation(); selectNode(d); });
-
-node.append('circle')
-  .attr('r', d => d._r)
-  .attr('fill', d => nodeColor(d))
-  .attr('stroke', d => nodeStroke(d))
-  .attr('stroke-width', d => nodeStrokeWidth(d));
-
-node.append('text')
-  .style('font-size', d => d.kind === 'user' ? '13px' : d.kind === 'domain' ? '11px' : '13px')
-  .style('font-weight', d => (d.kind === 'user' || d.kind === 'domain') ? '700' : 'normal')
-  .style('fill', d => d.kind === 'user' ? '#0A0E1A' : d.kind === 'domain' ? '#F1F5F9' : '#CBD5E1')
-  .each(function(d) {
-    const el = d3.select(this);
-    if (d.kind === 'user') {
-      // Word-wrap to fit inside circle (r=28 → ~8 chars per line at 11px bold)
-      const maxChars = 9, lineH = 15;
-      const words = d.topic.split(/\s+/);
-      const lines = [];
-      let cur = '';
-      for (const w of words) {
-        const word = w.length > maxChars ? w.slice(0, maxChars - 1) + '…' : w;
-        const test = cur ? cur + ' ' + word : word;
-        if (test.length <= maxChars) { cur = test; }
-        else { if (cur) lines.push(cur); cur = word; }
-      }
-      if (cur) lines.push(cur);
-      // Centre the block vertically
-      const startDy = -(lines.length - 1) * lineH / 2;
-      lines.forEach((line, i) =>
-        el.append('tspan').attr('x', 0).attr('dy', i === 0 ? startDy : lineH).text(line));
-    } else if (d.kind === 'domain') {
-      const t = d.topic;
-      el.attr('dy', '0').style('dominant-baseline', 'central')
-        .text(t.length > 9 ? t.slice(0, 8) + '…' : t);
-    } else {
-      el.attr('dy', d._r + 14)
-        .text(d.topic.length > 22 ? d.topic.slice(0, 20) + '…' : d.topic);
-    }
-  });
-
-// rAF-throttled tick handler: coalesce multiple physics steps into a single
-// DOM write per animation frame, and skip nodes/edges hidden by filters.
-let _rafPending = false;
-simulation.on('tick', () => {
-  if (_rafPending) return;
-  _rafPending = true;
-  requestAnimationFrame(() => {
-    _rafPending = false;
-    renderTick();
-  });
-});
-
-function renderTick() {
-  // Shared helper: position one line element based on its D3 edge datum.
-  function positionEdge(el, d) {
-    const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    const srcR = d.source._r + 4;
-    const tgtR = d.target._r + 10;
-    el.setAttribute('x1', d.source.x + dx / dist * srcR);
-    el.setAttribute('y1', d.source.y + dy / dist * srcR);
-    el.setAttribute('x2', d.target.x - dx / dist * tgtR);
-    el.setAttribute('y2', d.target.y - dy / dist * tgtR);
-  }
-
-  link.each(function(d) {
-    if (d._visible === false) return; // skip hidden edges
-    positionEdge(this, d);
-  });
-  linkHit.each(function(d) {
-    if (d._visible === false) return;
-    positionEdge(this, d);
-  });
-  // Only update transform for nodes currently visible to skip paint work.
-  node.each(function(d) {
-    if (d._visible === false) return;
-    this.setAttribute('transform', `translate(${d.x},${d.y})`);
-  });
-}
-
-svg.on('click', () => closePanel());
-window.addEventListener('resize', () => {
-  simulation.force('center', d3.forceCenter(W() / 2, H() / 2)).alpha(0.1).restart();
-});
-
-// ── side panel ──────────────────────────────────────────────────────────────
 const edgeIndex = {};
 nodes.forEach(n => { edgeIndex[n.id] = []; });
 edges.forEach(e => {
@@ -666,10 +981,12 @@ edges.forEach(e => {
   if (edgeIndex[t]) edgeIndex[t].push({ ...e, peer: s });
 });
 
+const edgeColors = { implies: '#06B6D4', depends_on: '#F59E0B', conflicts_with: '#E24B4A', part_of: '#1D9E75' };
+
 function selectNode(d) {
-  link.classed('selected-edge', false);
+  selectedNodeId = d.id;
+  selectedEdgeId = null;
   showNodeView();
-  node.classed('selected', n => n.id === d.id);
   document.getElementById('p-topic').textContent = d.topic;
   document.getElementById('p-domain').textContent = d.domain || 'Other';
   document.getElementById('p-desc').textContent = d.description;
@@ -677,13 +994,12 @@ function selectNode(d) {
   document.getElementById('p-stab').textContent = d.stability.toFixed(1) + 'd';
   document.getElementById('p-reviewed').textContent = d.last_reviewed;
   document.getElementById('p-count').textContent = d.review_count;
-  document.getElementById('p-kind').textContent = d.kind
-    + (d.repo ? ` · ${d.repo}` : '');
-  // Canonical question + ideal answer
+  document.getElementById('p-kind').textContent = d.kind + (d.repo ? ` \u00b7 ${d.repo}` : '');
+  // Canonical Q&A
   const qaSection = document.getElementById('p-qa-section');
   if (d.canonical_question) {
     document.getElementById('p-qa-q').textContent = d.canonical_question;
-    document.getElementById('p-qa-a').textContent = d.canonical_answer || '—';
+    document.getElementById('p-qa-a').textContent = d.canonical_answer || '\u2014';
     qaSection.style.display = '';
   } else {
     qaSection.style.display = 'none';
@@ -696,7 +1012,7 @@ function selectNode(d) {
         const desc = e.description ? `<div class="edge-desc">${e.description}</div>` : '';
         return `<div class="edge-item" data-edge-id="${e.id}"><span class="edge-kind ${e.kind}">${e.kind.replace(/_/g,' ')}</span><span class="edge-peer">${label}</span>${desc}</div>`;
       }).join('');
-  // Review history — hidden for structural (domain/user) nodes
+  // Review history
   const reviewSection = document.getElementById('p-reviews-section');
   const reviews = d.reviews || [];
   if (d.kind === 'domain' || d.kind === 'user') {
@@ -718,10 +1034,43 @@ function selectNode(d) {
         }).join('');
   }
   document.getElementById('panel').classList.add('open');
-}
-const edgeColors = { implies: '#06B6D4', depends_on: '#F59E0B', conflicts_with: '#E24B4A', part_of: '#1D9E75' };
+  dirty = true;
 
-function showNodeView()  {
+  // Wire edge item clicks inside panel
+  document.querySelectorAll('#p-edges .edge-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const eId = el.dataset.edgeId;
+      const edge = edges.find(e => e.id === eId);
+      if (edge) selectEdge(edge);
+    });
+  });
+}
+
+function selectEdge(d) {
+  selectedNodeId = null;
+  selectedEdgeId = d.id;
+  const src = typeof d.source === 'object' ? d.source : nodeById[d.source];
+  const tgt = typeof d.target === 'object' ? d.target : nodeById[d.target];
+  const srcLabel = src ? src.topic : d.source;
+  const tgtLabel = tgt ? tgt.topic : d.target;
+  const color = edgeColors[d.kind] || '#06B6D4';
+  const kindLabel = d.kind.replace(/_/g, ' ');
+  document.getElementById('pe-nodes').innerHTML =
+    `<span class="panel-edge-node">${srcLabel}</span>` +
+    `<span class="panel-edge-arrow">\u2192</span>` +
+    `<span class="edge-kind ${d.kind}">${kindLabel}</span>` +
+    `<span class="panel-edge-arrow">\u2192</span>` +
+    `<span class="panel-edge-node">${tgtLabel}</span>`;
+  document.getElementById('pe-reason').style.setProperty('--edge-color', color);
+  document.getElementById('pe-reason').innerHTML =
+    d.description || '<em style="color:#475569">No reason recorded.</em>';
+  document.getElementById('pe-strength').textContent = `Strength: ${(d.strength * 100).toFixed(0)}%`;
+  showEdgeView();
+  document.getElementById('panel').classList.add('open');
+  dirty = true;
+}
+
+function showNodeView() {
   document.getElementById('panel-node-view').style.display = '';
   document.getElementById('panel-edge-view').style.display = 'none';
 }
@@ -732,37 +1081,17 @@ function showEdgeView() {
 
 function closePanel() {
   document.getElementById('panel').classList.remove('open');
-  node.classed('selected', false);
-  link.classed('selected-edge', false);
+  selectedNodeId = null;
+  selectedEdgeId = null;
   showNodeView();
+  dirty = true;
 }
 document.getElementById('panel-close').onclick = closePanel;
 
-function selectEdge(d) {
-  node.classed('selected', false);
-  link.classed('selected-edge', e => e.id === d.id);
-  const src = typeof d.source === 'object' ? d.source : nodeById[d.source];
-  const tgt = typeof d.target === 'object' ? d.target : nodeById[d.target];
-  const srcLabel = src ? src.topic : d.source;
-  const tgtLabel = tgt ? tgt.topic : d.target;
-  const color = edgeColors[d.kind] || '#06B6D4';
-  const kindLabel = d.kind.replace(/_/g, ' ');
-  document.getElementById('pe-nodes').innerHTML =
-    `<span class="panel-edge-node">${srcLabel}</span>` +
-    `<span class="panel-edge-arrow">→</span>` +
-    `<span class="edge-kind ${d.kind}">${kindLabel}</span>` +
-    `<span class="panel-edge-arrow">→</span>` +
-    `<span class="panel-edge-node">${tgtLabel}</span>`;
-  document.getElementById('pe-reason').style.setProperty('--edge-color', color);
-  document.getElementById('pe-reason').innerHTML =
-    d.description || '<em style="color:#475569">No reason recorded.</em>';
-  document.getElementById('pe-strength').textContent = `Strength: ${(d.strength * 100).toFixed(0)}%`;
-  showEdgeView();
-  document.getElementById('panel').classList.add('open');
-}
+// ══════════════════════════════════════════════════════════════���════════════════
+// TIMELINE SCRUBBER
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// ── timeline / scrubber ─────────────────────────────────────────────────────
-// Scrubber positions: one per node sorted by created_at, plus sentinel for "all"
 const sortedDates = [...new Set(nodes.map(n => n.created_at))].sort();
 sortedDates.push('9999-99-99');
 const scrubber = document.getElementById('tl-scrubber');
@@ -782,7 +1111,56 @@ function onScrub() {
   document.getElementById('tl-date-label').textContent = isAll ? 'all time' : cutoff;
   document.getElementById('tl-count-label').textContent = `${count} / ${nodes.length} topics`;
 }
-onScrub(); // initialise labels
+onScrub();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUTO-FIT ON LOAD
+// ══════════════════════════════════════════════════════════════════════���════════
+
+let initialFitted = false;
+simulation.on('tick.fit', () => {
+  if (initialFitted) return;
+  if (simulation.alpha() < 0.05) {
+    initialFitted = true;
+    fitToView();
+  }
+});
+
+function fitToView() {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let count = 0;
+  nodes.forEach(n => {
+    if (!n._visible || n.x == null) return;
+    minX = Math.min(minX, n.x - n._r);
+    minY = Math.min(minY, n.y - n._r);
+    maxX = Math.max(maxX, n.x + n._r);
+    maxY = Math.max(maxY, n.y + n._r);
+    count++;
+  });
+  if (count === 0) return;
+
+  const padding = 60;
+  const bw = (maxX - minX) + padding * 2;
+  const bh = (maxY - minY) + padding * 2;
+  const w = container.clientWidth, h = container.clientHeight;
+  const scale = Math.min(w / bw, h / bh, 1.5);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const tx = w / 2 - cx * scale;
+  const ty = h / 2 - cy * scale;
+
+  d3.select(app.view)
+    .transition().duration(600)
+    .call(zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RESIZE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+window.addEventListener('resize', () => {
+  dirty = true;
+});
 </script>
 </body>
 </html>

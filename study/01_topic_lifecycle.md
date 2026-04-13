@@ -9,7 +9,7 @@ stateDiagram-v2
     [*] --> UNDISCOVERED
 
     state "NOT IN PKG" as not_in_pkg {
-        UNDISCOVERED : UNDISCOVERED\nnever seen by Rocky
+        UNDISCOVERED : UNDISCOVERED \n never seen by Rocky
         QUEUED : QUEUED\nstored in .rocky (local SQLite)
     }
 
