@@ -1,0 +1,203 @@
+{
+  "name": "rocky-vscode",
+  "displayName": "Rocky - Personal Knowledge Graph",
+  "description": "View and explore your Rocky personal knowledge graph (PKG) topics, nodes, and interactive graph directly in VS Code.",
+  "version": "0.2.0",
+  "publisher": "rocky",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Education",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "knowledge graph",
+    "spaced repetition",
+    "learning",
+    "rocky"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rocky-explorer",
+          "title": "Rocky",
+          "icon": "media/rocky-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "rocky-explorer": [
+        {
+          "id": "rockyDue",
+          "name": "Due for Review"
+        },
+        {
+          "id": "rockyTopics",
+          "name": "All Topics"
+        },
+        {
+          "id": "rockySummary",
+          "name": "Summary"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "rocky.refreshTopics",
+        "title": "Rocky: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "rocky.openGraph",
+        "title": "Rocky: Open Knowledge Graph",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "rocky.openGlobalGraph",
+        "title": "Rocky: Open Global Knowledge Graph"
+      },
+      {
+        "command": "rocky.openLocalGraph",
+        "title": "Rocky: Open Local Knowledge Graph"
+      },
+      {
+        "command": "rocky.quizWeak",
+        "title": "Rocky: Quiz Weakest Topics",
+        "icon": "$(play)"
+      },
+      {
+        "command": "rocky.quizAll",
+        "title": "Rocky: Quiz All Topics"
+      },
+      {
+        "command": "rocky.quizRepo",
+        "title": "Rocky: Quiz by Repo…"
+      },
+      {
+        "command": "rocky.searchTopics",
+        "title": "Rocky: Search Topics…",
+        "icon": "$(search)"
+      },
+      {
+        "command": "rocky.sortByName",
+        "title": "Rocky: Sort Topics by Name"
+      },
+      {
+        "command": "rocky.sortByRetrievability",
+        "title": "Rocky: Sort Topics by Retrievability"
+      },
+      {
+        "command": "rocky.groupByDomain",
+        "title": "Rocky: Group Topics by Domain"
+      },
+      {
+        "command": "rocky.groupByRepo",
+        "title": "Rocky: Group Topics by Repo"
+      },
+      {
+        "command": "rocky.showTopicDetail",
+        "title": "Rocky: Show Topic Detail"
+      },
+      {
+        "command": "rocky.openWebApp",
+        "title": "Rocky: Open Web App",
+        "icon": "$(globe)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "rocky.refreshTopics",
+          "when": "view == rockyTopics || view == rockyDue || view == rockySummary",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rocky.openGraph",
+          "when": "view == rockyTopics",
+          "group": "navigation@2"
+        },
+        {
+          "command": "rocky.quizWeak",
+          "when": "view == rockyDue",
+          "group": "navigation@2"
+        },
+        {
+          "command": "rocky.searchTopics",
+          "when": "view == rockyTopics",
+          "group": "navigation@3"
+        },
+        {
+          "command": "rocky.openWebApp",
+          "when": "view == rockySummary",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "rocky.quizRepo",
+          "when": "viewItem == rockyGroup && view == rockyTopics",
+          "group": "rocky@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "rocky.sortByName"
+        },
+        {
+          "command": "rocky.sortByRetrievability"
+        },
+        {
+          "command": "rocky.groupByDomain"
+        },
+        {
+          "command": "rocky.groupByRepo"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Rocky",
+      "properties": {
+        "rocky.globalDbPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the global Rocky database (graph.db). Leave empty to use the default (~/.rocky/graph.db)."
+        },
+        "rocky.cliPath": {
+          "type": "string",
+          "default": "rocky",
+          "description": "Path to the Rocky CLI binary. Defaults to 'rocky' (assumes it is on your PATH)."
+        },
+        "rocky.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "URL of the running Rocky web server (e.g. http://127.0.0.1:8080). Start the server with `rocky view`. Used to enable quiz recording and live data fetching."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.5",
+    "typescript": "^5.3.3"
+  }
+}

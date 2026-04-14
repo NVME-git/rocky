@@ -103,7 +103,6 @@ When you answer well, stability increases and the topic decays slower. When you 
 ## Rocky the alien
 
 ```
-       ♫
      _____
    .'     '.
   /  .   .  \
@@ -116,10 +115,10 @@ When you answer well, stability increases and the topic decays slower. When you 
 
 Rocky has a personality based on Rocky the alien from Andy Weir's [*Project Hail Mary*](https://www.imdb.com/title/tt12042730/) — enthusiastic, direct, and genuinely rooting for you.
 
-- `♫ Fist my bump, friend! Is correct!`
-- `♫ Excite excite excite! Friend get it!`
-- `♫ Is okay! Rocky also not know at first!`
-- `♫ We are crew. We solve together.`
+- `Fist my bump, friend! Is correct!`
+- `Excite excite excite! Friend get it!`
+- `Is okay! Rocky also not know at first!`
+- `We are crew. We solve together.`
 
 Questions end with ", question?" — Rocky's way of asking. Set `personality = false` in `[ui]` config for plain output.
 
@@ -139,6 +138,9 @@ Questions end with ", question?" — Rocky's way of asking. Set `personality = f
 | **Edge** | A relationship between two topics in the PKG — generated automatically by Rocky after new topics are added |
 | **Edge kind** | The type of relationship: `implies`, `depends_on`, `conflicts_with`, or `part_of` |
 | **Cross-concept question** | A question that bridges two related topics — asked when Rocky detects a relevant edge and both topics have strong recall |
+| **Repo tag** | The git project a topic originated from — parsed from the remote URL. Makes the PKG filterable by project |
+| **Canonical Q&A** | A pre-generated question and ideal answer stored in the node at creation time, using the commit diff and project README as context |
+| **Canonical clue** | A short hint stored alongside canonical Q&A — shown when you type `c` during a quiz. Generated at backfill time, or on-demand for manually-added topics |
 ''';
 
 const kInstallation = r'''
@@ -220,7 +222,7 @@ rocky stats
 You should see:
 
 ```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  0
@@ -230,7 +232,7 @@ You should see:
 
   Quiz budget: 3/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
 
-  ♫ PKG is empty. Let us begin science, question?
+  PKG is empty. Let us begin science, question?
 ```
 
 ---
@@ -246,14 +248,12 @@ rocky install        # or: rocky install git
 You'll see:
 
 ```
-   ♫           ♪          ♫
-
      _____
    .'     '.
   /  .   .  \        R  O  C  K  Y
  |  . _____ .|       Personal Knowledge Graph
  |   |     | |
- |   |_____|  |       Stay sharp. Stay human.
+ |   |_____|  |       You observe. Question?
   \   .   .  /
    '.______.'
 
@@ -301,7 +301,7 @@ rocky "add user login with JWT tokens to my Express API"
 Rocky analyses the task, checks your PKG, and quizzes you on anything new or fading:
 
 ```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Task: add user login with JWT tokens to my Express API
@@ -330,7 +330,7 @@ Type your answer and press Enter. Rocky evaluates whether you understand the imp
     without making the user log in again. The server validates the refresh
     token against a database so it can be revoked.
 
-  ♫ Fist my bump, friend! Is correct!
+  Fist my bump, friend! Is correct!
 
   Good — you've covered the refresh flow and revocation. One thing worth
   double-checking: refresh tokens should be stored in httpOnly cookies,
@@ -343,10 +343,16 @@ Type your answer and press Enter. Rocky evaluates whether you understand the imp
 
 At any question you can:
 
-- **Type your answer** and press Enter
-- **Press Enter** with nothing to skip (queues the topic for later)
-- **Type `i`** to ignore the topic (useful when Rocky picks up a hallucinated or irrelevant topic)
-- **Type `k`** if you already know this well (Rocky records it without a full Q&A)
+- **Type your answer** and press Enter — Rocky evaluates and gives feedback
+- **Press Enter** with nothing to skip — queues the topic for later
+- **`i`** — ignore the topic (useful when Rocky picks up a hallucinated or irrelevant topic)
+- **`e`** — too easy, mark as known without a full Q&A
+- **`s`** — regenerate a simpler version of the question
+- **`h`** — regenerate a harder version with edge cases and deeper implications
+- **`c`** — show a short clue without giving away the answer
+- **`?`** — show a full explanation and mark with low confidence
+
+Each question shows whether it's **(canonical)** — specific to your actual commit diff — or **(generated)** — created live from the topic description.
 
 ---
 
@@ -356,10 +362,8 @@ After a few sessions, see what you know:
 
 ```bash
 rocky ls
-```
 
-```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Topic                           Kind           Recall         Stab   Diff  Reviews  Last Reviewed
@@ -505,9 +509,7 @@ Search your PKG and queued topics, then select which to quiz:
 ```bash
 rocky quiz "redis"
 rocky quiz "auth"
-```
 
-```
   Matching topics for "redis":
 
   [1]  Redis TTL expiry           (gap    · 38% recall)
@@ -531,7 +533,13 @@ During any question, you have these choices:
 | Type your answer + Enter | Rocky evaluates and gives feedback |
 | Enter (blank) | Skip — topic is queued for later |
 | `i` | Ignore — dismiss the topic entirely (useful for hallucinated topics) |
-| `k` | Mark as known — Rocky records it without a full Q&A |
+| `e` | Too easy — mark as known without a full Q&A |
+| `s` | Simpler — regenerate the question at lower difficulty |
+| `h` | Harder — regenerate the question with edge cases and deeper implications |
+| `c` | Clue — show a short hint without giving away the answer |
+| `?` | Explain — show a full explanation and mark with low confidence |
+
+Each question also shows whether it is **(canonical)** — pre-generated at backfill time from the actual commit diff — or **(generated)** — generated live. Canonical questions are more specific to your actual code.
 
 ---
 
@@ -541,10 +549,8 @@ PKG summary.
 
 ```bash
 rocky stats
-```
 
-```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  24
@@ -556,7 +562,7 @@ rocky stats
 
   Edges: 18 total  ·  Most connected: JWT authentication (4 edges)
 
-  ♫ Good progress, friend. Keep science going.
+  Good progress, friend. Keep science going.
 ```
 
 ---
@@ -567,9 +573,7 @@ Full topic list with all metrics.
 
 ```bash
 rocky ls
-```
 
-```
   Topic                           Kind           Recall         Stab   Diff  Reviews  Last Reviewed
   ────────────────────────────────────────────────────────────────────────────────────────────────
   JWT authentication              pattern        ██████████ 97%  8.2    0.3   3        2026-04-03
@@ -789,18 +793,31 @@ rocky backfill --limit 20
 
 # Scan last 50 commits from all contributors
 rocky backfill --all-authors --limit 50
+
+# Retroactively generate clues for nodes that have canonical Q&A but no clue yet
+rocky backfill --fill-clues
 ```
 
 Rocky reads the diff for each commit, extracts topics the same way `rocky diff` does, and adds any that aren't already in your PKG. It sets initial retrievability to 0.5 (neutral — you saw the code but weren't quizzed). Edges are generated for all new topics after the scan completes.
 
+Each new topic is enriched at insertion time:
+
+- **Commit date** — `created_at` and `last_reviewed` are set to the actual commit date, not today. A topic from six months ago decays correctly from when you first encountered it.
+- **Repo tag** — the node is tagged with the project name (parsed from the git remote URL). Topics accumulate in one PKG across all your projects, and you can filter by repo in `rocky view`.
+- **Canonical Q&A** — Rocky generates a question, ideal answer, and a short clue for each new topic using the commit diff and a cached summary of the project README. These are stored in the node: the question is used next time you're quizzed; the clue is shown when you type `c`; the ideal answer guides evaluation.
+- **Project summary** — Rocky reads your README, summarises it, and caches the summary in `~/.rocky/summaries/<repo>.txt`. The summary is shown in `rocky view` when you filter by that repo.
+
 **Example output:**
 
 ```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Taxonomy skeleton ready.
   Scanning last 10 commits by alex@example.com (10 commits)…
+
+  Project: Rust REST API — task management backend with JWT auth,
+           PostgreSQL, Redis caching, and Docker deployment.
 
   [1/10] a3f8c12 init: Axum server scaffold with tokio runtime — no new topics
   [2/10] b7d4e19 feat: sqlx PgPool + migration runner — no new topics
@@ -881,9 +898,7 @@ List all edges in the implication graph — the relationships Rocky has inferred
 
 ```bash
 rocky edges
-```
 
-```
   SOURCE                         TARGET                         KIND               STR   DESCRIPTION
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
   JWT authentication             token expiry handling          implies            0.90  ...
@@ -894,9 +909,7 @@ rocky edges
 ```bash
 # Edge stats summary
 rocky edges --stats
-```
 
-```
   ◈ Edge Stats
 
   Total edges:           12
@@ -926,9 +939,15 @@ rocky view
 
 Rocky writes the graph to `~/.rocky/view.html` and opens it automatically.
 
-**Graph** — D3.js force simulation. Drag nodes, zoom in/out, filter by domain, search topics by name. Click any node to open a detail panel showing retrievability, stability, review history, and all connected edges.
+**Graph** — D3.js force simulation. Drag nodes, zoom in/out, filter by domain, search topics by name. Click any node to open a detail panel showing retrievability, stability, review history, all connected edges, and — when available — the pre-generated question and ideal answer for that topic. Click any edge to see the reason Rocky created it.
+
+**Spread slider** — controls the repulsion force between nodes. Drag right to spread the graph out; drag left to pull clusters together. Useful when many nodes overlap after a large backfill.
 
 **Timeline scrubber** — a range slider below the controls lets you rewind your knowledge graph to any point in time. As you scrub backward, nodes dim and disappear (topics you hadn't learned yet). Scrub forward to watch them light up — your personal growth, visualised. The current node count and date are shown next to the scrubber.
+
+**Domain panel** — a list on the left shows every active domain with a count of visible nodes. Click a domain to highlight only that cluster and its edges.
+
+**Repo filter** — when your PKG contains topics from more than one project, repo filter buttons appear in the controls. Click a repo to show only its topics and display the project summary at the top of the graph. Works across projects accumulated over time via `rocky backfill`.
 
 ---
 
@@ -1256,16 +1275,21 @@ Seed your PKG from your git history without any interactive Q&A. Useful when you
 1. Run `rocky backfill` (optionally with `--all-authors` or `--limit N`)
 2. Resolve author filter (default: current `git user.email` only)
 3. Fetch all matching commit SHAs from `git log`, oldest first
-4. For each commit:
-   - Read the commit diff
+4. Detect the project name from the git remote URL (fallback: directory name)
+5. Load or create the project README summary, cached in `~/.rocky/summaries/<repo>.txt`
+6. For each commit:
+   - Read the commit date and diff
    - Extract topics using code-aware analysis (same as `rocky diff`)
-   - For each topic not already in the PKG → add it with retrievability 0.5, no Q&A
+   - For each topic not already in the PKG:
+     - Add it with retrievability 0.5, `created_at` and `last_reviewed` set to the commit date, tagged with the repo name
+     - Generate a canonical question, ideal answer, and short clue using the diff + commit message + README summary
+     - Store all three in the node: the question is used at quiz time, the clue is available on request, the answer guides evaluation
    - Print `+ topic name` for each new topic added
-5. After all commits: generate edges for all newly added topics in bulk
-6. Print summary: `✓ Added N new topics · M already in PKG`
-7. Prompt to run `rocky quiz` to start reviewing
+7. After all commits: generate edges for all newly added topics in bulk
+8. Print summary: `✓ Added N new topics · M already in PKG`
+9. Prompt to run `rocky quiz` to start reviewing
 
-Backfill never overwrites existing PKG entries — if a topic is already in your PKG, it's counted as "already in PKG" and skipped.
+Backfill never overwrites existing PKG entries — if a topic is already in your PKG, it's counted as "already in PKG" and skipped. Each topic is owned by the first commit that introduced it; later commits that mention the same topic do not update it.
 
 ---
 
@@ -1630,7 +1654,7 @@ rocky stats            # all your topics are back
 Rocky tracks how many sessions have passed since your last push and reminds you when the threshold is hit:
 
 ```
-♫ Rocky: 5 sessions unsynced — consider `rocky sync --push` to back up, question?
+Rocky: 5 sessions unsynced — consider `rocky sync --push` to back up, question?
 ```
 
 Configure the threshold in `~/.rocky/.rocky.toml`:
@@ -1645,11 +1669,18 @@ Set both to `0` to disable reminders entirely.
 ''';
 
 const kWalkthrough = r'''
-# Example Project Walkthrough: A PKG from Scratch
+# Demo Usecase: A PKG from Scratch
 
-This is a complete, realistic example of building a Personal Knowledge Graph while working on a Rust REST API called **taskify** — a task management backend with JWT auth, PostgreSQL, Redis caching, and Docker deployment.
+```graphlink
+graphs/stage7.html|Open the full interactive graph
+```
 
-We follow 6 commits over one week. At each stage you can see exactly what Rocky does, what the PKG looks like, and how `rocky view` evolves as your knowledge grows.
+This is a complete, realistic example of building a Personal Knowledge Graph across two projects:
+
+- **taskify** — a Rust REST API with JWT auth, PostgreSQL, Redis caching, and Docker deployment
+- **home-bank** — a Python data pipeline that imports bank CSV exports, categorises transactions, and models accounts with double-entry bookkeeping
+
+We follow commits across both projects. The full interactive graph (stage 7) shows 21 topics across both repos — use the **repo filter** buttons to isolate either project and see its summary.
 
 ---
 
@@ -1661,10 +1692,8 @@ Fresh project. Empty PKG.
 ~ $ mkdir taskify && cd taskify && git init
 ~/taskify $ rocky install          # install the git hook
 ~/taskify $ rocky stats
-```
 
-```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  0
@@ -1674,7 +1703,7 @@ Fresh project. Empty PKG.
 
   Quiz budget: 3/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
 
-  ♫ PKG is empty. Let us begin science, question?
+  PKG is empty. Let us begin science, question?
 ```
 
 **`rocky view` at this point:** A blank canvas. A few taxonomy skeleton nodes (Language, Database, Auth…) float at the edges, lightly dimmed. Nothing in the centre.
@@ -1685,10 +1714,8 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky "set up Rust Axum web server with tokio and tower middleware"
-```
 
-```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Task: set up Rust Axum web server with tokio and tower middleware
@@ -1707,7 +1734,7 @@ Fresh project. Empty PKG.
     select! waits for whichever resolves first and cancels the other. For two
     independent calls where I want both results, join! is correct.
 
-  ♫ Fist my bump, friend! Is correct!
+  Fist my bump, friend! Is correct!
 
   Good distinction. Worth noting: join! doesn't parallelize — both futures
   still run on a single thread unless you spawn tasks. tokio::spawn moves
@@ -1727,7 +1754,7 @@ Fresh project. Empty PKG.
     on your main future. current_thread runs everything on one thread;
     multi_thread (default) uses a thread pool matching your CPU cores.
 
-  ♫ Excite excite excite! Friend get it!
+  Excite excite excite! Friend get it!
 
   ✓ tokio runtime added to PKG.
 
@@ -1743,7 +1770,7 @@ Fresh project. Empty PKG.
     with a response. A Layer wraps a Service to add behaviour (logging,
     auth, etc.). Router::layer applies a tower Layer to all routes.
 
-  ♫ We are crew. We solve together. Is correct!
+  We are crew. We solve together. Is correct!
 
   ✓ Axum framework added to PKG.
 ```
@@ -1760,9 +1787,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky ls
-```
 
-```
   Topic                    Kind     Recall         Stab  Diff  Reviews  Last Reviewed
   ─────────────────────────────────────────────────────────────────────────────────────
   Rust async/await         concept  ██████████ 95%  4.5   0.3   1        2026-04-01
@@ -1770,9 +1795,11 @@ Fresh project. Empty PKG.
   Axum framework           concept  ██████████ 95%  4.5   0.3   1        2026-04-01
 ```
 
-**`rocky view` after commit 1:** Three nodes cluster in the centre, connected by auto-inferred edges: *tokio runtime → Axum framework* (`depends_on`, strength 0.90), *Rust async/await → tokio runtime* (`depends_on`, strength 0.88). All three glow bright gold. The Language taxonomy node pulls them together on the left side of the canvas.
+**`rocky view` after commit 1:** Three nodes cluster in the centre, connected by auto-inferred edges: *tokio runtime → Axum framework* (`depends_on`, strength 0.90), *Rust async/await → tokio runtime* (`depends_on`, strength 0.88). All three glow bright gold. The Language taxonomy node pulls them together on the left side of the canvas. **Click any node** to open the detail panel — you'll see the question Rocky asked, your answer, and the feedback, all stored against that topic.
 
-[**→ Open interactive graph: commit 1**](graphs/stage1.html)
+```graphlink
+graphs/stage1.html|Open interactive graph: commit 1
+```
 
 ---
 
@@ -1780,9 +1807,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky "add PostgreSQL with sqlx — connection pooling and migrations"
-```
 
-```
   Task: add PostgreSQL with sqlx — connection pooling and migrations
 
   Rocky: New topic — sqlx connection pooling
@@ -1796,7 +1821,7 @@ Fresh project. Empty PKG.
     setting — if the pool is exhausted the request blocks until one becomes
     available, and returns an error if it waits longer than connect_timeout.
 
-  ♫ Fist my bump, friend! Is correct!
+  Fist my bump, friend! Is correct!
 
   ✓ sqlx connection pooling added to PKG.
 
@@ -1808,11 +1833,19 @@ Fresh project. Empty PKG.
       changed it locally before it hit production. What happens when
       production tries to apply it, question?
 
-  > sqlx tracks migrations by checksum. If the checksum doesn't match it
-    refuses to run — it won't apply a migration it's seen in a different form.
-    You'd need a new migration file to correct the schema.
+  > It would just re-run the migration on production since the file changed.
 
-  ♫ Is correct, friend! Rocky also learn this hard way.
+  Almost — but there is problem. Rocky must ask more.
+
+  Q3. sqlx stores a checksum of each migration file and tracks which have
+      already run. If the checksum differs from what ran before, what does
+      sqlx do — and why does it refuse rather than re-apply?
+
+  > Oh — sqlx refuses to run it entirely. Re-running a migration that
+    already applied could corrupt the schema. The checksum is a safety
+    guard: it detects edits after the fact and blocks them.
+
+  Is correct, friend! Rocky also learn this hard way.
 
   ✓ database migrations added to PKG.
 
@@ -1821,7 +1854,7 @@ Fresh project. Empty PKG.
 
   > (Enter — skip, I know this already)
 
-  ♫ Topic queued for later.
+  Topic queued for later.
 ```
 
 ```bash
@@ -1832,9 +1865,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky ls
-```
 
-```
   Topic                    Kind           Recall         Stab  Diff  Reviews  Last Reviewed
   ──────────────────────────────────────────────────────────────────────────────────────────
   Rust async/await         concept        █████████░ 92%  4.5   0.3   1        2026-04-01
@@ -1846,9 +1877,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky queue
-```
 
-```
   1 queued topic (not yet in PKG):
 
   · PostgreSQL transactions
@@ -1860,7 +1889,9 @@ Fresh project. Empty PKG.
 
 **`rocky view` after commit 2:** Five nodes — the three Rust nodes from commit 1 remain bright gold but have started their slow decay (92%). Two new nodes appear near the Database taxonomy anchor. New edges: *sqlx connection pooling → database migrations* (`depends_on`, 0.80), *database migrations → sqlx connection pooling* (`implies`, 0.78). Scrub the timeline slider back to "April 1" and watch the Database nodes disappear.
 
-[**→ Open interactive graph: commit 2**](graphs/stage2.html)
+```graphlink
+graphs/stage2.html|Open interactive graph: commit 2
+```
 
 ---
 
@@ -1868,9 +1899,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky "implement JWT auth middleware — issue tokens, validate on protected routes"
-```
 
-```
   Task: implement JWT auth middleware — issue tokens, validate on protected routes
 
   Rocky: New topic — JWT authentication
@@ -1887,7 +1916,7 @@ Fresh project. Empty PKG.
     validates it against a database (so it can be revoked) and issues a new
     access token. The user never sees a login screen.
 
-  ♫ Fist my bump, friend! Is correct!
+  Fist my bump, friend! Is correct!
 
   ✓ JWT authentication added to PKG.
 
@@ -1899,14 +1928,18 @@ Fresh project. Empty PKG.
       refresh token. Your app loads third-party analytics JavaScript. What's
       the attack surface difference, question?
 
-  > localStorage is accessible to any JavaScript on the page — a compromised
-    third-party script can exfiltrate it. An httpOnly cookie can't be read
-    by JavaScript at all. With third-party JS on the page, httpOnly is the
-    only safe option.
+  > ?
 
-  ♫ Excite excite excite! Friend protect the tokens!
+     Fetching explanation...
 
-  ✓ httpOnly cookie security added to PKG.
+   localStorage lives in the browser's JS heap — any script on the page,
+   including third-party analytics, can read window.localStorage. An XSS
+   payload or compromised analytics snippet silently exfiltrates the token.
+   httpOnly cookies are never exposed to JavaScript at all; the browser
+   attaches them to requests automatically but scripts can't read them.
+   With third-party JS on the page, httpOnly is the only safe choice.
+
+   Saved to PKG — revisit before your next task.
 
   Rocky: New topic — token expiry handling
     ...
@@ -1922,27 +1955,27 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky stats
-```
 
-```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  8
-  Known:         8
-  Fading:        0
+  Known:         7
+  Fading:        1
   Gaps/weak:     0
 
   Quiz budget: 0/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
 
   Edges: 6 total  ·  Most connected: JWT authentication (3 edges)
 
-  ♫ Good progress, friend. PKG growing. Keep science going.
+  Good progress, friend. PKG growing. Keep science going.
 ```
 
 **`rocky view` after commit 3:** An Auth cluster has appeared in the upper-right — JWT authentication, httpOnly cookie security, and token expiry handling form a triangle. The most notable edge: *JWT authentication → httpOnly cookie security* (`implies`, 0.92). The Database cluster sits lower-left. The Language cluster anchors the left. All nodes glow gold. Scrub the timeline from April 1 to April 3 to watch each cluster grow in.
 
-[**→ Open interactive graph: commit 3**](graphs/stage3.html)
+```graphlink
+graphs/stage3.html|Open interactive graph: commit 3
+```
 
 ---
 
@@ -1950,9 +1983,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky "add Redis caching for user sessions and frequently accessed data"
-```
 
-```
   Task: add Redis caching for user sessions and frequently accessed data
 
   Rocky: New topic — Redis TTL expiry
@@ -1970,7 +2001,7 @@ Fresh project. Empty PKG.
     Write-through keeps reads fast; invalidation is simpler but causes one
     cache miss after each write.
 
-  ♫ Is correct! Rocky appreciate the trade-off answer.
+  Is correct! Rocky appreciate the trade-off answer.
 
   ✓ Redis TTL expiry added to PKG.
 
@@ -1982,12 +2013,21 @@ Fresh project. Empty PKG.
       local memory. Server B updates user:123. Server A's cache is now stale.
       How does Redis solve this, question?
 
-  > In-memory caches per server can't coordinate. Redis is shared — all
-    servers read from the same instance. With cache-aside, every server
-    checks Redis first; on miss, reads from the DB and populates Redis.
-    All servers immediately see any Redis update or deletion.
+  > Each server could subscribe to a Redis pub/sub channel and invalidate
+    its local cache when it gets the message?
 
-  ♫ Fist my bump, friend!
+  That is one approach — but Rocky want simpler answer. Think about
+    where the cache itself lives.
+
+  Q3. The root issue is in-memory caches are per-process and can't see each
+      other. Where does Redis sit relative to your API servers, and why does
+      that eliminate the staleness problem entirely?
+
+  > Redis is shared outside the processes — all servers read and write
+    the same cache. There is no per-server copy to go stale. Cache-aside
+    means any server that updates Redis, all others immediately see it.
+
+  Fist my bump, friend!
 
   ✓ cache invalidation strategies added to PKG.
 ```
@@ -2000,9 +2040,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky ls
-```
 
-```
   Topic                       Kind           Recall         Stab  Diff  Reviews  Last Reviewed
   ──────────────────────────────────────────────────────────────────────────────────────────────
   Rust async/await            concept        ████████░░ 85%  4.5   0.3   1        2026-04-01
@@ -2011,7 +2049,7 @@ Fresh project. Empty PKG.
   sqlx connection pooling     implementation █████████░ 90%  4.8   0.3   1        2026-04-02
   database migrations         concept        █████████░ 90%  5.0   0.2   1        2026-04-02
   JWT authentication          pattern        █████████░ 91%  5.2   0.3   1        2026-04-03
-  httpOnly cookie security    concept        █████████░ 91%  5.0   0.3   1        2026-04-03
+  httpOnly cookie security    concept        ███████░░░ 68%  1.8   0.3   1        2026-04-03
   token expiry handling       concept        █████████░ 91%  4.8   0.2   1        2026-04-03
   Redis TTL expiry            implementation ██████████ 96%  5.1   0.3   1        2026-04-04
   cache invalidation          concept        ██████████ 96%  5.2   0.2   1        2026-04-04
@@ -2019,7 +2057,9 @@ Fresh project. Empty PKG.
 
 **`rocky view` after commit 4:** Four clusters now visible. A Performance cluster has formed around cache invalidation, and Redis TTL expiry bridges the Database and Performance anchors. The Language cluster (Rust, tokio, Axum) has shifted slightly amber as their initial high recall starts to decay. Scrub the timeline from April 1 through April 4 to watch each cluster appear: Language → Database → Auth → Performance.
 
-[**→ Open interactive graph: commit 4**](graphs/stage4.html)
+```graphlink
+graphs/stage4.html|Open interactive graph: commit 4
+```
 
 ---
 
@@ -2027,9 +2067,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky "implement per-user rate limiting with Redis sorted sets and Lua scripting"
-```
 
-```
   Task: implement per-user rate limiting with Redis sorted sets and Lua scripting
 
   Rocky: New topic — Redis sorted sets
@@ -2038,7 +2076,7 @@ Fresh project. Empty PKG.
 
   Rocky: New topic — Lua scripting in Redis
 
-  ♫ Cross-concept edge detected! JWT authentication → rate limiting
+  Cross-concept edge detected! JWT authentication → rate limiting
 
   Q1. You know JWT authentication well. Your rate limiter identifies users
       by their JWT subject claim. A malicious client strips the Authorization
@@ -2050,7 +2088,7 @@ Fresh project. Empty PKG.
     valid JWT is present. Never fall back to IP for authenticated endpoints;
     IP limits only make sense for unauthenticated routes like /login.
 
-  ♫ Excite! Cross-concept question! Friend connect the dots!
+  Excite! Cross-concept question! Friend connect the dots!
 
   ✓ Redis sorted sets added to PKG.
 
@@ -2064,7 +2102,7 @@ Fresh project. Empty PKG.
     can interleave. The script checks, conditionally increments, and returns
     the result as a single atomic operation.
 
-  ♫ Fist my bump! Lua scripts in Redis — atomically or nothing!
+  Fist my bump! Lua scripts in Redis — atomically or nothing!
 
   ✓ Lua scripting in Redis added to PKG.
 ```
@@ -2075,9 +2113,7 @@ Fresh project. Empty PKG.
 
 ```bash
 ~/taskify $ rocky edges --stats
-```
 
-```
   ◈ Edge Stats
 
   Total edges:           14
@@ -2093,7 +2129,9 @@ Fresh project. Empty PKG.
 
 **`rocky view` after commit 5:** This is when the graph becomes interesting. JWT authentication is the most-connected node — edges radiate outward to token expiry handling, httpOnly cookie security, Redis sorted sets, and Lua scripting. The cross-concept edge between Auth and Database clusters appears in cyan (`implies`), crossing the gap between clusters. The `conflicts_with` edge glows red. Click any node to open its detail panel showing retrievability, stability, review history, and all connected edges.
 
-[**→ Open interactive graph: commit 5**](graphs/stage5.html)
+```graphlink
+graphs/stage5.html|Open interactive graph: commit 5
+```
 
 ---
 
@@ -2103,10 +2141,8 @@ You've been shipping features. It's been 7 days since commit 1.
 
 ```bash
 ~/taskify $ rocky stats
-```
 
-```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  12
@@ -2118,14 +2154,12 @@ You've been shipping features. It's been 7 days since commit 1.
 
   Edges: 14 total  ·  Most connected: JWT authentication (5 edges)
 
-  ♫ Some topics fading, friend. Time for science.
+  Some topics fading, friend. Time for science.
 ```
 
 ```bash
 ~/taskify $ rocky ls
-```
 
-```
   Topic                       Kind           Recall         Stab  Diff  Reviews  Last Reviewed
   ──────────────────────────────────────────────────────────────────────────────────────────────
   Rust async/await            concept        ██████░░░░ 63%  4.5   0.3   1        2026-04-01
@@ -2144,14 +2178,14 @@ You've been shipping features. It's been 7 days since commit 1.
 
 **`rocky view` after one week:** The same 12 nodes — but now in three colors. The Language cluster (Rust, tokio, Axum) has shifted amber to orange. Rust async/await glows red (gap — below 70%). The Auth and Database clusters are amber. The two Redis topics from this week are still bright gold. This is the core value of the timeline scrubber: it shows current decay state, not just when topics were added.
 
-[**→ Open interactive graph: one week later**](graphs/stage6.html)
+```graphlink
+graphs/stage6.html|Open interactive graph: one week later
+```
 
 ```bash
 ~/taskify $ rocky quiz
-```
 
-```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   0 topics in queue.
@@ -2171,12 +2205,12 @@ You've been shipping features. It's been 7 days since commit 1.
     can acquire it. Use tokio::sync::Mutex for async contexts — its lock
     is async-aware and yields the thread instead of blocking it.
 
-  ♫ Fist my bump, friend! Is correct!
+  Fist my bump, friend! Is correct!
 
   ✓ Rust async/await — stability increased to 6.8 · recall now at 94%
 ```
 
-**`rocky view` after the quiz:** Rust async/await snaps from red back to gold. The node's detail panel shows two review data points: the original session on April 1 (initial stability 4.5) and today's review on April 8 (stability 6.8 — deeper embedding). The decay curve between those two points is visible in the timeline scrubber.
+**`rocky view` after the quiz:** Rust async/await snaps from red back to gold. Click the node — the detail panel now shows **two review entries**: the Q&A from April 1 (initial stability 4.5) and today's harder question on April 8 (stability 6.8 — deeper embedding). Each entry shows the question, your answer, Rocky's feedback, and the score. The decay curve between those two points is visible in the timeline scrubber.
 
 ---
 
@@ -2186,14 +2220,15 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
 
 ```bash
 ~/taskify $ rocky backfill --limit 10
-```
 
-```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Taxonomy skeleton ready.
   Scanning last 10 commits by alex@example.com (10 commits)…
+
+  Project: Rust REST API — task management backend with JWT auth,
+           PostgreSQL, Redis caching, and Docker deployment.
 
   [1/10] a3f8c12 init: Axum server scaffold with tokio runtime — no new topics
   [2/10] b7d4e19 feat: sqlx PgPool + migration runner — no new topics
@@ -2213,16 +2248,16 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
 
   ◈ Generating edges for 5 new topics…
 
-  ✓ Added 5 new topics · 47 already in PKG
+  ✓ Added 5 new topics · 12 already in PKG
   Run  rocky quiz  to start reviewing them.
 ```
 
+Rocky tagged each new node as `taskify`, set `created_at` and `last_reviewed` to the actual commit date (not today), and generated a canonical question and ideal answer from the diff context. The Docker topic from March is already decaying correctly — its retrievability is calculated from March, not April.
+
 ```bash
 ~/taskify $ rocky stats
-```
 
-```
-  ♫  Rocky · Personal Knowledge Graph
+  Rocky · Personal Knowledge Graph
   ──────────────────────────────────────
 
   Total topics:  17
@@ -2237,7 +2272,52 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
 
 **`rocky view` after backfill:** Five new nodes appear, clustering near the DevOps and Architecture taxonomy anchors. Docker multi-stage builds links to container image optimization. GitHub Actions workflow syntax connects to CI/CD pipeline design. The graph now spans five distinct clusters. Filter by "DevOps" in the domain filter to highlight only that cluster and its edges.
 
-[**→ Open interactive graph: after backfill**](graphs/stage7.html)
+```graphlink
+graphs/stage7.html|Open interactive graph: after backfill
+```
+
+---
+
+## Backfilling a second project
+
+Your PKG lives at `~/.rocky` — it spans all your projects. Change directory to another repo and run `rocky backfill` there. Rocky will detect a different project name, summarise its README, and tag all new topics accordingly.
+
+```bash
+~/taskify $ cd ~/home-bank
+~/home-bank $ rocky backfill
+
+  Rocky · Personal Knowledge Graph
+  ──────────────────────────────────────
+
+  Taxonomy skeleton ready.
+  Scanning all commits by alex@example.com (66 commits)…
+
+  Project: Python data pipeline that transforms raw bank statements into
+           standardised, categorised transactions — supports CSV/PDF ingestion,
+           multi-account double-entry bookkeeping, and Pandas-based analysis.
+
+  [1/66] f3d26e5 Initial commit: Enhanced home banking system — 3 new
+    + CSV parsing
+    + transaction categorisation
+    + double-entry bookkeeping
+  [2/66] 5a92f2b feat: Add transaction categorization script — 2 new
+    + Pandas DataFrame operations
+    + project structure
+  ...
+
+  ◈ Generating edges for 12 new topics…
+
+  ✓ Added 12 new topics · 17 already in PKG
+  Run  rocky quiz  to start reviewing them.
+```
+
+Now open `rocky view`. Two repo filter buttons appear in the controls — **taskify** and **home-bank**. Click **home-bank** and:
+
+- Only the 12 home-bank topics are shown, with edges between them
+- The project summary appears at the top: *"Python data pipeline that transforms raw bank statements..."*
+- Click **CSV parsing** — the detail panel shows the canonical question Rocky generated from the initial commit diff: *"Your CSV parser works on sample files but fails silently on production exports from a different bank. What are the three most common CSV format variations that break naive parsers, question?"*
+
+Click **All** to return to the full cross-project view. The timeline scrubber now shows topics appearing from October 2025 (home-bank's first commit) through April 2026 (taskify's latest).
 
 ---
 
@@ -2254,14 +2334,19 @@ The interactive graph opens in your browser:
 - **Nodes** — colored by recall: gold (≥90%), amber (70–90%), red (<70%)
 - **Node size** — proportional to stability (deeper knowledge = bigger node)
 - **Edges** — colored by kind: cyan (`implies`), yellow (`depends_on`), red (`conflicts_with`), green (`part_of`)
-- **Domain filter** — click any domain label to highlight only that cluster and its edges
+- **Spread slider** — controls node repulsion; drag right to spread the graph, left to cluster it
+- **Domain panel** — left sidebar showing active domains and node counts; click to highlight a cluster
+- **Repo filter** — filter the graph to a single project; shows the project summary and only that repo's topics
 - **Search** — type "redis" to highlight all Redis-related nodes
-- **Node detail panel** — click any node to see retrievability score, stability, all connected edges, review history
-- **Timeline scrubber** — drag the range slider to any date to see what your PKG looked like at that point. Scrub from April 1 to April 8 to watch each cluster grow in.
+- **Node detail panel** — click any node to see retrievability score, stability, all connected edges, review history, and the pre-generated question + ideal answer
+- **Edge detail** — click any edge to see the reason Rocky created it
+- **Timeline scrubber** — drag the range slider to any date to see what your PKG looked like at that point. Scrub from October 2025 to April 2026 to watch both projects grow in.
 
 The graph is a single self-contained HTML file at `~/.rocky/view.html`.
 
-[**→ Open the full taskify graph (17 topics, all stages)**](graphs/stage7.html)
+```graphlink
+graphs/stage7.html|Open the full demo graph (21 topics, taskify + home-bank)
+```
 
 ---
 
@@ -2269,9 +2354,7 @@ The graph is a single self-contained HTML file at `~/.rocky/view.html`.
 
 ```bash
 ~/taskify $ rocky edges
-```
 
-```
   SOURCE                         TARGET                         KIND               STR   DESCRIPTION
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Rust async/await               tokio runtime                  depends_on         0.88  Rust async code requires a...
@@ -2291,4 +2374,197 @@ The graph is a single self-contained HTML file at `~/.rocky/view.html`.
 ```
 
 This is your knowledge graph for one project, one week in. Each edge is a relationship Rocky inferred from the topics in your code — the ones worth understanding together, not just in isolation.
+
+After backfilling **home-bank**, four more topics appear in the Data domain: CSV parsing, transaction categorisation, Pandas DataFrame operations, and double-entry bookkeeping. They carry commit dates from October 2025 — Rocky knows exactly how long ago you last touched that code.
+''';
+
+const kRoadmap = r'''
+# Roadmap
+
+These features are planned or under active consideration. They are tracked in [BACKLOG.md](https://github.com/NVME-git/rocky/blob/main/BACKLOG.md) in the repository.
+
+---
+
+## Teaching quality
+
+### Struggle score affects stability
+
+Rocky currently marks a topic as "understood" regardless of how much scaffolding was needed to get there. A topic answered immediately should earn higher stability than one that required three follow-ups and two clues.
+
+**Planned change:** Track a struggle score per review — follow-up count, clue requests, simplification requests. Weight stability gain inversely: a clean first-attempt answer builds stability faster than a scaffolded one.
+
+---
+
+### AI-source tagging
+
+A topic can enter your PKG two ways: from your own code (a diff you wrote, a commit you made) or from an AI-assisted prompt (Rocky saw the topic mentioned in something you asked Claude to build). These are not the same thing. The first comes with struggle and context; the second might come with neither.
+
+**Planned change:** Tag each topic with its origin — `own_code` or `ai_prompt`. Topics tagged `ai_prompt` are quizzed more aggressively. `rocky ls` and `rocky stats` surface them as a distinct category: topics you know about but may never have had to reason through independently.
+
+---
+
+### Independence score
+
+A second axis alongside retrievability: what fraction of this topic's appearances came from your own diffs vs. AI-generated code?
+
+**Planned change:** Track per-topic encounter sources. In `rocky stats`, show a new category — "AI-dependent" — for topics with high retrievability but low independent-code encounters. These are the risk areas: you could ship them confidently and be lost if the AI gets them wrong.
+
+---
+
+### Hard mode
+
+Rocky provides clues, explanations, and question simplification to help when you're stuck. These are useful — but used too freely, they let you navigate a quiz session without ever sitting with genuine uncertainty.
+
+**Planned change:** `rocky quiz --hard` disables `[c]` clue, `[?]` explain, and `[s]` simpler for the session. Configurable permanently in `.rocky.toml`:
+
+```toml
+[ui]
+hard_mode = true
+```
+
+You either answer from what you actually know, or you skip and admit the gap.
+
+---
+
+### Debugging-focused question kind
+
+Rocky's Socratic questions ask about implications and consequences. That covers a lot — but the most durable engineering skill is debugging: given something broken, why did it break and how would you find it?
+
+**Planned change:** A new question kind generated at backfill and diff time alongside the canonical question: *given this code change, what would a production bug look like and what would the stack trace tell you?* Distinct from the implication question. Targets the skill AI is least likely to replace.
+
+---
+
+### Pre-task gap framing
+
+When you run `rocky "task description"`, Rocky currently tells you what you know and quizzes you on gaps. The framing could be sharper: these aren't just gaps — they are specifically the topics you are about to ask AI to handle for you.
+
+**Planned change:** For each gap topic in a pre-task session, Rocky labels it as an AI-risk: *"You have a gap on Lua scripting in Redis. This is something AI will likely write for you. Here is the question you should be able to answer before trusting what it produces."* Rocky becomes an explicit check on AI output, not just a learning tool.
+
+---
+
+## Workflow integration
+
+### Rocky as a required PR check
+
+A GitHub Actions workflow that makes Rocky a required status check on pull requests. Before a PR can merge, Rocky analyses the diff, identifies the topics introduced, and checks whether the author has those topics in their PKG above a configurable retrievability threshold.
+
+**Planned design:**
+
+```yaml
+# .github/workflows/rocky-check.yml
+on: [pull_request]
+
+jobs:
+  rocky:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rocky knowledge check
+        uses: NVME-git/rocky-action@v1
+        with:
+          min_retrievability: 0.7
+          pkg_url: ${{ secrets.ROCKY_PKG_URL }}   # your private PKG repo
+```
+
+Rocky fetches your PKG, runs the diff against the PR, and reports which topics are below threshold. The check passes when all introduced topics are either known or explicitly marked as accepted gaps.
+
+**GitHub stacked PRs:** When using stacked PRs (where each PR builds on the previous), the Rocky check can be scoped per-layer — each PR must demonstrate understanding of only the topics *it* introduces, not the entire stack. This scales the requirement to the size of the change.
+
+**Configuration in `.rocky.toml`:**
+
+```toml
+[pr_check]
+enabled = true
+min_retrievability = 0.7   # topics below this threshold block merge
+allow_bypass = false        # if true, author can override with a reason
+notify_reviewer = true      # post a comment showing topic scores
+```
+
+---
+
+## Graph enrichment
+
+### Scheduled enrichment passes
+
+As Rocky adds new node fields (canonical clue, debugging questions, independence score), existing nodes need to be retroactively enriched. Currently this requires manual commands (`rocky backfill --fill-clues`).
+
+**Planned change:** A background scheduler that detects missing fields and runs enrichment silently — so quiz time is always fast and the PKG stays current without manual intervention.
+
+---
+
+*All items above are tracked in [BACKLOG.md](https://github.com/NVME-git/rocky/blob/main/BACKLOG.md). If you have ideas or want to contribute, open an issue.*
+''';
+
+const kReferences = r'''
+# References & Research
+
+Rocky's design is informed by research and practitioner perspectives on learning, memory, and the impact of AI on technical skill. This section collects sources that shaped features or prompted new thinking.
+
+---
+
+## AI, Competence, and the Role of Struggle in Learning
+
+**FreeCodeCamp Podcast — Dr. Mark Mahoney** · April 2026
+
+*Watch the full interview: [youtu.be/Tb6oaEkxtp8](https://youtu.be/Tb6oaEkxtp8?si=W_vu3K-0WknmvOTI)*
+
+Dr. Mark Mahoney is a computer science professor at Carthage College with over 20 years of teaching experience and the creator of [Playback Press](https://playbackpress.com), a platform for interactive programming education. This interview with Quincy Larson on the FreeCodeCamp podcast covers the impact of AI on programming education and professional practice.
+
+---
+
+### The competence vs. confidence gap
+
+Mahoney's sharpest observation: AI tools give learners *confidence* without necessarily giving them *competence*. You can complete a project, see it work, feel good about it — and still be unable to reason through it independently the next time.
+
+This is a new form of tutorial hell. The old version meant watching someone else solve problems without ever solving them yourself. The AI version means having problems solved *for* you, in code that runs, ships, and disappears into your codebase — leaving no trace of the struggle that would have built real understanding.
+
+Rocky's response to this is the core of its design: every topic must pass a Socratic question grounded in consequences, not definitions. But Mahoney's point pushes further — the source of a topic's entry into the PKG matters as much as whether you can answer a question about it. A topic you encountered in your own debugging is different from a topic you saw in AI-generated code. **[AI-source tagging](roadmap)** is the planned feature that makes this distinction explicit.
+
+---
+
+### "The hard way" builds resilience
+
+Mahoney expresses concern that students who rely on AI miss the grind of debugging — the hours spent staring at a problem with no help coming. That struggle isn't just inefficiency; it builds the resilience and pattern recognition that makes a developer effective under pressure.
+
+This maps directly to Rocky's scaffolding options — clues, explanations, simplification. These are useful when genuinely stuck, but used reflexively they become an escape from the productive discomfort that creates competence. **[Hard mode](roadmap)** is the planned response: a configuration that removes the escape routes, forcing genuine engagement or an honest skip.
+
+---
+
+### Debugging as the durable skill
+
+When asked which skills AI won't replace, Mahoney's answer is immediate: problem-solving and debugging. Not because AI can't debug — it can — but because the *judgment* to know when an AI's debug is wrong requires the same forensic instincts that only come from having debugged things yourself.
+
+Rocky's current question format asks about implications and consequences. **[Debugging-focused questions](roadmap)** extend this into forensic territory: given this code change, what would a production failure look like? What would the stack trace tell you? These questions can't be answered by pattern-matching on documentation — they require the kind of thinking Mahoney identifies as durable.
+
+---
+
+### Iterative planning before code
+
+Mahoney describes his own AI workflow: use the tool to iterate on a *plan* first, refuse to let it generate code until the plan is solid. This disciplines the collaboration — the developer stays in the decision seat, and the AI handles execution within defined constraints.
+
+Rocky's pre-task mode (`rocky "task description"`) already reviews what you know before work begins. **[Pre-task gap framing](roadmap)** makes the AI-risk dimension explicit: for each gap topic, Rocky tells you *this is something AI will likely write for you — here is the question you should be able to answer before trusting the output*. The pre-task session becomes a readiness check for supervised AI use, not just a general review.
+
+---
+
+### Motivation as the irreplaceable human element
+
+Mahoney's view of his primary role as a professor: not to deliver information — AI can do that — but to motivate, inspire passion, and model what it looks like to care deeply about the craft. An LLM can explain recursion; it cannot make a student feel that recursion is worth understanding.
+
+Rocky takes a different angle on this: Rocky the alien is enthusiastic, direct, and genuinely invested in your progress. The personality isn't decoration — it's an attempt to make the quiz feel like a conversation with someone rooting for you, not a test you're taking alone. That's a limited version of what Mahoney describes, but it's the right direction.
+
+---
+
+### Rocky as a required PR check
+
+One idea that emerged from this discussion: if AI is handling more and more of the code in a pull request, what guarantees does a reviewer have that the author understands what they're merging?
+
+The conventional answer is code review. But code review is good at catching logic errors, not at detecting whether the author could reason through the code without the AI that wrote it.
+
+Rocky's PR check (**[planned feature](roadmap)**) addresses this at the workflow level: before a PR can merge, Rocky verifies the author's PKG shows adequate recall on the topics introduced. Paired with GitHub's stacked PRs feature — where PRs build on each other in a reviewable stack — this creates a layer-by-layer knowledge check: each PR in the stack must demonstrate understanding of only what it introduces.
+
+This doesn't slow down shipping. It makes the assumption behind shipping — *"the author knows what this does"* — verifiable.
+
+---
+
+*Have a paper, talk, or post that shaped your thinking on learning and AI? Open an issue or PR.*
 ''';

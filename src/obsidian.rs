@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use chrono::Local;
 
+use crate::db::Edge;
 use crate::fsrs;
 use crate::node::Node;
 
@@ -28,15 +29,24 @@ fn node_path(node: &Node, pkg_dir: &Path) -> PathBuf {
 
 // ── Write a single node ───────────────────────────────────────────────────────
 
+/// Write a node with edges resolved from the full edge list.
+pub fn write_node_with_edges(node: &Node, pkg_dir: &Path, all_edges: &[Edge]) -> Result<()> {
+    let edges: Vec<&Edge> = all_edges.iter()
+        .filter(|e| e.source_id == node.id || e.target_id == node.id)
+        .collect();
+    write_node_inner(node, pkg_dir, &edges)
+}
+
+/// Write a node with no edge context (used when edges are unavailable).
 pub fn write_node(node: &Node, pkg_dir: &Path) -> Result<()> {
     write_node_inner(node, pkg_dir, &[])
 }
 
-pub fn write_node_with_links(node: &Node, pkg_dir: &Path, related_ids: &[String]) -> Result<()> {
-    write_node_inner(node, pkg_dir, related_ids)
+fn recall_status(r: f64) -> &'static str {
+    if r >= 0.9 { "known" } else if r >= 0.7 { "fading" } else { "gap" }
 }
 
-fn write_node_inner(node: &Node, pkg_dir: &Path, related_ids: &[String]) -> Result<()> {
+fn write_node_inner(node: &Node, pkg_dir: &Path, edges: &[&Edge]) -> Result<()> {
     let path = node_path(node, pkg_dir);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -52,6 +62,7 @@ fn write_node_inner(node: &Node, pkg_dir: &Path, related_ids: &[String]) -> Resu
     let r = fsrs::retrievability(node.stability, node.last_reviewed);
     let today = Local::now().date_naive();
     let days_since = (today - node.last_reviewed).num_days();
+    let status = recall_status(r);
 
     let domain_tag = if node.domain.is_empty() {
         String::new()
@@ -59,15 +70,28 @@ fn write_node_inner(node: &Node, pkg_dir: &Path, related_ids: &[String]) -> Resu
         format!("\nrocky_domain: {}", node.domain)
     };
 
+    let repo_tag = if node.repo.is_empty() {
+        String::new()
+    } else {
+        format!("\nrocky_repo: {}", node.repo)
+    };
+
     let kind_tag = node.kind.as_str();
+
     let domain_folder_tag = if node.domain.is_empty() {
         String::new()
     } else {
         format!(", rocky/domain/{}", node.domain.to_lowercase())
     };
 
+    let repo_folder_tag = if node.repo.is_empty() {
+        String::new()
+    } else {
+        format!(", rocky/repo/{}", node.repo.to_lowercase().replace(' ', "-"))
+    };
+
     let frontmatter = format!(
-        "---\nrocky_id: {}\nrocky_kind: {kind_tag}{domain_tag}\nrocky_difficulty: {:.3}\nrocky_stability: {:.2}\nrocky_retrievability: {:.4}\nrocky_last_reviewed: {}\nrocky_last_encountered: {}\nrocky_review_count: {}\nrocky_days_since_review: {}\ntags: [rocky/node, rocky/kind/{kind_tag}{domain_folder_tag}]\n---\n",
+        "---\nrocky_id: {}\nrocky_kind: {kind_tag}{domain_tag}{repo_tag}\nrocky_status: {status}\nrocky_difficulty: {:.3}\nrocky_stability: {:.2}\nrocky_retrievability: {:.4}\nrocky_last_reviewed: {}\nrocky_last_encountered: {}\nrocky_review_count: {}\nrocky_days_since_review: {}\ntags: [rocky/node, rocky/kind/{kind_tag}, rocky/status/{status}{domain_folder_tag}{repo_folder_tag}]\n---\n",
         node.id,
         node.difficulty,
         node.stability,
@@ -83,16 +107,42 @@ fn write_node_inner(node: &Node, pkg_dir: &Path, related_ids: &[String]) -> Resu
         body.push_str(&node.description);
         body.push('\n');
     }
+
+    // Canonical Q&A
+    if !node.canonical_question.is_empty() {
+        body.push_str("\n## Question\n\n");
+        body.push_str(&node.canonical_question);
+        body.push('\n');
+        if !node.canonical_answer.is_empty() {
+            body.push_str("\n## Ideal Answer\n\n");
+            body.push_str(&node.canonical_answer);
+            body.push('\n');
+        }
+    }
+
+    // Contexts
     if !node.contexts.is_empty() {
         body.push_str("\n## Contexts\n");
         for ctx in &node.contexts {
             body.push_str(&format!("- {ctx}\n"));
         }
     }
-    if !related_ids.is_empty() {
+
+    // Edge-based related links
+    if !edges.is_empty() {
         body.push_str("\n## Related\n");
-        for id in related_ids {
-            body.push_str(&format!("- [[{id}]]\n"));
+        for edge in edges {
+            let (other_id, arrow, kind) = if edge.source_id == node.id {
+                (&edge.target_id, "→", edge.kind.as_str())
+            } else {
+                (&edge.source_id, "←", edge.kind.as_str())
+            };
+            let desc = if edge.description.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", edge.description)
+            };
+            body.push_str(&format!("- [[{other_id}]] {arrow} `{kind}`{desc}\n"));
         }
     }
 
@@ -112,34 +162,15 @@ pub fn delete_node(node_id: &str, domain: &str, pkg_dir: &Path) {
 
 // ── Export all nodes ──────────────────────────────────────────────────────────
 
-pub fn write_all(nodes: &[Node], pkg_dir: &Path) -> Result<usize> {
+pub fn write_all(nodes: &[Node], all_edges: &[Edge], pkg_dir: &Path) -> Result<usize> {
     std::fs::create_dir_all(pkg_dir)?;
 
-    // Pre-compute wikilinks: for each node, find others whose topic ID shares
-    // a meaningful keyword (word >3 chars from the ID slug)
-    let all_ids: Vec<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
-
     for node in nodes {
-        let related = find_related_ids(node, &all_ids);
-        write_node_with_links(node, pkg_dir, &related)?;
+        write_node_with_edges(node, pkg_dir, all_edges)?;
     }
 
     write_dashboard_pages(pkg_dir)?;
     Ok(nodes.len())
-}
-
-fn find_related_ids(node: &Node, all_ids: &[&str]) -> Vec<String> {
-    // Split this node's ID on '-', keep words >3 chars, match against other IDs
-    let keywords: Vec<&str> = node.id.split('-').filter(|w| w.len() > 3).collect();
-    if keywords.is_empty() {
-        return vec![];
-    }
-    all_ids.iter()
-        .filter(|&&id| id != node.id)
-        .filter(|&&id| keywords.iter().any(|kw| id.contains(kw)))
-        .map(|&id| id.to_string())
-        .take(5) // cap at 5 related links per node
-        .collect()
 }
 
 // ── Dashboard pages ───────────────────────────────────────────────────────────
@@ -255,6 +286,33 @@ for (const domain of domains.sort()) {
 
 ---
 
+## By Project
+
+```dataviewjs
+const repos = [...new Set(dv.pages('#rocky/node').map(p => p.rocky_repo).filter(r => r))];
+if (repos.length === 0) {
+  dv.paragraph("_No repo tags found. Run `rocky backfill` in your projects to tag topics._");
+} else {
+  for (const repo of repos.sort()) {
+    const pages = dv.pages('#rocky/node').filter(p => p.rocky_repo === repo);
+    const known = pages.filter(p => p.rocky_retrievability >= 0.9).length;
+    const gaps  = pages.filter(p => p.rocky_retrievability < 0.7).length;
+    dv.header(3, `${repo} (${pages.length} topics · ${known} known · ${gaps} gaps)`);
+    dv.table(
+      ["Topic", "Recall", "Domain", "Kind"],
+      pages.sort(p => p.rocky_retrievability).map(p => [
+        p.file.link,
+        Math.round(p.rocky_retrievability * 100) + "%",
+        p.rocky_domain,
+        p.rocky_kind
+      ])
+    );
+  }
+}
+```
+
+---
+
 ## Hardest Topics
 
 ```dataview
@@ -342,6 +400,28 @@ for (const domain of domains.sort()) {
     pages.sort(p => p.rocky_retrievability).map(p => [
       p.file.link,
       Math.round(p.rocky_retrievability * 100) + "%",
+      p.rocky_days_since_review + "d ago"
+    ])
+  );
+}
+```
+
+---
+
+## By Project
+
+```dataviewjs
+const repos = [...new Set(dv.pages('#rocky/node').filter(p => p.rocky_retrievability < 0.9).map(p => p.rocky_repo).filter(r => r))];
+for (const repo of repos.sort()) {
+  const pages = dv.pages('#rocky/node').filter(p => p.rocky_repo === repo && p.rocky_retrievability < 0.9);
+  if (pages.length === 0) continue;
+  dv.header(3, repo);
+  dv.table(
+    ["Topic", "Recall", "Domain", "Days Since Review"],
+    pages.sort(p => p.rocky_retrievability).map(p => [
+      p.file.link,
+      Math.round(p.rocky_retrievability * 100) + "%",
+      p.rocky_domain,
       p.rocky_days_since_review + "d ago"
     ])
   );

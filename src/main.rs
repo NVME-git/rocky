@@ -5,6 +5,7 @@ mod local_log;
 mod node;
 mod obsidian;
 mod personality;
+mod server;
 mod session;
 mod sync;
 mod teacher;
@@ -19,7 +20,7 @@ use config::Config;
 use db::Db;
 use node::Kind;
 use session::Session;
-use teacher::{Teacher, TopicInfo};
+use teacher::{Difficulty, Teacher, TopicInfo};
 
 const MAX_QUESTIONS: u32 = 3;
 
@@ -28,7 +29,7 @@ const MAX_QUESTIONS: u32 = 3;
 #[derive(Parser)]
 #[command(
     name = "rocky",
-    about = "Rocky — Personal Knowledge Graph\n\n  ♫  Stay sharp. Stay human.\n\n  Quiz yourself on what your AI agent just built so you never lose the thread.",
+    about = "Rocky — Personal Knowledge Graph\n\n  You observe. Question?\n\n  Quiz yourself on what your AI agent just built so you never lose the thread.",
 )]
 struct Cli {
     /// Task description to analyze before starting work
@@ -129,6 +130,9 @@ enum Cmd {
         /// Maximum number of commits to scan (default: all)
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
+        /// Retroactively generate missing clues for nodes that already have canonical Q&A
+        #[arg(long)]
+        fill_clues: bool,
     },
 }
 
@@ -146,7 +150,7 @@ enum HookTarget {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("{} {e:#}", "error:".red().bold());
+        eprintln!("{} {e:#}", "error:".truecolor(226, 75, 74).bold());
         std::process::exit(1);
     }
 }
@@ -172,35 +176,35 @@ fn run() -> Result<()> {
                     let (ok, msg) = install_git_hook()?;
                     if ok {
                         p.banner();
-                        println!("  {} {msg}", "✓".green());
+                        println!("  {} {msg}", "✓".truecolor(29, 158, 117));
                         println!();
                         println!("  {}", "Rocky will run after every commit in this repo.".dimmed());
                         println!("  {}", "Use  rocky quiz  for an on-demand session anytime.".dimmed());
                     } else {
-                        println!("  {} {msg}", "✗".red());
+                        println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
                 HookTarget::Claude => {
                     let (ok, msg) = install_claude_hook()?;
                     if ok {
                         p.banner();
-                        println!("  {} {msg}", "✓".green());
+                        println!("  {} {msg}", "✓".truecolor(29, 158, 117));
                         println!();
                         println!("  {}", "Rocky will silently log every Claude Code prompt.".dimmed());
                         println!("  {}", "Run  rocky install prompt  in each project to enable logging there.".dimmed());
                         println!("  {}", "Run  rocky quiz  to review topics from recent sessions.".dimmed());
                     } else {
-                        println!("  {} {msg}", "✗".red());
+                        println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
                 HookTarget::Prompt => {
                     let (ok, msg) = local_log::install_prompt_marker()?;
                     if ok {
-                        println!("  {} {msg}", "✓".green());
+                        println!("  {} {msg}", "✓".truecolor(29, 158, 117));
                         println!("  {}", "Prompt logging enabled for this project.".dimmed());
                         println!("  {}", "Run  rocky quiz  after a Claude Code session to review topics.".dimmed());
                     } else {
-                        println!("  {} {msg}", "✗".red());
+                        println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
             }
@@ -210,25 +214,25 @@ fn run() -> Result<()> {
                 HookTarget::Git => {
                     let (ok, msg) = uninstall_git_hook()?;
                     if ok {
-                        println!("  {} {msg}", "✓".green());
+                        println!("  {} {msg}", "✓".truecolor(29, 158, 117));
                     } else {
-                        println!("  {} {msg}", "✗".red());
+                        println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
                 HookTarget::Claude => {
                     let (ok, msg) = uninstall_claude_hook()?;
                     if ok {
-                        println!("  {} {msg}", "✓".green());
+                        println!("  {} {msg}", "✓".truecolor(29, 158, 117));
                     } else {
-                        println!("  {} {msg}", "✗".red());
+                        println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
                 HookTarget::Prompt => {
                     let (ok, msg) = local_log::uninstall_prompt_marker()?;
                     if ok {
-                        println!("  {} {msg}", "✓".green());
+                        println!("  {} {msg}", "✓".truecolor(29, 158, 117));
                     } else {
-                        println!("  {} {msg}", "✗".red());
+                        println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
             }
@@ -273,7 +277,7 @@ fn run() -> Result<()> {
         Some(Cmd::Restore) => {
             let pkg_json = cfg.pkg_dir.join("pkg.json");
             let count = db.import_pkg_json(&pkg_json)?;
-            println!("  {} Restored {count} topics from {}", "✓".green(), pkg_json.display());
+            println!("  {} Restored {count} topics from {}", "✓".truecolor(29, 158, 117), pkg_json.display());
             println!("  {}", "Run  rocky export  to sync PKG files.".dimmed());
         }
         Some(Cmd::Classify) => {
@@ -283,10 +287,10 @@ fn run() -> Result<()> {
             show_edges(&db, stats)?;
         }
         Some(Cmd::View) => {
-            run_view(&db, &cfg)?;
+            server::run(&db, &cfg)?;
         }
-        Some(Cmd::Backfill { all_authors, limit }) => {
-            run_backfill(&db, &make_teacher(&cfg)?, all_authors, limit)?;
+        Some(Cmd::Backfill { all_authors, limit, fill_clues }) => {
+            run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit, fill_clues)?;
         }
         None => {
             if let Some(msg) = cli.after {
@@ -334,9 +338,9 @@ fn show_stats(db: &Db, cfg: &Config, p: &personality::Personality) -> Result<()>
     print_header();
     let (total, known, stale, gaps) = db.summary()?;
     println!("\n  Total topics:  {total}");
-    println!("  {}", format!("Known:         {known}").green());
-    println!("  {}", format!("Fading:        {stale}").yellow());
-    println!("  {}", format!("Gaps/weak:     {gaps}").red());
+    println!("  {}", format!("Known:         {known}").truecolor(29, 158, 117));
+    println!("  {}", format!("Fading:        {stale}").truecolor(239, 159, 39));
+    println!("  {}", format!("Gaps/weak:     {gaps}").truecolor(226, 75, 74));
 
     let session = Session::new(
         Db::open(&cfg.db_path, &cfg.pkg_dir)?,
@@ -419,9 +423,9 @@ fn list_topics(db: &Db) -> Result<()> {
             node.last_reviewed
         );
         let colored = match cls {
-            "known" => line.green().to_string(),
-            "stale" => line.yellow().to_string(),
-            _ => line.red().to_string(),
+            "known" => line.truecolor(29, 158, 117).to_string(),
+            "stale" => line.truecolor(239, 159, 39).to_string(),
+            _ => line.truecolor(226, 75, 74).to_string(),
         };
         println!("{colored}");
     }
@@ -441,8 +445,34 @@ const BACKFILL_COMMIT_DELAY_MS: u64 = 1_000;
 // Pause between edge-generation calls after all nodes are added
 const BACKFILL_EDGE_DELAY_MS: u64 = 800;
 
-fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usize>) -> Result<()> {
+fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, limit: Option<usize>, fill_clues: bool) -> Result<()> {
     use std::process::Command;
+
+    // ── Fill-clues mode: retroactively generate clues for existing canonical nodes ──
+    if fill_clues {
+        let missing = db.nodes_missing_clue()?;
+        if missing.is_empty() {
+            println!("  {} All canonical nodes already have clues.", "✓".truecolor(29, 158, 117));
+            return Ok(());
+        }
+        println!("  Generating clues for {} node(s)...\n", missing.len());
+        let mut filled = 0usize;
+        for node in &missing {
+            print!("    {} {}... ", "·".dimmed(), node.topic);
+            io::stdout().flush()?;
+            match teacher.generate_clue(&node.topic, &node.description, &node.canonical_question) {
+                Ok(clue) => {
+                    db.set_canonical_qa(&node.topic, &node.canonical_question, &node.canonical_answer, &clue).ok();
+                    filled += 1;
+                    println!("{}", "done".truecolor(29, 158, 117));
+                }
+                Err(e) => println!("{}", format!("failed ({e})").truecolor(231, 130, 132)),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        println!("\n  {} {}/{} clues generated.", "✓".truecolor(29, 158, 117), filled, missing.len());
+        return Ok(());
+    }
 
     print_header();
 
@@ -458,7 +488,7 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
         let out = Command::new("git").args(["config", "user.email"]).output()?;
         let email = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if email.is_empty() {
-            eprintln!("  {} Could not read git user.email — use --all-authors to skip filtering.", "!".yellow());
+            eprintln!("  {} Could not read git user.email — use --all-authors to skip filtering.", "!".truecolor(239, 159, 39));
             return Ok(());
         }
         Some(email)
@@ -499,17 +529,23 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
 
     println!("  Scanning {scope_desc} ({} commits)…\n", shas.len());
 
-    // Snapshot existing node IDs (excluding skeleton) so we know what's truly new
-    let existing_ids: std::collections::HashSet<String> = db
+    // Snapshot existing node IDs (excluding skeleton) so we know what's truly new.
+    // Updated as nodes are added so later commits don't re-process the same topic.
+    let mut existing_ids: std::collections::HashSet<String> = db
         .all_nodes()?
         .into_iter()
         .filter(|n| !n.kind.is_domain())
         .map(|n| Db::node_id_static(&n.topic))
         .collect();
 
+    let repo = detect_repo_name();
+    let project_summary = load_or_create_project_summary(&cfg.rocky_dir, &repo, teacher);
+    if !project_summary.is_empty() {
+        println!("  {}", format!("Project: {project_summary}").dimmed());
+    }
+
     let mut added = 0usize;
     let mut skipped = 0usize;
-    let mut newly_added: Vec<(String, String)> = Vec::new();
 
     // ── Process commits ───────────────────────────────────────────────────────
     for (i, sha) in shas.iter().enumerate() {
@@ -518,6 +554,7 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
         }
 
         let short = &sha[..7];
+        let cdate = commit_date(sha);
 
         let msg_out = Command::new("git")
             .args(["log", "-1", "--pretty=%B", sha])
@@ -525,7 +562,6 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
         let commit_msg = String::from_utf8_lossy(&msg_out.stdout).trim().to_string();
         let commit_label = commit_msg.lines().next().unwrap_or(short).to_string();
 
-        // Diff (smaller limit to keep Ollama requests fast)
         let raw_diff = {
             let diff_out = Command::new("git")
                 .args(["diff", &format!("{sha}^"), sha, "--"])
@@ -549,7 +585,6 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
         print!("  [{}/{}] {short} {}", i + 1, shas.len(), commit_label.dimmed());
         let _ = std::io::Write::flush(&mut std::io::stdout());
 
-        // Extract topics — retry once on failure after a short pause
         let topics = match teacher.extract_topics_from_diff(&commit_msg, &diff) {
             Ok(t) => t,
             Err(_) => {
@@ -577,6 +612,8 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
 
         println!(" — {} new", new_topics.len());
 
+        // Insert nodes with commit date and repo tag
+        let mut commit_new: Vec<(String, String)> = Vec::new();
         for t in &new_topics {
             db.add_or_update(
                 &t.topic,
@@ -585,26 +622,34 @@ fn run_backfill(db: &Db, teacher: &Teacher, all_authors: bool, limit: Option<usi
                 &t.domain,
                 &t.description,
                 &commit_label,
-                None,
+                cdate,
+                &repo,
+                cdate,
             )?;
-            println!("    {} {}", "+".green(), t.topic);
-            newly_added.push((t.topic.clone(), t.description.clone()));
+            // Mark as seen so later commits in this run don't re-process the same topic
+            existing_ids.insert(Db::node_id_static(&t.topic));
+            println!("    {} {}", "+".truecolor(29, 158, 117), t.topic);
+
+            // Pre-generate question + ideal answer + clue from diff context (silent on failure)
+            if let Ok((q, a, clue)) = teacher.generate_question_and_answer(
+                &t.topic, &t.description, &commit_msg, &diff, &project_summary,
+            ) {
+                db.set_canonical_qa(&t.topic, &q, &a, &clue).ok();
+            }
+
+            commit_new.push((t.topic.clone(), t.description.clone()));
             added += 1;
         }
         skipped += topics.len() - new_topics.len();
-    }
 
-    // ── Generate edges for all new nodes ─────────────────────────────────────
-    if !newly_added.is_empty() {
-        println!("\n  {} Generating edges for {} new topic{}…",
-            "◈".cyan(), newly_added.len(), if newly_added.len() == 1 { "" } else { "s" });
-        generate_edges_for_new_nodes(db, teacher, &newly_added, BACKFILL_EDGE_DELAY_MS);
+        println!("    {} linking…", "◈".truecolor(6, 182, 212));
+        generate_edges_for_new_nodes(db, teacher, &commit_new, BACKFILL_EDGE_DELAY_MS);
     }
 
     println!();
     println!(
         "  {} Added {} new topic{} · {} already in PKG",
-        "✓".green(),
+        "✓".truecolor(29, 158, 117),
         added,
         if added == 1 { "" } else { "s" },
         skipped
@@ -625,112 +670,6 @@ fn truncate_to(s: &str, max_chars: usize) -> String {
     format!("{}\n\n[... truncated ...]", &s[..end])
 }
 
-fn run_view(db: &Db, cfg: &Config) -> Result<()> {
-    use serde_json::{json, Value};
-
-    let all_nodes = db.all_nodes()?;
-    let topic_nodes: Vec<_> = all_nodes.iter().filter(|n| !n.kind.is_domain()).collect();
-    let domain_nodes: Vec<_> = all_nodes.iter().filter(|n| n.kind.is_domain()).collect();
-
-    if topic_nodes.is_empty() {
-        println!("  PKG is empty — add some topics first with  rocky \"<task>\"");
-        return Ok(());
-    }
-
-    // Domains that actually have at least one topic
-    let active_domains: std::collections::HashSet<&str> = topic_nodes.iter()
-        .map(|n| n.domain.as_str())
-        .filter(|d| !d.is_empty())
-        .collect();
-
-    let user_id = "__user__";
-    let user_name = &cfg.user_name;
-
-    // Serialise topic nodes
-    let mut nodes_json: Vec<Value> = topic_nodes.iter().map(|n| {
-        let r = fsrs::retrievability(n.stability, n.last_reviewed);
-        let cls = fsrs::classify(r);
-        json!({
-            "id": n.id, "topic": n.topic, "kind": n.kind.as_str(),
-            "domain": n.domain, "description": n.description,
-            "stability": n.stability, "difficulty": n.difficulty,
-            "retrievability": r, "classification": cls,
-            "last_reviewed": n.last_reviewed.to_string(),
-            "review_count": n.review_count, "created_at": n.created_at.to_string(),
-        })
-    }).collect();
-
-    // Domain nodes (only those with topics)
-    for dn in &domain_nodes {
-        if !active_domains.contains(dn.topic.as_str()) { continue; }
-        nodes_json.push(json!({
-            "id": dn.id, "topic": dn.topic, "kind": "domain",
-            "domain": dn.topic, "description": dn.description,
-            "stability": 999.0, "difficulty": 0.0,
-            "retrievability": 1.0, "classification": "known",
-            "last_reviewed": dn.last_reviewed.to_string(),
-            "review_count": 0, "created_at": dn.created_at.to_string(),
-        }));
-    }
-
-    // Central user node
-    nodes_json.push(json!({
-        "id": user_id, "topic": user_name, "kind": "user",
-        "domain": "", "description": "Your personal knowledge graph",
-        "stability": 999.0, "difficulty": 0.0,
-        "retrievability": 1.0, "classification": "known",
-        "last_reviewed": "", "review_count": 0, "created_at": "",
-    }));
-
-    // Edges: topic→domain (part_of only where both ends visible), domain→user
-    let topic_ids: std::collections::HashSet<&str> = topic_nodes.iter().map(|n| n.id.as_str()).collect();
-    let domain_ids: std::collections::HashSet<&str> = domain_nodes.iter()
-        .filter(|n| active_domains.contains(n.topic.as_str()))
-        .map(|n| n.id.as_str()).collect();
-    let all_visible: std::collections::HashSet<&str> = topic_ids.iter()
-        .chain(domain_ids.iter()).chain(std::iter::once(&user_id)).copied().collect();
-
-    let mut edges_json: Vec<Value> = db.get_all_edges()?.into_iter()
-        .filter(|e| all_visible.contains(e.source_id.as_str()) && all_visible.contains(e.target_id.as_str()))
-        .map(|e| json!({
-            "id": e.id, "source": e.source_id, "target": e.target_id,
-            "kind": e.kind.as_str(), "description": e.description, "strength": e.strength,
-        }))
-        .collect();
-
-    // Synthetic domain→user edges
-    for dn in &domain_nodes {
-        if !active_domains.contains(dn.topic.as_str()) { continue; }
-        edges_json.push(json!({
-            "id": format!("{}-user", dn.id),
-            "source": dn.id, "target": user_id,
-            "kind": "part_of", "description": "", "strength": 1.0,
-        }));
-    }
-
-    let data = json!({ "nodes": nodes_json, "edges": edges_json, "userName": user_name });
-    let data_str = serde_json::to_string(&data)?;
-
-    let html = build_view_html(&data_str);
-
-    let out_path = cfg.rocky_dir.join("view.html");
-    std::fs::write(&out_path, &html)?;
-
-    println!("  {} Written to {}", "✓".green(), out_path.display());
-    println!("  {} Opening in browser...", "→".cyan());
-
-    // Open in default browser (Linux: xdg-open, macOS: open)
-    #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(&out_path).spawn();
-    #[cfg(not(target_os = "macos"))]
-    let _ = std::process::Command::new("xdg-open").arg(&out_path).spawn();
-
-    Ok(())
-}
-
-fn build_view_html(data_json: &str) -> String {
-    include_str!("view.html").replace("__DATA_JSON__", data_json)
-}
 
 /// Called after all user-facing Q&A is done — generates implication edges silently.
 /// Errors are logged as warnings; they never surface to the user or abort anything.
@@ -797,7 +736,7 @@ fn generate_edges_for_new_nodes(db: &Db, teacher: &Teacher, new_topics: &[(Strin
             _ => continue,
         };
 
-        for edge in generated.iter().take(4) {
+        for edge in generated.iter().filter(|e| e.strength >= 0.6).take(4) {
             // Match target topic name to a node in the DB
             let target_node = match db.get_node(&edge.target) {
                 Ok(Some(n)) => n,
@@ -843,7 +782,7 @@ fn show_edges(db: &Db, stats: bool) -> Result<()> {
 
     if stats {
         let (total, most_connected, most_count, avg_strength) = db.edge_stats()?;
-        println!("\n  {} Edge Stats\n", "◈".bold().cyan());
+        println!("\n  {} Edge Stats\n", "◈".bold().truecolor(6, 182, 212));
         println!("  {:<22} {}", "Total edges:".dimmed(), total.to_string().bold());
         if total > 0 {
             println!("  {:<22} {}", "Avg strength:".dimmed(), format!("{avg_strength:.2}").bold());
@@ -852,7 +791,7 @@ fn show_edges(db: &Db, stats: bool) -> Result<()> {
             println!(
                 "  {:<22} {} {}",
                 "Most connected:".dimmed(),
-                most_connected.bold().yellow(),
+                most_connected.bold().truecolor(239, 159, 39),
                 format!("({most_count} edges)").dimmed()
             );
         }
@@ -871,10 +810,10 @@ fn show_edges(db: &Db, stats: bool) -> Result<()> {
             let (count, strength_sum) = by_kind.get(*kind_str).copied().unwrap_or((0, 0.0));
             let avg = if count > 0 { strength_sum / count as f64 } else { 0.0 };
             let colored_kind = match EdgeKind::from_str(kind_str) {
-                EdgeKind::Implies       => kind_str.cyan(),
-                EdgeKind::DependsOn     => kind_str.yellow(),
-                EdgeKind::ConflictsWith => kind_str.red(),
-                EdgeKind::PartOf        => kind_str.green(),
+                EdgeKind::Implies       => kind_str.truecolor(6, 182, 212),
+                EdgeKind::DependsOn     => kind_str.truecolor(239, 159, 39),
+                EdgeKind::ConflictsWith => kind_str.truecolor(226, 75, 74),
+                EdgeKind::PartOf        => kind_str.truecolor(29, 158, 117),
             };
             println!("    {:<20} {:<8} {}", colored_kind, count, if count > 0 { format!("{avg:.2}") } else { String::new() });
         }
@@ -916,10 +855,10 @@ fn show_edges(db: &Db, stats: bool) -> Result<()> {
         let desc_str = &e.description[..e.description.len().min(48)];
 
         let kind_colored = match e.kind {
-            EdgeKind::Implies       => e.kind.as_str().cyan().to_string(),
-            EdgeKind::DependsOn     => e.kind.as_str().yellow().to_string(),
-            EdgeKind::ConflictsWith => e.kind.as_str().red().to_string(),
-            EdgeKind::PartOf        => e.kind.as_str().green().to_string(),
+            EdgeKind::Implies       => e.kind.as_str().truecolor(6, 182, 212).to_string(),
+            EdgeKind::DependsOn     => e.kind.as_str().truecolor(239, 159, 39).to_string(),
+            EdgeKind::ConflictsWith => e.kind.as_str().truecolor(226, 75, 74).to_string(),
+            EdgeKind::PartOf        => e.kind.as_str().truecolor(29, 158, 117).to_string(),
         };
 
         println!(
@@ -938,7 +877,10 @@ fn show_edges(db: &Db, stats: bool) -> Result<()> {
 
 fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, task: &str, mode: &str, edge_reuse: &config::EdgeReuse) -> Result<()> {
     print_header();
+    p.print_rocky(false);
     println!("\n{} {task}\n", "Task:".bold());
+    let repo = detect_repo_name();
+    let commit_dt = head_commit_date();
 
     if mode == "after" && is_hotfix(task) {
         println!("  {}", "Hotfix detected — Rocky stepping back.".dimmed());
@@ -951,7 +893,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
         .context("Failed to extract topics from task")?;
 
     if topics.is_empty() {
-        println!("{}", "No significant topics found. Proceed freely.".green());
+        println!("{}", "No significant topics found. Proceed freely.".truecolor(29, 158, 117));
         return Ok(());
     }
 
@@ -994,7 +936,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                     .unwrap_or(1.0);
                 println!(
                     "{} {}",
-                    format!("  ✓ {topic}").green(),
+                    format!("  ✓ {topic}").truecolor(29, 158, 117),
                     format!("({:.0}%)", r * 100.0).dimmed()
                 );
                 db.mark_encountered(topic)?;
@@ -1005,13 +947,13 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 let r = fsrs::retrievability(n.stability, n.last_reviewed);
                 println!(
                     "{} {}",
-                    format!("  ~ {topic}").yellow(),
+                    format!("  ~ {topic}").truecolor(239, 159, 39),
                     format!("(recall faded to {:.0}%)", r * 100.0).dimmed()
                 );
                 if quiz_allowed && quizzed < budget {
                     println!("{}", "  Refreshing...".dimmed());
                     let reminder = teacher.generate_reminder(topic, n, task)?;
-                    println!("\n  {} {reminder}\n", "Rocky:".yellow().bold());
+                    println!("\n  {} {reminder}\n", "Rocky:".truecolor(239, 159, 39).bold());
                     db.add_or_update(
                         topic,
                         0.5,
@@ -1019,7 +961,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                         &topic_info.domain,
                         &topic_info.description,
                         task,
-                        None,
+                        None, "", None,
                     )?;
                     session.record_quiz()?;
                     quizzed += 1;
@@ -1032,7 +974,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse)?;
+                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse, &repo, commit_dt)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -1063,9 +1005,9 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
     }
 
     if !quiz_allowed && (new_count > 0 || stale_count > 0) {
-        println!("  {}", block_reason.yellow());
+        println!("  {}", block_reason.truecolor(239, 159, 39));
     } else if new_count == 0 && stale_count == 0 {
-        println!("{}", "All topics are in your PKG. You're good to go.".green());
+        println!("{}", "All topics are in your PKG. You're good to go.".truecolor(29, 158, 117));
     }
 
     let (total, known, stale, _) = db.summary()?;
@@ -1086,9 +1028,11 @@ fn run_socratic_loop(
     known_topics: &[String],
     p: &personality::Personality,
     edge_reuse: &config::EdgeReuse,
+    repo: &str,
+    node_date: Option<chrono::NaiveDate>,
 ) -> Result<(bool, bool)> {
     let topic = &topic_info.topic;
-    println!("\n{} New topic — {topic}", "Rocky:".cyan().bold());
+    println!("\n{} New topic — {topic}", "Rocky:".truecolor(6, 182, 212).bold());
     println!("{}", format!("  {}", topic_info.description).dimmed());
     println!();
 
@@ -1159,17 +1103,45 @@ fn run_socratic_loop(
                 }
             }
         }
-        // Fall back to standard single-concept question
-        teacher.generate_question(topic, &topic_info.description, task, known_topics, 1)?
+        // Use pre-generated canonical question if available, otherwise generate live
+        if let Ok(Some(ref n)) = db.get_node(topic) {
+            if !n.canonical_question.is_empty() {
+                break 'q n.canonical_question.clone();
+            }
+        }
+        teacher.generate_question(topic, &topic_info.description, task, known_topics, 1, Difficulty::Normal)?
     };
+
+    // Track whether the initial question was canonical (pre-generated from diff)
+    let is_canonical = db.get_node(topic).ok()
+        .flatten()
+        .map(|n| !n.canonical_question.is_empty() && n.canonical_question == question)
+        .unwrap_or(false);
+
+    // Load canonical answer and clue for use as evaluator reference and hint
+    let (canonical_answer, canonical_clue): (Option<String>, Option<String>) = db.get_node(topic).ok()
+        .flatten()
+        .map(|n| (
+            if n.canonical_answer.is_empty() { None } else { Some(n.canonical_answer) },
+            if n.canonical_clue.is_empty() { None } else { Some(n.canonical_clue) },
+        ))
+        .unwrap_or((None, None));
+
+    // Track current difficulty for adaptive re-generation
+    let mut current_difficulty = Difficulty::Normal;
 
     while questions_asked < MAX_QUESTIONS {
         questions_asked += 1;
         let display_q = p.format_question(&question);
-        println!("{} {display_q}", format!("Q{questions_asked}.").bold());
+        let source_label = if is_canonical && questions_asked == 1 && current_difficulty == Difficulty::Normal {
+            " (canonical)".dimmed().to_string()
+        } else {
+            " (generated)".dimmed().to_string()
+        };
+        println!("{}{} {display_q}", format!("Q{questions_asked}.").bold(), source_label);
         println!(
             "{}",
-            "   [e] too easy  [?] explain it  [i] not relevant  or type your answer:".dimmed()
+            "   [e] too easy  [s] simpler  [h] harder  [c] clue  [?] explain it  [i] not relevant  or type your answer:".dimmed()
         );
         print!("   > ");
         io::stdout().flush()?;
@@ -1187,7 +1159,7 @@ fn run_socratic_loop(
         // Skip / quit — queue for later without touching PKG
         if answer.is_empty() {
             if let Some(msg) = p.skipped() { println!("   {msg}"); }
-            else { println!("{}", "   Skipped — topic queued for next session.".yellow()); }
+            else { println!("{}", "   Skipped — topic queued for next session.".truecolor(239, 159, 39)); }
             queue_for_later(topic, topic_info.kind.as_str(), &topic_info.description, task);
             return Ok((true, false));
         }
@@ -1197,6 +1169,43 @@ fn run_socratic_loop(
             if let Some(msg) = p.ignored() { println!("   {msg}"); }
             else { println!("{}", "   Ignored — not added to PKG.".dimmed()); }
             return Ok((false, false));
+        }
+
+        // Simpler — regenerate with reduced difficulty
+        if answer.eq_ignore_ascii_case("s") {
+            println!("{}", "   Generating a simpler question...".dimmed());
+            current_difficulty = Difficulty::Simpler;
+            question = teacher.generate_question(
+                topic, &topic_info.description, task, known_topics, questions_asked, Difficulty::Simpler,
+            ).unwrap_or(question);
+            questions_asked -= 1;
+            continue;
+        }
+
+        // Harder — regenerate with increased difficulty
+        if answer.eq_ignore_ascii_case("h") {
+            println!("{}", "   Generating a harder question...".dimmed());
+            current_difficulty = Difficulty::Harder;
+            question = teacher.generate_question(
+                topic, &topic_info.description, task, known_topics, questions_asked, Difficulty::Harder,
+            ).unwrap_or(question);
+            questions_asked -= 1;
+            continue;
+        }
+
+        // Clue — show precomputed clue or generate one at runtime
+        if answer.eq_ignore_ascii_case("c") {
+            if let Some(ref clue) = canonical_clue {
+                println!("\n   {}\n", format!("Clue: {clue}").truecolor(167, 139, 250));
+            } else {
+                println!("{}", "   Generating clue...".dimmed());
+                match teacher.generate_clue(topic, &topic_info.description, &question) {
+                    Ok(clue) => println!("\n   {}\n", format!("Clue: {clue}").truecolor(167, 139, 250)),
+                    Err(_) => println!("{}", "   Could not generate clue.".dimmed()),
+                }
+            }
+            questions_asked -= 1;
+            continue;
         }
 
         // Fire the cross-concept edge (if any) the first time the user gives a real answer
@@ -1213,10 +1222,10 @@ fn run_socratic_loop(
                 &topic_info.domain,
                 &topic_info.description,
                 task,
-                None,
+                node_date, repo, node_date,
             )?;
             if let Some(msg) = p.too_easy() { println!("   {msg}"); }
-            else { println!("{}", "   Marked as known.".green()); }
+            else { println!("{}", "   Marked as known.".truecolor(29, 158, 117)); }
             print_milestone(db, p, topic);
             return Ok((true, true));
         }
@@ -1231,8 +1240,8 @@ fn run_socratic_loop(
                 "",
                 task,
             )?;
-            println!("\n   {}\n", explanation.cyan());
-            println!("{}", "   Saved to PKG — revisit before your next task.".yellow());
+            println!("\n   {}\n", explanation.truecolor(6, 182, 212));
+            println!("{}", "   Saved to PKG — revisit before your next task.".truecolor(239, 159, 39));
             db.add_or_update(
                 topic,
                 0.2,
@@ -1240,8 +1249,9 @@ fn run_socratic_loop(
                 &topic_info.domain,
                 &topic_info.description,
                 task,
-                None,
+                node_date, repo, node_date,
             )?;
+            db.add_review(&Db::node_id_static(topic), &question, "", &explanation, 0.2).ok();
             return Ok((true, true));
         }
 
@@ -1250,11 +1260,13 @@ fn run_socratic_loop(
         last_answer = answer.to_string();
 
         println!("{}", "   Evaluating...".dimmed());
-        let result =
-            teacher.evaluate_answer(topic, &question, answer, &topic_info.description)?;
+        let result = teacher.evaluate_answer(
+            topic, &question, answer, &topic_info.description,
+            canonical_answer.as_deref(),
+        )?;
         total_score += result.score;
 
-        println!("\n   {}", result.feedback.cyan());
+        println!("\n   {}", result.feedback.truecolor(6, 182, 212));
 
         if result.understood {
             db.add_or_update(
@@ -1264,10 +1276,11 @@ fn run_socratic_loop(
                 &topic_info.domain,
                 &topic_info.description,
                 task,
-                None,
+                node_date, repo, node_date,
             )?;
+            db.add_review(&Db::node_id_static(topic), &question, answer, &result.feedback, result.score).ok();
             if let Some(msg) = p.correct() { println!("   {msg}"); }
-            else { println!("{}", "   Added to your PKG.".green()); }
+            else { println!("{}", "   Added to your PKG.".truecolor(29, 158, 117)); }
             print_milestone(db, p, topic);
             return Ok((true, true));
         }
@@ -1285,7 +1298,7 @@ fn run_socratic_loop(
 
     // Exhausted questions without understanding — give the full explanation
     let avg_score = total_score / questions_asked.max(1) as f64;
-    println!("{}", "\n   Let me walk you through this one.\n".yellow());
+    println!("{}", "\n   Let me walk you through this one.\n".truecolor(239, 159, 39));
     let explanation = teacher.generate_explanation(
         topic,
         &topic_info.description,
@@ -1293,13 +1306,13 @@ fn run_socratic_loop(
         &last_answer,
         task,
     )?;
-    println!("   {}\n", explanation.cyan());
+    println!("   {}\n", explanation.truecolor(6, 182, 212));
 
     if let Some(msg) = p.failed() { println!("   {msg}"); }
     else if avg_score >= 0.4 {
-        println!("{}", "   Added to PKG with partial confidence — you're on the right track.".yellow());
+        println!("{}", "   Added to PKG with partial confidence — you're on the right track.".truecolor(239, 159, 39));
     } else {
-        println!("{}", "   Added to PKG — come back to this one.".red());
+        println!("{}", "   Added to PKG — come back to this one.".truecolor(226, 75, 74));
     }
     db.add_or_update(
         topic,
@@ -1308,8 +1321,9 @@ fn run_socratic_loop(
         &topic_info.domain,
         &topic_info.description,
         task,
-        None,
+        node_date, repo, node_date,
     )?;
+    db.add_review(&Db::node_id_static(topic), &last_question, &last_answer, &explanation, avg_score).ok();
     Ok((true, true))
 }
 
@@ -1319,7 +1333,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
 
     let matches = db.search_nodes(query)?;
     if matches.is_empty() {
-        println!("\n  {} No topics found matching \"{}\".", "✗".red(), query);
+        println!("\n  {} No topics found matching \"{}\".", "✗".truecolor(226, 75, 74), query);
         return Ok(());
     }
 
@@ -1329,9 +1343,9 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
         let cls = fsrs::classify(r);
         let label = format!("  [{}]  {} ({:.0}%)", i + 1, node.topic, r * 100.0);
         let colored = match cls {
-            "known" => label.green().to_string(),
-            "stale" => label.yellow().to_string(),
-            _ => label.red().to_string(),
+            "known" => label.truecolor(29, 158, 117).to_string(),
+            "stale" => label.truecolor(239, 159, 39).to_string(),
+            _ => label.truecolor(226, 75, 74).to_string(),
         };
         println!("{}", colored);
         println!("       {}", node.description.dimmed());
@@ -1392,7 +1406,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
             description: node.description.clone(),
         };
         let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
-        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse)?;
+        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
         if completed {
             session.record_quiz()?;
         }
@@ -1462,7 +1476,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
         });
 
     if queued_topics.is_empty() && due.is_empty() && prompt_context.is_none() {
-        println!("{}", "\n  Nothing to review — all topics are solid.".green());
+        println!("{}", "\n  Nothing to review — all topics are solid.".truecolor(29, 158, 117));
         println!("{}", "  Run some tasks or check back later.".dimmed());
         println!();
         return Ok(());
@@ -1489,7 +1503,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 domain: String::new(),
                 description: description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
             if completed {
                 session.record_quiz()?;
                 // Remove from queue now that it has been properly reviewed
@@ -1518,13 +1532,13 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
         if classification == "stale" {
             println!(
                 "{} {}",
-                format!("  ~ {topic}").yellow(),
+                format!("  ~ {topic}").truecolor(239, 159, 39),
                 format!("(faded to {:.0}%)", r * 100.0).dimmed()
             );
             let reminder = teacher.generate_reminder(topic, node, context)?;
-            println!("\n  {} {reminder}\n", "Rocky:".yellow().bold());
+            println!("\n  {} {reminder}\n", "Rocky:".truecolor(239, 159, 39).bold());
             db.add_or_update(
-                topic, 0.5, &node.kind, &node.domain, &node.description, context, None,
+                topic, 0.5, &node.kind, &node.domain, &node.description, context, None, "", None,
             )?;
             session.record_quiz()?;
         } else {
@@ -1536,7 +1550,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             domain: node.domain.clone(),
                 description: node.description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -1555,7 +1569,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             .collect();
 
         for topic_info in new_from_prompts {
-            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse)?;
+            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse, "", None)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -1582,7 +1596,7 @@ fn delete_topics(
 ) -> Result<()> {
     // Must have at least one filter
     if query.is_none() && since.is_none() && before.is_none() {
-        println!("  {} Provide a search query, --since DATE, --before DATE, or a combination.", "✗".red());
+        println!("  {} Provide a search query, --since DATE, --before DATE, or a combination.", "✗".truecolor(226, 75, 74));
         return Ok(());
     }
 
@@ -1603,7 +1617,7 @@ fn delete_topics(
     matches.retain(|n| !n.kind.is_domain());
 
     if matches.is_empty() {
-        println!("  {} No topics found.", "✗".red());
+        println!("  {} No topics found.", "✗".truecolor(226, 75, 74));
         return Ok(());
     }
 
@@ -1624,9 +1638,9 @@ fn delete_topics(
         let r = fsrs::retrievability(node.stability, node.last_reviewed);
         let cls = fsrs::classify(r);
         let color_fn: fn(&str) -> colored::ColoredString = match cls {
-            "known" => |s| s.green(),
-            "stale" => |s| s.yellow(),
-            _ => |s| s.red(),
+            "known" => |s| s.truecolor(29, 158, 117),
+            "stale" => |s| s.truecolor(239, 159, 39),
+            _ => |s| s.truecolor(226, 75, 74),
         };
         println!(
             "  {}  {} {}",
@@ -1664,7 +1678,7 @@ fn delete_topics(
         matches.iter().collect()
     } else if let Ok(n) = input.parse::<usize>() {
         if n == 0 || n > matches.len() {
-            println!("  {} Invalid selection.", "✗".red());
+            println!("  {} Invalid selection.", "✗".truecolor(226, 75, 74));
             return Ok(());
         }
         vec![&matches[n - 1]]
@@ -1676,7 +1690,7 @@ fn delete_topics(
     for node in &to_delete {
         db.delete_node(&node.id)?;
         obsidian::delete_node(&node.id, &node.domain, pkg_dir);
-        println!("  {} Deleted \"{}\".", "✓".green(), node.topic);
+        println!("  {} Deleted \"{}\".", "✓".truecolor(29, 158, 117), node.topic);
     }
 
     Ok(())
@@ -1770,7 +1784,7 @@ fn run_diff(
         .context("Failed to extract topics from diff")?;
 
     if topics.is_empty() {
-        println!("{}", "No significant topics found in this diff.".green());
+        println!("{}", "No significant topics found in this diff.".truecolor(29, 158, 117));
         return Ok(());
     }
 
@@ -1808,7 +1822,7 @@ fn run_diff(
                     .unwrap_or(1.0);
                 println!(
                     "{} {}",
-                    format!("  ✓ {topic}").green(),
+                    format!("  ✓ {topic}").truecolor(29, 158, 117),
                     format!("({:.0}%)", r * 100.0).dimmed()
                 );
                 db.mark_encountered(topic)?;
@@ -1819,13 +1833,13 @@ fn run_diff(
                 let r = fsrs::retrievability(n.stability, n.last_reviewed);
                 println!(
                     "{} {}",
-                    format!("  ~ {topic}").yellow(),
+                    format!("  ~ {topic}").truecolor(239, 159, 39),
                     format!("(recall faded to {:.0}%)", r * 100.0).dimmed()
                 );
                 if quiz_allowed && quizzed < budget {
                     println!("{}", "  Refreshing...".dimmed());
                     let reminder = teacher.generate_reminder(topic, n, &label)?;
-                    println!("\n  {} {reminder}\n", "Rocky:".yellow().bold());
+                    println!("\n  {} {reminder}\n", "Rocky:".truecolor(239, 159, 39).bold());
                     db.add_or_update(
                         topic,
                         0.5,
@@ -1833,7 +1847,7 @@ fn run_diff(
                         &topic_info.domain,
                         &topic_info.description,
                         &label,
-                        None,
+                        None, "", None,
                     )?;
                     session.record_quiz()?;
                     quizzed += 1;
@@ -1846,7 +1860,7 @@ fn run_diff(
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse)?;
+                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse, "", None)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -1874,9 +1888,9 @@ fn run_diff(
         );
     }
     if !quiz_allowed && (new_count > 0 || stale_count > 0) {
-        println!("  {}", block_reason.yellow());
+        println!("  {}", block_reason.truecolor(239, 159, 39));
     } else if new_count == 0 && stale_count == 0 {
-        println!("{}", "All topics already in your PKG.".green());
+        println!("{}", "All topics already in your PKG.".truecolor(29, 158, 117));
     }
 
     let (total, known, stale, _) = db.summary()?;
@@ -1895,15 +1909,16 @@ fn run_export(db: &Db, cfg: &Config) -> Result<()> {
         println!("  PKG is empty — no topic files to export.");
         println!(
             "  {} Dashboard pages written to {}",
-            "✓".green(),
+            "✓".truecolor(29, 158, 117),
             cfg.pkg_dir.display()
         );
         return Ok(());
     }
-    let count = obsidian::write_all(&nodes, &cfg.pkg_dir)?;
+    let edges = db.get_all_edges().unwrap_or_default();
+    let count = obsidian::write_all(&nodes, &edges, &cfg.pkg_dir)?;
     println!(
         "  {} Exported {count} topic{} + dashboard to {}",
-        "✓".green(),
+        "✓".truecolor(29, 158, 117),
         if count == 1 { "" } else { "s" },
         cfg.pkg_dir.display()
     );
@@ -1954,7 +1969,7 @@ fn run_queue() -> Result<()> {
                     if topics.len() == 1 { "" } else { "s" }
                 );
                 for (topic, kind, description, context) in &topics {
-                    println!("  {} {}", "·".yellow(), topic.bold());
+                    println!("  {} {}", "·".truecolor(239, 159, 39), topic.bold());
                     println!("    {} · {}", kind.dimmed(), description.dimmed());
                     if !context.is_empty() {
                         println!("    {}", format!("from: {context}").dimmed());
@@ -2078,18 +2093,31 @@ fn install_claude_hook() -> Result<(bool, String)> {
         .and_then(|p| p.to_str().map(|s| s.to_string()))
         .unwrap_or_else(|| "rocky".to_string());
     let cmd = format!("{rocky_bin} hook");
-    let entry = serde_json::json!({"command": cmd});
 
-    // Also accept the old "rocky hook" entry as already-installed
+    // Check if already installed in either the new nested format or the old flat format
     let already = arr.iter().any(|v| {
-        v.get("command").and_then(|c| c.as_str())
-            .map(|c| c == cmd || c == "rocky hook")
-            .unwrap_or(false)
+        // New format: {"matcher": "RockyHook", "hooks": [{"command": "...", "type": "command"}]}
+        let in_nested = v.get("hooks")
+            .and_then(|h| h.as_array())
+            .map(|hooks| hooks.iter().any(|h| {
+                h.get("command").and_then(|c| c.as_str())
+                    .map(|c| c == cmd || c.ends_with("/rocky hook") || c == "rocky hook")
+                    .unwrap_or(false)
+            }))
+            .unwrap_or(false);
+        // Old flat format: {"command": "..."}
+        let in_flat = v.get("command").and_then(|c| c.as_str())
+            .map(|c| c == cmd || c == "rocky hook" || c.ends_with("/rocky hook"))
+            .unwrap_or(false);
+        in_nested || in_flat
     });
     if already {
         return Ok((false, "Claude Code hook already installed".into()));
     }
 
+    let entry = serde_json::json!({
+        "hooks": [{"command": cmd, "type": "command"}]
+    });
     arr.push(entry);
 
     if let Some(parent) = path.parent() {
@@ -2117,12 +2145,21 @@ fn uninstall_claude_hook() -> Result<(bool, String)> {
         .and_then(|v| v.as_array_mut())
     {
         let before = arr.len();
-        // Remove any entry whose command ends with "rocky hook" (handles full path or plain)
+        // Remove any Rocky hook entry — new nested format or old flat format
         arr.retain(|v| {
-            !v.get("command")
+            let is_flat = v.get("command")
                 .and_then(|c| c.as_str())
                 .map(|c| c == "rocky hook" || c.ends_with("/rocky hook"))
-                .unwrap_or(false)
+                .unwrap_or(false);
+            let is_nested = v.get("hooks")
+                .and_then(|h| h.as_array())
+                .map(|hooks| hooks.iter().any(|h| {
+                    h.get("command").and_then(|c| c.as_str())
+                        .map(|c| c == "rocky hook" || c.ends_with("/rocky hook"))
+                        .unwrap_or(false)
+                }))
+                .unwrap_or(false);
+            !is_flat && !is_nested
         });
         arr.len() < before
     } else {
@@ -2167,13 +2204,13 @@ fn run_sync(db: &Db, cfg: &Config, init: Option<Option<String>>, push: bool, sta
     if let Some(remote_url) = init {
         let newly_created = sync::ensure_repo(rocky_dir)?;
         if newly_created {
-            println!("  {} Initialised git repo at {}", "✓".green(), rocky_dir.display());
+            println!("  {} Initialised git repo at {}", "✓".truecolor(29, 158, 117), rocky_dir.display());
         } else {
-            println!("  {} Git repo already exists", "✓".green());
+            println!("  {} Git repo already exists", "✓".truecolor(29, 158, 117));
         }
         if let Some(url) = remote_url {
             sync::set_remote(rocky_dir, &cfg.sync.remote, &url)?;
-            println!("  {} Remote '{}' set to {url}", "✓".green(), cfg.sync.remote);
+            println!("  {} Remote '{}' set to {url}", "✓".truecolor(29, 158, 117), cfg.sync.remote);
             println!("  {}", "Run `rocky sync --push` to push your PKG.".dimmed());
         } else {
             println!("  {}", format!("Add a remote: rocky sync --init <url>  or  git -C {} remote add origin <url>", rocky_dir.display()).dimmed());
@@ -2182,25 +2219,26 @@ fn run_sync(db: &Db, cfg: &Config, init: Option<Option<String>>, push: bool, sta
     }
 
     if !sync::is_git_repo(rocky_dir) {
-        println!("  {} Vault is not a git repo — run `rocky sync --init` first.", "✗".red());
+        println!("  {} Vault is not a git repo — run `rocky sync --init` first.", "✗".truecolor(226, 75, 74));
         return Ok(());
     }
 
     // Write pkg.json then commit
     let nodes = db.all_nodes()?;
-    obsidian::write_all(&nodes, &cfg.pkg_dir)?;
+    let edges = db.get_all_edges().unwrap_or_default();
+    obsidian::write_all(&nodes, &edges, &cfg.pkg_dir)?;
     db.export_pkg_json(&cfg.pkg_dir.join("pkg.json"))?;
 
     let msg = build_commit_message(db);
     match sync::commit(rocky_dir, &msg)? {
-        true  => println!("  {} {msg}", "✓".green()),
+        true  => println!("  {} {msg}", "✓".truecolor(29, 158, 117)),
         false => println!("  {} Nothing changed since last commit.", "·".dimmed()),
     }
 
     if push {
         sync::push(rocky_dir, &cfg.sync.remote, &cfg.sync.branch)?;
         sync::reset_push_counter(db)?;
-        println!("  {} Pushed to {}/{}", "✓".green(), cfg.sync.remote, cfg.sync.branch);
+        println!("  {} Pushed to {}/{}", "✓".truecolor(29, 158, 117), cfg.sync.remote, cfg.sync.branch);
     }
 
     Ok(())
@@ -2218,10 +2256,10 @@ fn run_classify(db: &Db, teacher: &Teacher) -> Result<()> {
         for (topic, domain) in &results {
             let node_id = topic.to_lowercase().trim().replace(' ', "-");
             db.set_domain(&node_id, domain)?;
-            println!("  {} {} → {}", "✓".green(), topic, domain.cyan());
+            println!("  {} {} → {}", "✓".truecolor(29, 158, 117), topic, domain.truecolor(6, 182, 212));
         }
     } else {
-        println!("  {} All topics already have a domain.", "✓".green());
+        println!("  {} All topics already have a domain.", "✓".truecolor(29, 158, 117));
     }
 
     // ── Step 2: Ensure taxonomy skeleton exists ───────────────────────────────
@@ -2230,9 +2268,9 @@ fn run_classify(db: &Db, teacher: &Teacher) -> Result<()> {
     // ── Step 3: Link all nodes to their domain skeleton node ─────────────────
     let linked = link_all_to_taxonomy(db)?;
     if linked > 0 {
-        println!("  {} Linked {} topic{} to taxonomy skeleton.", "✓".green(), linked, if linked == 1 { "" } else { "s" });
+        println!("  {} Linked {} topic{} to taxonomy skeleton.", "✓".truecolor(29, 158, 117), linked, if linked == 1 { "" } else { "s" });
     } else {
-        println!("  {} All topics already linked to taxonomy.", "✓".green());
+        println!("  {} All topics already linked to taxonomy.", "✓".truecolor(29, 158, 117));
     }
 
     if !undomained.is_empty() {
@@ -2282,14 +2320,15 @@ fn auto_sync(db: &Db, cfg: &Config) {
     if !sync::is_git_repo(&cfg.rocky_dir) { return; }
 
     let nodes = match db.all_nodes() { Ok(n) => n, Err(_) => return };
-    obsidian::write_all(&nodes, &cfg.pkg_dir).ok();
+    let edges = db.get_all_edges().unwrap_or_default();
+    obsidian::write_all(&nodes, &edges, &cfg.pkg_dir).ok();
     db.export_pkg_json(&cfg.pkg_dir.join("pkg.json")).ok();
 
     let msg = build_commit_message(db);
     match sync::commit(&cfg.rocky_dir, &msg) {
         Ok(true) => {
             if cfg.sync.commit_visible {
-                println!("  {} {}", "✓".green(), msg);
+                println!("  {} {}", "✓".truecolor(29, 158, 117), msg);
             }
             sync::increment_sessions_since_push(db).ok();
         }
@@ -2299,7 +2338,7 @@ fn auto_sync(db: &Db, cfg: &Config) {
 
     // Push reminder
     if let Some(reminder) = sync::push_reminder(db, &cfg.sync) {
-        println!("  {}", reminder.yellow());
+        println!("  {}", reminder.truecolor(239, 159, 39));
     }
 }
 
@@ -2315,8 +2354,93 @@ fn queue_for_later(topic: &str, kind: &str, description: &str, context: &str) {
     }
 }
 
+// ── project / repo helpers ────────────────────────────────────────────────────
+
+/// Derive a short repo name from the git remote URL or fall back to the top-level dir name.
+fn detect_repo_name() -> String {
+    use std::process::Command;
+    if let Ok(out) = Command::new("git").args(["remote", "get-url", "origin"]).output() {
+        if out.status.success() {
+            let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let name = url.trim_end_matches(".git")
+                .rsplit('/')
+                .next()
+                .or_else(|| url.trim_end_matches(".git").rsplit(':').next()
+                    .and_then(|s| s.split('/').last()))
+                .unwrap_or("")
+                .to_string();
+            if !name.is_empty() { return name; }
+        }
+    }
+    if let Ok(out) = Command::new("git").args(["rev-parse", "--show-toplevel"]).output() {
+        if out.status.success() {
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if let Some(name) = std::path::Path::new(&path).file_name().and_then(|n| n.to_str()) {
+                return name.to_string();
+            }
+        }
+    }
+    std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Get the date of a specific commit SHA.
+fn commit_date(sha: &str) -> Option<chrono::NaiveDate> {
+    use std::process::Command;
+    let out = Command::new("git").args(["log", "-1", "--date=short", "--format=%ad", sha]).output().ok()?;
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()
+}
+
+/// Get the date of the HEAD commit.
+fn head_commit_date() -> Option<chrono::NaiveDate> {
+    commit_date("HEAD")
+}
+
+/// Load the project summary from cache, regenerating if the README has changed.
+/// Cached in `<rocky_dir>/summaries/<repo>.txt`.
+fn load_or_create_project_summary(
+    rocky_dir: &std::path::Path,
+    repo: &str,
+    teacher: &teacher::Teacher,
+) -> String {
+    let summaries_dir = rocky_dir.join("summaries");
+    let _ = std::fs::create_dir_all(&summaries_dir);
+    let summary_path = summaries_dir.join(format!("{repo}.txt"));
+    let hash_path    = summaries_dir.join(format!("{repo}.hash"));
+
+    let readme = std::fs::read_to_string("README.md")
+        .or_else(|_| std::fs::read_to_string("README"))
+        .or_else(|_| std::fs::read_to_string("readme.md"))
+        .unwrap_or_default();
+
+    if readme.is_empty() {
+        return std::fs::read_to_string(&summary_path).unwrap_or_default();
+    }
+
+    let fingerprint = format!("{}:{}", readme.len(), &readme[..readme.len().min(100)]);
+    let cached_hash = std::fs::read_to_string(&hash_path).unwrap_or_default();
+
+    if cached_hash.trim() == fingerprint.trim() {
+        if let Ok(s) = std::fs::read_to_string(&summary_path) {
+            if !s.trim().is_empty() { return s; }
+        }
+    }
+
+    match teacher.summarize_readme(&readme) {
+        Ok(summary) => {
+            let _ = std::fs::write(&summary_path, &summary);
+            let _ = std::fs::write(&hash_path, fingerprint);
+            summary
+        }
+        Err(_) => std::fs::read_to_string(&summary_path).unwrap_or_default(),
+    }
+}
+
 fn print_header() {
-    println!("\n{}  {}", " ♫".cyan(), "Rocky · Personal Knowledge Graph".bold());
+    println!("\n  {}", "Rocky · Personal Knowledge Graph".bold());
     println!("{}", " ──────────────────────────────────────".dimmed());
 }
 

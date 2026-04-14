@@ -1,0 +1,17 @@
+{
+  "name": "browser",
+  "version": "1.0.0",
+  "description": "Add content to your [Rocky](https://github.com/NVME-git/rocky) personal knowledge graph directly from your browser. Capture YouTube videos, articles, and other resources and link them to topics in your PKG.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/chrome": "^0.1.40",
+    "typescript": "^6.0.2"
+  }
+}

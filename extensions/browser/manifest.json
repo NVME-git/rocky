@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "Rocky PKG Browser Extension",
+  "version": "0.2.0",
+  "description": "Add content to your Rocky personal knowledge graph directly from the browser. Capture YouTube videos, GitHub repos, MDN articles, Wikipedia pages, and more.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://youtube.com/*",
+    "https://github.com/*",
+    "https://developer.mozilla.org/*",
+    "https://en.wikipedia.org/*",
+    "https://*.wikipedia.org/*",
+    "https://news.ycombinator.com/*",
+    "https://arxiv.org/*",
+    "https://dev.to/*",
+    "https://stackoverflow.com/*",
+    "https://*.stackexchange.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "icons/rocky-16.png",
+      "48": "icons/rocky-48.png",
+      "128": "icons/rocky-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://youtube.com/*",
+        "https://github.com/*",
+        "https://developer.mozilla.org/*",
+        "https://en.wikipedia.org/*",
+        "https://*.wikipedia.org/*",
+        "https://news.ycombinator.com/*",
+        "https://arxiv.org/*",
+        "https://dev.to/*",
+        "https://stackoverflow.com/*",
+        "https://*.stackexchange.com/*"
+      ],
+      "js": ["src/content.js"]
+    }
+  ],
+  "icons": {
+    "16": "icons/rocky-16.png",
+    "48": "icons/rocky-48.png",
+    "128": "icons/rocky-128.png"
+  }
+}

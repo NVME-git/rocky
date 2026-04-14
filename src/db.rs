@@ -61,6 +61,17 @@ pub struct Edge {
     pub last_fired_session: Option<i64>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Review {
+    #[allow(dead_code)]
+    pub node_id: String,
+    pub reviewed_at: String,
+    pub question: String,
+    pub answer: String,
+    pub feedback: String,
+    pub score: f64,
+}
+
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS session_state (
     key        TEXT PRIMARY KEY,
@@ -69,17 +80,21 @@ CREATE TABLE IF NOT EXISTS session_state (
 );
 
 CREATE TABLE IF NOT EXISTS nodes (
-    id               TEXT PRIMARY KEY,
-    topic            TEXT NOT NULL,
-    kind             TEXT NOT NULL DEFAULT 'concept',
-    domain           TEXT NOT NULL DEFAULT '',
-    description      TEXT NOT NULL DEFAULT '',
-    difficulty       REAL NOT NULL DEFAULT 0.3,
-    stability        REAL NOT NULL DEFAULT 2.0,
-    last_reviewed    TEXT NOT NULL,
-    last_encountered TEXT NOT NULL,
-    review_count     INTEGER NOT NULL DEFAULT 0,
-    created_at       TEXT NOT NULL
+    id                   TEXT PRIMARY KEY,
+    topic                TEXT NOT NULL,
+    kind                 TEXT NOT NULL DEFAULT 'concept',
+    domain               TEXT NOT NULL DEFAULT '',
+    description          TEXT NOT NULL DEFAULT '',
+    difficulty           REAL NOT NULL DEFAULT 0.3,
+    stability            REAL NOT NULL DEFAULT 2.0,
+    last_reviewed        TEXT NOT NULL,
+    last_encountered     TEXT NOT NULL,
+    review_count         INTEGER NOT NULL DEFAULT 0,
+    created_at           TEXT NOT NULL,
+    canonical_question   TEXT NOT NULL DEFAULT '',
+    canonical_answer     TEXT NOT NULL DEFAULT '',
+    canonical_clue       TEXT NOT NULL DEFAULT '',
+    repo                 TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS contexts (
@@ -103,8 +118,20 @@ CREATE TABLE IF NOT EXISTS edges (
 
 CREATE INDEX IF NOT EXISTS edges_source ON edges(source_id);
 CREATE INDEX IF NOT EXISTS edges_target ON edges(target_id);
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id     TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    reviewed_at TEXT NOT NULL,
+    question    TEXT NOT NULL DEFAULT '',
+    answer      TEXT NOT NULL DEFAULT '',
+    feedback    TEXT NOT NULL DEFAULT '',
+    score       REAL NOT NULL DEFAULT 0.0
+);
+CREATE INDEX IF NOT EXISTS reviews_node ON reviews(node_id);
 ";
 
+#[derive(Clone)]
 pub struct Db {
     path: PathBuf,
     pub pkg_dir: PathBuf,
@@ -130,12 +157,12 @@ impl Db {
     fn init(&self) -> Result<()> {
         let conn = self.connect()?;
         conn.execute_batch(SCHEMA)?;
-        // Migration: add domain column to existing databases
-        let _ = conn.execute(
-            "ALTER TABLE nodes ADD COLUMN domain TEXT NOT NULL DEFAULT ''",
-            [],
-        );
-        // Migration: add last_fired_session column to edges
+        // Migrations for existing databases (all idempotent — ignored if column already exists)
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN domain TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN canonical_question TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN canonical_answer TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN canonical_clue TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN repo TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE edges ADD COLUMN last_fired_session INTEGER", []);
         Ok(())
     }
@@ -183,6 +210,10 @@ impl Db {
             review_count: row.get("review_count")?,
             contexts,
             created_at: Self::parse_date(&row.get::<_, String>("created_at")?),
+            canonical_question: row.get::<_, String>("canonical_question").unwrap_or_default(),
+            canonical_answer: row.get::<_, String>("canonical_answer").unwrap_or_default(),
+            canonical_clue: row.get::<_, String>("canonical_clue").unwrap_or_default(),
+            repo: row.get::<_, String>("repo").unwrap_or_default(),
         })
     }
 
@@ -198,6 +229,34 @@ impl Db {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn get_node_by_id(&self, node_id: &str) -> Result<Option<Node>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare("SELECT * FROM nodes WHERE id = ?")?;
+        let mut rows = stmt.query(params![node_id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_node(&conn, row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn record_quiz_review(&self, node_id: &str, score: f64, question: &str) -> Result<f64> {
+        let node = self.get_node_by_id(node_id)?
+            .with_context(|| format!("node not found: {node_id}"))?;
+        let r = fsrs::retrievability(node.stability, node.last_reviewed);
+        let (new_s, new_d) = fsrs::update_after_review(node.stability, node.difficulty, r, score);
+        let today = Self::today();
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE nodes SET stability = ?1, difficulty = ?2, last_reviewed = ?3,
+             review_count = review_count + 1 WHERE id = ?4",
+            params![new_s, new_d, today, node_id],
+        )?;
+        self.add_review(node_id, question, "", "", score)?;
+        let new_r = fsrs::retrievability(new_s, Local::now().date_naive());
+        Ok(new_r)
     }
 
     pub fn all_nodes(&self) -> Result<Vec<Node>> {
@@ -219,12 +278,17 @@ impl Db {
         description: &str,
         context: &str,
         last_reviewed_override: Option<NaiveDate>,
+        repo: &str,
+        created_at_override: Option<NaiveDate>,
     ) -> Result<()> {
         let node_id = Self::node_id(topic);
         let reviewed = last_reviewed_override
             .unwrap_or_else(|| Local::now().date_naive())
             .to_string();
         let today = Self::today();
+        let created_at = created_at_override
+            .map(|d| d.to_string())
+            .unwrap_or_else(|| today.clone());
 
         let conn = self.connect()?;
 
@@ -241,7 +305,6 @@ impl Db {
         if let Some(node) = existing {
             let r = fsrs::retrievability(node.stability, node.last_reviewed);
             let (new_s, new_d) = fsrs::update_after_review(node.stability, node.difficulty, r, score);
-            // Only update domain if the stored one is empty and we have a real value
             let effective_domain = if !domain.is_empty() && node.domain.is_empty() {
                 domain
             } else if !node.domain.is_empty() {
@@ -249,6 +312,8 @@ impl Db {
             } else {
                 domain
             };
+            // repo only backfills if not already set
+            let effective_repo = if !repo.is_empty() && node.repo.is_empty() { repo } else { &node.repo };
             conn.execute(
                 "UPDATE nodes SET
                     stability        = ?1,
@@ -258,9 +323,10 @@ impl Db {
                     review_count     = review_count + 1,
                     kind             = ?5,
                     domain           = ?6,
-                    description      = CASE WHEN description = '' THEN ?7 ELSE description END
-                 WHERE id = ?8",
-                params![new_s, new_d, reviewed, today, kind.as_str(), effective_domain, description, node_id],
+                    description      = CASE WHEN description = '' THEN ?7 ELSE description END,
+                    repo             = ?8
+                 WHERE id = ?9",
+                params![new_s, new_d, reviewed, today, kind.as_str(), effective_domain, description, effective_repo, node_id],
             )?;
         } else {
             let mut stability = fsrs::initial_stability(kind);
@@ -272,9 +338,9 @@ impl Db {
             conn.execute(
                 "INSERT INTO nodes
                     (id, topic, kind, domain, description, difficulty, stability,
-                     last_reviewed, last_encountered, review_count, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 0.3, ?6, ?7, ?8, 1, ?9)",
-                params![node_id, topic, kind.as_str(), domain, description, stability, reviewed, today, today],
+                     last_reviewed, last_encountered, review_count, created_at, repo)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0.3, ?6, ?7, ?8, 1, ?9, ?10)",
+                params![node_id, topic, kind.as_str(), domain, description, stability, reviewed, today, created_at, repo],
             )?;
         }
 
@@ -290,6 +356,16 @@ impl Db {
             obsidian::write_node(&node, &self.pkg_dir).ok();
         }
 
+        Ok(())
+    }
+
+    pub fn set_canonical_qa(&self, topic: &str, question: &str, answer: &str, clue: &str) -> Result<()> {
+        let node_id = Self::node_id(topic);
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE nodes SET canonical_question = ?1, canonical_answer = ?2, canonical_clue = ?3 WHERE id = ?4",
+            params![question, answer, clue, node_id],
+        )?;
         Ok(())
     }
 
@@ -504,6 +580,19 @@ impl Db {
     }
 
     /// Returns nodes that have no domain assigned yet.
+    /// Nodes that have a canonical question but no clue yet — targets for retroactive clue generation.
+    pub fn nodes_missing_clue(&self) -> Result<Vec<Node>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT * FROM nodes WHERE canonical_question != '' AND canonical_clue = '' ORDER BY topic"
+        )?;
+        let nodes = stmt
+            .query_map([], |row| Self::row_to_node(&conn, row))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(nodes)
+    }
+
     pub fn undomained_nodes(&self) -> Result<Vec<Node>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare("SELECT * FROM nodes WHERE domain = '' ORDER BY topic")?;
@@ -630,6 +719,45 @@ impl Db {
         }
         Ok(())
     }
+
+    pub fn add_review(
+        &self,
+        node_id: &str,
+        question: &str,
+        answer: &str,
+        feedback: &str,
+        score: f64,
+    ) -> Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "INSERT INTO reviews (node_id, reviewed_at, question, answer, feedback, score)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![node_id, Self::today(), question, answer, feedback, score],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_reviews(&self, node_id: &str) -> Result<Vec<Review>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT node_id, reviewed_at, question, answer, feedback, score
+             FROM reviews WHERE node_id = ?1 ORDER BY id ASC",
+        )?;
+        let reviews = stmt
+            .query_map(params![node_id], |row| {
+                Ok(Review {
+                    node_id:     row.get(0)?,
+                    reviewed_at: row.get(1)?,
+                    question:    row.get(2)?,
+                    answer:      row.get(3)?,
+                    feedback:    row.get(4)?,
+                    score:       row.get(5)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(reviews)
+    }
 }
 
 // ── JSON serialisation structs ────────────────────────────────────────────────
@@ -692,7 +820,7 @@ mod tests {
     fn add_and_retrieve_node() {
         let (db, _dir) = open_temp_db();
         db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
-            "Stateless token auth", "test task", None).unwrap();
+            "Stateless token auth", "test task", None, "", None).unwrap();
 
         let node = db.get_node("JWT authentication").unwrap().unwrap();
         assert_eq!(node.topic, "JWT authentication");
@@ -705,7 +833,7 @@ mod tests {
     fn node_id_is_slugified() {
         let (db, _dir) = open_temp_db();
         db.add_or_update("Redis TTL expiry", 0.8, &Kind::Implementation, "Database",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
 
         // Lookup by original topic name should find it
         let node = db.get_node("Redis TTL expiry").unwrap().unwrap();
@@ -717,7 +845,7 @@ mod tests {
         let (db, _dir) = open_temp_db();
         for _ in 0..3 {
             db.add_or_update("SQL indexes", 0.9, &Kind::Concept, "Database",
-                "desc", "ctx", None).unwrap();
+                "desc", "ctx", None, "", None).unwrap();
         }
         let node = db.get_node("SQL indexes").unwrap().unwrap();
         assert_eq!(node.review_count, 3);
@@ -727,11 +855,11 @@ mod tests {
     fn search_finds_substring_match() {
         let (db, _dir) = open_temp_db();
         db.add_or_update("Redis TTL expiry", 0.8, &Kind::Concept, "Database",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
         db.add_or_update("Redis pub/sub", 0.8, &Kind::Concept, "Database",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
         db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
 
         let results = db.search_nodes("redis").unwrap();
         assert_eq!(results.len(), 2);
@@ -744,7 +872,7 @@ mod tests {
     fn delete_removes_node() {
         let (db, _dir) = open_temp_db();
         db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
 
         db.delete_node("jwt-authentication").unwrap();
         assert!(db.get_node("JWT authentication").unwrap().is_none());
@@ -755,7 +883,7 @@ mod tests {
         let (db, _dir) = open_temp_db();
         // Add one topic reviewed today — will be "known"
         db.add_or_update("fresh topic", 0.9, &Kind::Concept, "Other",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
 
         let (total, known, _stale, _gaps) = db.summary().unwrap();
         assert_eq!(total, 1);
@@ -778,9 +906,9 @@ mod tests {
     fn pkg_json_export_import_round_trip() {
         let (db, dir) = open_temp_db();
         db.add_or_update("JWT authentication", 0.8, &Kind::Pattern, "Auth",
-            "Token auth", "test task", None).unwrap();
+            "Token auth", "test task", None, "", None).unwrap();
         db.add_or_update("SQL indexes", 0.7, &Kind::Concept, "Database",
-            "Index desc", "other task", None).unwrap();
+            "Index desc", "other task", None, "", None).unwrap();
 
         let json_path = dir.path().join("pkg.json");
         db.export_pkg_json(&json_path).unwrap();
@@ -799,7 +927,7 @@ mod tests {
     fn set_domain_updates_existing_node() {
         let (db, _dir) = open_temp_db();
         db.add_or_update("some topic", 0.8, &Kind::Concept, "",
-            "desc", "ctx", None).unwrap();
+            "desc", "ctx", None, "", None).unwrap();
 
         db.set_domain("some-topic", "Language").unwrap();
         let node = db.get_node("some topic").unwrap().unwrap();

@@ -87,4 +87,12 @@ pub struct Node {
     pub review_count: i64,
     pub contexts: Vec<String>,
     pub created_at: NaiveDate,
+    /// Pre-generated question from diff context (empty if not yet generated)
+    pub canonical_question: String,
+    /// Pre-generated ideal answer (empty if not yet generated)
+    pub canonical_answer: String,
+    /// Short clue generated alongside canonical Q&A (empty if not yet generated)
+    pub canonical_clue: String,
+    /// Git repo/project name this node originated from
+    pub repo: String,
 }

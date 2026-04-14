@@ -7,6 +7,13 @@ use serde_json::{json, Value};
 
 use crate::node::Node;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Difficulty {
+    Simpler,
+    Normal,
+    Harder,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct GeneratedEdge {
     pub target: String,
@@ -169,8 +176,15 @@ Example output:
         context: &str,
         known_topics: &[String],
         question_num: u32,
+        difficulty: Difficulty,
     ) -> Result<String> {
-        let system = r#"You are a Socratic technical mentor. Your job is to generate ONE question
+        let difficulty_hint = match difficulty {
+            Difficulty::Normal => "".to_string(),
+            Difficulty::Simpler => "\nDifficulty adjustment: make the question SIMPLER — focus on the core mechanic or most basic consequence, avoiding edge cases. Suitable for someone just starting to understand this topic.".to_string(),
+            Difficulty::Harder => "\nDifficulty adjustment: make the question HARDER — push into edge cases, subtle failure modes, or interactions with other systems. Assume solid foundational understanding.".to_string(),
+        };
+
+        let system = format!(r#"You are a Socratic technical mentor. Your job is to generate ONE question
 that forces a developer to reason about the IMPLICATIONS and CONSEQUENCES of a technical topic,
 not just recall facts.
 
@@ -181,7 +195,7 @@ Rules:
 - Do NOT ask "what is X" or "define X" — assume basic awareness
 - The question should be specific to their task context
 - Keep it to 1-2 sentences
-- Return ONLY the question, no preamble"#;
+- Return ONLY the question, no preamble{difficulty_hint}"#);
 
         let known_str = if known_topics.is_empty() {
             "none yet".to_string()
@@ -193,6 +207,15 @@ Rules:
             "Topic: {topic}\nDescription: {description}\nTask context: {context}\nDeveloper's known topics: {known_str}\nQuestion number: {question_num} (vary difficulty/angle if > 1)"
         );
 
+        self.ask(&system, &user)
+    }
+
+    /// Generate a short clue at runtime (used for manually-added topics without canonical clue).
+    pub fn generate_clue(&self, topic: &str, description: &str, question: &str) -> Result<String> {
+        let system = "You are a Socratic technical mentor. The developer is stuck on a quiz question. \
+Give a SHORT clue (1-2 sentences) that nudges them in the right direction without giving away the answer. \
+Focus on the core concept or the most important thing to think about. Return ONLY the clue, no preamble.";
+        let user = format!("Topic: {topic}\nDescription: {description}\nQuestion: {question}");
         self.ask(system, &user)
     }
 
@@ -202,6 +225,7 @@ Rules:
         question: &str,
         answer: &str,
         description: &str,
+        canonical_answer: Option<&str>,
     ) -> Result<EvalResult> {
         let system = r#"You are evaluating whether a developer genuinely understands the implications
 of a technical topic based on their answer to a Socratic question.
@@ -211,6 +235,9 @@ Evaluate on:
 2. Do they show awareness of how this affects related systems?
 3. Is there evidence they could reason through related problems?
 
+If an ideal answer is provided, use it as a reference for what a complete answer looks like —
+but do not penalise for different phrasing or approach, only for missing key insights.
+
 Return ONLY valid JSON:
 {
   "score": <0.0 to 1.0>,
@@ -219,13 +246,80 @@ Return ONLY valid JSON:
   "followup": "<a follow-up question if score < 0.65, else null>"
 }"#;
 
+        let ideal = canonical_answer
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("\n\nIdeal answer (reference): {s}"))
+            .unwrap_or_default();
+
         let user = format!(
-            "Topic: {topic}\nDescription: {description}\nQuestion asked: {question}\nDeveloper's answer: {answer}"
+            "Topic: {topic}\nDescription: {description}\nQuestion asked: {question}\nDeveloper's answer: {answer}{ideal}"
         );
 
         let raw = self.ask(system, &user)?;
         let cleaned = strip_code_fence(&raw);
         Ok(serde_json::from_str(cleaned)?)
+    }
+
+    /// Pre-generate a question + ideal answer + clue at topic creation time using full diff context.
+    /// Returns (question, ideal_answer, clue). Fails silently — never blocks node insertion.
+    pub fn generate_question_and_answer(
+        &self,
+        topic: &str,
+        description: &str,
+        commit_msg: &str,
+        diff: &str,
+        project_summary: &str,
+    ) -> Result<(String, String, String)> {
+        let system = r#"You are a Socratic technical mentor pre-generating a quiz question for a developer's personal knowledge graph.
+
+Generate ONE question that forces the developer to reason about the IMPLICATIONS and CONSEQUENCES of this topic — not just recall facts.
+The question must be grounded in the actual code changes shown in the diff.
+
+Rules:
+- Ask about what breaks, changes, or becomes constrained when using this approach in their specific code
+- Ask about trade-offs visible from the diff, or when NOT to use this approach
+- Do NOT ask "what is X" or "define X"
+- 1-2 sentences, specific to the code shown
+
+Also write an ideal answer: 3-5 sentences demonstrating genuine understanding of consequences and trade-offs,
+referencing the specific context from the diff.
+
+Also write a short clue (1-2 sentences) that nudges the developer in the right direction without giving away
+the answer — something they can ask for if they get stuck.
+
+Return ONLY valid JSON:
+{"question": "<the question>", "answer": "<ideal answer>", "clue": "<short clue>"}"#;
+
+        let diff_excerpt = if diff.len() > 2500 {
+            let boundary = diff.char_indices()
+                .map(|(i, _)| i)
+                .take_while(|&i| i <= 2500)
+                .last()
+                .unwrap_or(0);
+            &diff[..boundary]
+        } else {
+            diff
+        };
+        let project = if project_summary.is_empty() { "unknown project" } else { project_summary };
+
+        let user = format!(
+            "Topic: {topic}\nDescription: {description}\n\nProject: {project}\nCommit: {commit_msg}\n\nDiff:\n{diff_excerpt}"
+        );
+
+        let raw = self.ask(system, &user)?;
+        let cleaned = strip_code_fence(&raw);
+        #[derive(Deserialize)]
+        struct QA { question: String, answer: String, clue: Option<String> }
+        let qa: QA = serde_json::from_str(cleaned)
+            .map_err(|e| anyhow!("QA parse failed: {e} — raw: {raw}"))?;
+        Ok((qa.question, qa.answer, qa.clue.unwrap_or_default()))
+    }
+
+    /// Summarise a README into 2-3 sentences for use as project context.
+    pub fn summarize_readme(&self, readme: &str) -> Result<String> {
+        let system = "Summarise this software project's README in 2-3 sentences covering: what it does, its main technologies/stack, and its primary purpose. Be specific and technical. Return only the summary, no preamble.";
+        let excerpt = if readme.len() > 4000 { &readme[..4000] } else { readme };
+        self.ask(system, excerpt)
     }
 
     pub fn generate_explanation(
@@ -343,20 +437,23 @@ Rules:
         }
 
         let system = r#"You are building an implication graph for a personal knowledge graph.
-A new topic has just been added. Identify at most 4 meaningful relationships between it and the existing topics.
+A new topic has just been added. Identify at most 4 strongly related topics from the existing list.
 
 Relationship kinds:
 - "implies": understanding the new topic strongly implies you should also understand the target
 - "depends_on": the new topic requires understanding the target as a prerequisite
-- "conflicts_with": these topics involve genuine trade-offs or contradictory approaches
+- "conflicts_with": these topics involve genuine trade-offs or contradictory approaches in practice
 - "part_of": the new topic is a specific instance, specialisation, or subcomponent of the target
 
-Only create relationships where there is a genuine, non-obvious conceptual link. Ignore trivial connections.
-strength: 0.3 (tangential) → 0.7 (closely related) → 1.0 (foundational dependency).
+ONLY include relationships with strength ≥ 0.6 — skip anything tangential or loosely related.
+strength: 0.6 (clearly related) → 0.8 (closely coupled) → 1.0 (foundational dependency).
+
+For "description": explain in one concrete sentence WHY this relationship exists — what breaks or changes
+if you misunderstand one while knowing the other. Do not just restate the topic names.
 
 Return ONLY valid JSON array using the exact topic strings from the existing list:
-[{"target": "<exact topic>", "kind": "implies"|"depends_on"|"conflicts_with"|"part_of", "description": "<one sentence>", "strength": <0.3–1.0>}]
-If no meaningful relationships exist return: []"#;
+[{"target": "<exact topic>", "kind": "implies"|"depends_on"|"conflicts_with"|"part_of", "description": "<one concrete sentence explaining the reason>", "strength": <0.6–1.0>}]
+If no strongly related relationships exist return: []"#;
 
         let existing_list = existing
             .iter()

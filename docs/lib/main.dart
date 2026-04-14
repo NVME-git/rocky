@@ -34,20 +34,30 @@ class AppColors {
   static Color get cardBg        => _d ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
 }
 
-// Terminal block colours — always dark regardless of theme
+// Terminal block colours — always dark regardless of theme.
+// Semantic colors match the Rocky CLI truecolor values exactly.
 class TermColors {
   static const bg         = Color(0xFF0d1117);
   static const headerBg   = Color(0xFF161b22);
   static const border     = Color(0xFF30363d);
-  static const prompt     = Color(0xFF4ade80);  // green prompt
+  static const prompt     = Color(0xFF1D9E75);  // #1D9E75 — app success/known green
   static const cmdText    = Color(0xFFf0f6fc);  // bright command text
-  static const commentTxt = Color(0xFF8b949e);  // muted comment
-  static const outputTxt  = Color(0xFFe6edf3);  // normal output
-  static const cursor     = Color(0xFF4ade80);
-  static const dot1       = Color(0xFFFF5F57);  // red
-  static const dot2       = Color(0xFFFFBD2E);  // yellow
-  static const dot3       = Color(0xFF28C840);  // green
+  static const commentTxt = Color(0xFF64748B);  // muted slate
+  static const outputTxt  = Color(0xFFCBD5E1);  // normal output
+  static const cursor     = Color(0xFF1D9E75);
+  static const dot1       = Color(0xFFFF5F57);
+  static const dot2       = Color(0xFFFFBD2E);
+  static const dot3       = Color(0xFF28C840);
   static const titleTxt   = Color(0xFF8b949e);
+
+  // Semantic: match the Rocky CLI truecolors
+  static const rockyBrand   = Color(0xFFF59E0B);  // #F59E0B — Rocky brand amber (banner, personality)
+  static const rockyFeedback= Color(0xFF06B6D4);  // #06B6D4 — Rocky's voice/feedback (cyan)
+  static const successGreen = Color(0xFF1D9E75);  // #1D9E75 — ✓ success / known
+  static const fadingAmber  = Color(0xFFEF9F27);  // #EF9F27 — ~ fading / warning
+  static const gapRed       = Color(0xFFE24B4A);  // #E24B4A — ✗ gap / error
+  static const userAnswer   = Color(0xFFF1F5F9);  // bright white — user's own words
+  static const hintMuted    = Color(0xFF475569);  // dimmed hint text
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +120,9 @@ final List<DocSection> kSections = [
   const DocSection('How It Works', Icons.account_tree, kHowItWorks),
   const DocSection('Obsidian', Icons.hub, kObsidian),
   const DocSection('Sync & Backup', Icons.sync, kSync),
-  const DocSection('Example Project Walkthrough', Icons.timeline, kWalkthrough),
+  const DocSection('Demo Usecase', Icons.timeline, kWalkthrough),
+  const DocSection('Roadmap', Icons.map_outlined, kRoadmap),
+  const DocSection('References', Icons.menu_book_outlined, kReferences),
 ];
 
 // ---------------------------------------------------------------------------
@@ -477,21 +489,61 @@ class SectionContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final parts = _parseParts(markdown);
+    final widgets = <Widget>[];
+    int i = 0;
+    while (i < parts.length) {
+      final part = parts[i];
+      if (part is _TextPart) {
+        widgets.add(StyledMarkdown(data: part.text));
+        i++;
+      } else if (part is _CodePart && part.language == 'graphlink') {
+        final segs = part.code.trim().split('|');
+        widgets.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: _GraphLink(
+            linkPath: segs.isNotEmpty ? segs[0].trim() : '',
+            label:    segs.length > 1 ? segs[1].trim() : 'Open interactive graph',
+          ),
+        ));
+        i++;
+      } else if (part is _CodePart && part.language == 'imagelink') {
+        final segs = part.code.trim().split('|');
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: _GraphPreview(
+            imagePath: segs.isNotEmpty ? segs[0].trim() : '',
+            linkPath:  segs.length > 1 ? segs[1].trim() : '',
+            caption:   segs.length > 2 ? segs[2].trim() : 'Open interactive graph',
+          ),
+        ));
+        i++;
+      } else if (part is _CodePart) {
+        // Combine a bash input block with the immediately following plain
+        // output block into a single terminal: input typed, output instant.
+        String? outputCode;
+        if (part.language == 'bash' &&
+            i + 1 < parts.length &&
+            parts[i + 1] is _CodePart &&
+            (parts[i + 1] as _CodePart).language.isEmpty) {
+          outputCode = (parts[i + 1] as _CodePart).code;
+          i++; // consume the output block
+        }
+        widgets.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: TerminalBlock(
+            code: part.code,
+            language: part.language,
+            outputCode: outputCode,
+          ),
+        ));
+        i++;
+      } else {
+        i++;
+      }
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final part in parts)
-          if (part is _TextPart)
-            StyledMarkdown(data: part.text)
-          else if (part is _CodePart)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: TerminalBlock(
-                code: part.code,
-                language: part.language,
-              ),
-            ),
-      ],
+      children: widgets,
     );
   }
 }
@@ -502,7 +554,9 @@ class SectionContent extends StatelessWidget {
 class TerminalBlock extends StatefulWidget {
   final String code;
   final String language;
-  const TerminalBlock({super.key, required this.code, required this.language});
+  /// Output to reveal instantly after the input finishes typing.
+  final String? outputCode;
+  const TerminalBlock({super.key, required this.code, required this.language, this.outputCode});
 
   @override
   State<TerminalBlock> createState() => _TerminalBlockState();
@@ -516,11 +570,32 @@ class _TerminalBlockState extends State<TerminalBlock>
   bool _animationStarted = false;
   ScrollPosition? _scrollPos;
 
+  late final String _inputSection;
+  late final String _outputSection;
+
   @override
   void initState() {
     super.initState();
 
-    final totalChars = widget.code.length;
+    // Split at the last shell-prompt line: everything up to and including it
+    // is typed character-by-character; everything after appears all at once.
+    final promptRe = RegExp(r'^[\w~/.]*\s*\$\s');
+    final lines = widget.code.split('\n');
+    int lastPrompt = -1;
+    for (int i = 0; i < lines.length; i++) {
+      if (promptRe.hasMatch(lines[i])) lastPrompt = i;
+    }
+    if (lastPrompt < 0 || lastPrompt == lines.length - 1) {
+      _inputSection = widget.code;
+      _outputSection = widget.outputCode ?? '';
+    } else {
+      _inputSection = lines.sublist(0, lastPrompt + 1).join('\n');
+      final rest = lines.sublist(lastPrompt + 1).join('\n');
+      _outputSection =
+          widget.outputCode != null ? '$rest\n${widget.outputCode}' : rest;
+    }
+
+    final totalChars = _inputSection.length;
     // Scale duration: ~18ms per char, clamped between 600ms and 2800ms
     final ms = (totalChars * 18).clamp(600, 2800);
     _typewriter = AnimationController(
@@ -638,9 +713,9 @@ class _TerminalBlockState extends State<TerminalBlock>
     return AnimatedBuilder(
       animation: _charCount,
       builder: (context, _) {
-        final visible = widget.code.substring(0, _charCount.value);
+        final visible = _inputSection.substring(0, _charCount.value);
         final lines = visible.split('\n');
-        final isFinished = _charCount.value == widget.code.length;
+        final isFinished = _charCount.value == _inputSection.length;
 
         return Container(
           padding: const EdgeInsets.all(16),
@@ -656,24 +731,42 @@ class _TerminalBlockState extends State<TerminalBlock>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 for (final line in lines) _buildLine(line),
-                // Blinking cursor
-                AnimatedBuilder(
-                  animation: _cursor,
-                  builder: (_, __) {
-                    final showCursor = isFinished ? _cursor.value > 0.5 : true;
-                    return Text(
+                // Cursor sits right after the typed input while still animating
+                if (!isFinished)
+                  AnimatedBuilder(
+                    animation: _cursor,
+                    builder: (_, __) => Text(
+                      '█',
+                      style: const TextStyle(
+                        color: TermColors.cursor,
+                        fontFamily: 'monospace',
+                        fontSize: 14,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+                // Output revealed all at once when input finishes typing
+                if (isFinished && _outputSection.isNotEmpty)
+                  ...[
+                    const SizedBox(height: 2),
+                    ..._buildOutputLines(_outputSection),
+                  ],
+                // Blinking cursor at the bottom
+                if (isFinished)
+                  AnimatedBuilder(
+                    animation: _cursor,
+                    builder: (_, __) => Text(
                       '█',
                       style: TextStyle(
-                        color: showCursor
+                        color: _cursor.value > 0.5
                             ? TermColors.cursor
                             : Colors.transparent,
                         fontFamily: 'monospace',
                         fontSize: 14,
                         height: 1.0,
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -693,66 +786,113 @@ class _TerminalBlockState extends State<TerminalBlock>
     );
   }
 
-  /// Style a single terminal line.
-  /// Lines matching `~/path $ cmd` or `$ cmd` → green prompt + bright command.
-  /// Lines starting with `#` or `  #` → muted comment.
-  /// Everything else → normal output.
+  /// Style a single terminal line (used for the typing-animation input section).
   TextSpan _styleLine(String line) {
-    // Match prompt patterns like: `~/taskify $ `, `$ `, `~ $ `
-    final promptRe = RegExp(r'^([\w~/.]*\s*\$\s+)(.*)');
-    final promptMatch = promptRe.firstMatch(line);
+    final trimmed = line.trimLeft();
+    final promptMatch = RegExp(r'^([\w~/.]*\s*\$\s+)(.*)').firstMatch(line);
     if (promptMatch != null) {
       return TextSpan(children: [
-        TextSpan(
-          text: promptMatch.group(1),
-          style: const TextStyle(color: TermColors.prompt, fontWeight: FontWeight.w600),
-        ),
-        TextSpan(
-          text: promptMatch.group(2),
-          style: const TextStyle(color: TermColors.cmdText),
-        ),
+        TextSpan(text: promptMatch.group(1),
+            style: const TextStyle(color: TermColors.prompt, fontWeight: FontWeight.w600)),
+        TextSpan(text: promptMatch.group(2),
+            style: const TextStyle(color: TermColors.cmdText)),
       ]);
     }
-
-    // Comment line
-    final trimmed = line.trimLeft();
     if (trimmed.startsWith('#')) {
-      return TextSpan(
-        text: line,
-        style: const TextStyle(color: TermColors.commentTxt),
-      );
+      return TextSpan(text: line,
+          style: const TextStyle(color: TermColors.commentTxt));
     }
+    return TextSpan(text: line,
+        style: const TextStyle(color: TermColors.outputTxt));
+  }
 
-    // Rocky output lines — colour ♫ prefix lines distinctly
-    if (line.trimLeft().startsWith('♫')) {
-      return TextSpan(children: [
-        TextSpan(
-          text: line,
-          style: const TextStyle(color: Color(0xFF93c5fd)),
-        ),
-      ]);
+  /// Stateful output renderer — tracks question/answer blocks across lines so
+  /// every continuation line of a question is cyan and every line of an answer
+  /// is white, not just the first.
+  List<Widget> _buildOutputLines(String output) {
+    // _LineMode: 0 = normal, 1 = question, 2 = answer
+    int mode = 0;
+    final widgets = <Widget>[];
+
+    for (final line in output.split('\n')) {
+      final trimmed = line.trimLeft();
+      TextSpan span;
+
+      // --- Lines that unconditionally reset mode ---
+      final promptMatch = RegExp(r'^([\w~/.]*\s*\$\s+)(.*)').firstMatch(line);
+      if (promptMatch != null) {
+        mode = 0;
+        span = TextSpan(children: [
+          TextSpan(text: promptMatch.group(1),
+              style: const TextStyle(color: TermColors.prompt, fontWeight: FontWeight.w600)),
+          TextSpan(text: promptMatch.group(2),
+              style: const TextStyle(color: TermColors.cmdText)),
+        ]);
+      } else if (trimmed.startsWith('Rocky:')) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.rockyBrand, fontWeight: FontWeight.w500));
+      } else if (trimmed.startsWith('✓')) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.successGreen));
+      } else if (trimmed.startsWith('✗')) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.gapRed));
+      } else if (trimmed.startsWith('~')) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.fadingAmber));
+
+      // --- Mode starters ---
+      } else if (RegExp(r'^Q\d+\.').hasMatch(trimmed)) {
+        mode = 1;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.rockyFeedback));
+      } else if (trimmed.startsWith('>')) {
+        mode = 2;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.userAnswer, fontStyle: FontStyle.italic));
+
+      // --- Blank lines: reset mode, render plain ---
+      } else if (trimmed.isEmpty) {
+        mode = 0;
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.outputTxt));
+
+      // --- Hint / muted lines (do not change mode) ---
+      } else if (trimmed.startsWith('[')) {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.hintMuted));
+      } else if (trimmed.startsWith('Evaluating') ||
+                 trimmed.startsWith('Fetching') ||
+                 trimmed.startsWith('Analyzing') ||
+                 trimmed.startsWith('Saved to PKG')) {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.hintMuted));
+      } else if (trimmed.startsWith('#')) {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.commentTxt));
+
+      // --- Continuation: inherit current mode ---
+      } else if (mode == 1) {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.rockyFeedback));
+      } else if (mode == 2) {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.userAnswer, fontStyle: FontStyle.italic));
+      } else {
+        span = TextSpan(text: line,
+            style: const TextStyle(color: TermColors.outputTxt));
+      }
+
+      widgets.add(Text.rich(
+        span,
+        style: const TextStyle(fontFamily: 'monospace', fontSize: 13.5, height: 1.55),
+      ));
     }
-
-    // ✓ success lines
-    if (line.trimLeft().startsWith('✓')) {
-      return TextSpan(
-        text: line,
-        style: const TextStyle(color: Color(0xFF86efac)),
-      );
-    }
-
-    // ~ fading lines
-    if (line.trimLeft().startsWith('~')) {
-      return TextSpan(
-        text: line,
-        style: const TextStyle(color: Color(0xFFfbbf24)),
-      );
-    }
-
-    return TextSpan(
-      text: line,
-      style: const TextStyle(color: TermColors.outputTxt),
-    );
+    return widgets;
   }
 }
 
@@ -871,6 +1011,117 @@ class StyledMarkdown extends StatelessWidget {
           tableCellsPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Graph link — inline "open in new tab" styled link to a live graph
+// ---------------------------------------------------------------------------
+class _GraphLink extends StatelessWidget {
+  final String linkPath;
+  final String label;
+  const _GraphLink({required this.linkPath, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final url = Uri.base.resolve(linkPath).toString();
+    return GestureDetector(
+      onTap: () => _openUrl(url),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: AppColors.secondary,
+                fontSize: 14,
+                decoration: TextDecoration.underline,
+                decorationColor: AppColors.secondary,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.open_in_new, size: 13, color: AppColors.secondary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Graph preview — screenshot with link to live graph
+// ---------------------------------------------------------------------------
+class _GraphPreview extends StatelessWidget {
+  final String imagePath;
+  final String linkPath;
+  final String caption;
+  const _GraphPreview({required this.imagePath, required this.linkPath, required this.caption});
+
+  @override
+  Widget build(BuildContext context) {
+    final imgUrl  = Uri.base.resolve(imagePath).toString();
+    final linkUrl = Uri.base.resolve(linkPath).toString();
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isDark,
+      builder: (_, dark, __) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            onTap: () => _openUrl(linkUrl),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 340),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.divider, width: 1),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.network(
+                  imgUrl,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 160,
+                    color: AppColors.codeBg,
+                    child: Center(
+                      child: Text('Graph preview unavailable',
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () => _openUrl(linkUrl),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    caption,
+                    style: TextStyle(
+                      color: AppColors.secondary,
+                      fontSize: 13,
+                      decoration: TextDecoration.underline,
+                      decorationColor: AppColors.secondary,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.open_in_new, size: 12, color: AppColors.secondary),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
