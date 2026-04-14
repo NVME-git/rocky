@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rocky — Project Explorer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.7/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.3/pixi.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+       background: #0A0E1A; color: #F1F5F9; min-height: 100vh;
+       overflow-y: auto; }
+
+/* ── topbar ── */
+#topbar { background: #070B14; border-bottom: 1px solid #1E293B;
+          padding: 16px 24px; display: flex; align-items: center; gap: 24px;
+          position: sticky; top: 0; z-index: 100; }
+#topbar h1 { font-size: 16px; font-weight: 700; color: #F59E0B; }
+.g-stat { font-size: 12px; color: #64748B; }
+.g-stat span { color: #F1F5F9; font-weight: 600; margin-left: 4px; }
+
+/* ── sections ── */
+.section { padding: 32px 24px; border-bottom: 1px solid #1E293B;
+           animation: sectionIn 0.3s ease-out; }
+@keyframes sectionIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.section-title { font-size: 13px; color: #64748B; text-transform: uppercase;
+                 letter-spacing: 0.8px; margin-bottom: 20px; font-weight: 600; }
+
+/* ── domain legend ── */
+.domain-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 18px; }
+.domain-legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #94A3B8; }
+.domain-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── project cards ── */
+#cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+              gap: 16px; }
+.project-card { background: #111827; border: 1px solid #1E293B; border-radius: 8px;
+                padding: 20px; cursor: pointer; transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s; }
+.project-card:hover { border-color: #F59E0B; transform: translateY(-2px);
+                      box-shadow: 0 4px 20px rgba(245, 158, 11, 0.08); }
+.project-card.active { border-color: #F59E0B; box-shadow: 0 0 0 1px #F59E0B; }
+.card-name { font-size: 16px; font-weight: 700; color: #F1F5F9; margin-bottom: 6px; }
+.card-summary { font-size: 11px; color: #64748B; line-height: 1.5; margin-bottom: 14px;
+                display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-stats { display: flex; gap: 16px; font-size: 12px; color: #94A3B8; margin-bottom: 14px; }
+.card-stats span { color: #F1F5F9; font-weight: 600; }
+
+/* domain bar */
+.domain-bar { height: 6px; border-radius: 3px; overflow: hidden; display: flex; margin-bottom: 10px; }
+.domain-bar-seg { height: 100%; min-width: 2px; transition: width 0.3s ease; }
+
+/* health bar */
+.health-bar-wrap { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.health-bar { flex: 1; height: 6px; border-radius: 3px; overflow: hidden; display: flex; }
+.health-known  { background: #1D9E75; height: 100%; transition: width 0.3s ease; }
+.health-fading { background: #EF9F27; height: 100%; transition: width 0.3s ease; }
+.health-gap    { background: #E24B4A; height: 100%; transition: width 0.3s ease; }
+.health-label { font-size: 10px; color: #64748B; white-space: nowrap; }
+
+/* radar canvas */
+.card-radar { width: 100%; height: 180px; }
+
+/* ── chord ── */
+#chord-container { display: flex; justify-content: center; }
+#chord-svg { width: 100%; max-width: 500px; height: auto; }
+#chord-tooltip { position: fixed; background: #1E293B; border: 1px solid #334155;
+                 border-radius: 6px; padding: 8px 12px; font-size: 11px; color: #F1F5F9;
+                 pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200;
+                 max-width: 300px; line-height: 1.5; }
+
+/* ── timeline ── */
+#timeline-svg { width: 100%; height: 200px; }
+.tl-axis text { fill: #64748B; font-size: 10px; }
+.tl-axis line, .tl-axis path { stroke: #1E293B; }
+.tl-label { font-size: 11px; fill: #94A3B8; font-weight: 600; }
+.tl-dot { opacity: 0.8; cursor: pointer; transition: opacity 0.15s; }
+.tl-dot:hover { opacity: 1; stroke: #F59E0B; stroke-width: 2; }
+.tl-dot.dimmed { opacity: 0.12; }
+.brush .selection { fill: rgba(245, 158, 11, 0.15); stroke: #F59E0B; stroke-width: 1; }
+
+/* ── graph section ── */
+#graph-section { display: none; padding: 0; border-bottom: 1px solid #1E293B; position: relative; }
+#graph-section.open { display: block; animation: sectionIn 0.35s ease-out; }
+#graph-topbar { background: #070B14; border-bottom: 1px solid #1E293B;
+                padding: 10px 24px; display: flex; align-items: center; gap: 16px; }
+#graph-topbar h2 { font-size: 14px; font-weight: 600; color: #F1F5F9; }
+#graph-collapse-btn { background: #111827; border: 1px solid #1E293B; border-radius: 4px;
+                      color: #94A3B8; padding: 4px 12px; font-size: 11px; cursor: pointer;
+                      transition: border-color 0.15s, color 0.15s; }
+#graph-collapse-btn:hover { border-color: #F59E0B; color: #F59E0B; }
+#graph-node-count { font-size: 11px; color: #64748B; margin-left: auto; }
+#graph-container { width: 100%; height: 70vh; position: relative; }
+#graph-container canvas { display: block; }
+
+/* ── detail panel (inside graph) ── */
+#panel { width: 320px; background: #070B14; border-left: 1px solid #1E293B;
+         overflow-y: auto; flex-shrink: 0; display: none; position: absolute;
+         top: 0; right: 0; bottom: 0; z-index: 50;
+         transform: translateX(100%); transition: transform 0.2s ease; }
+#panel.open { display: block; transform: translateX(0); }
+#panel-inner { padding: 20px; }
+#panel-close { position: absolute; top: 12px; right: 12px; background: none;
+               border: none; color: #64748B; font-size: 18px; cursor: pointer; line-height: 1; }
+#panel-close:hover { color: #F1F5F9; }
+.panel-topic { font-size: 16px; font-weight: 700; color: #F1F5F9; margin-bottom: 4px; padding-right: 24px; }
+.panel-domain { font-size: 11px; color: #F59E0B; text-transform: uppercase;
+                letter-spacing: 0.5px; margin-bottom: 12px; }
+.panel-desc { font-size: 13px; color: #94A3B8; line-height: 1.5; margin-bottom: 16px; }
+.panel-row { display: flex; justify-content: space-between; font-size: 12px;
+             padding: 5px 0; border-bottom: 1px solid #1E293B; }
+.panel-label { color: #64748B; }
+.panel-value { color: #F1F5F9; font-weight: 500; }
+.panel-section { margin-top: 16px; }
+.panel-section-title { font-size: 11px; color: #64748B; text-transform: uppercase;
+                       letter-spacing: 0.5px; margin-bottom: 8px; }
+.edge-item { font-size: 12px; padding: 6px 8px; background: #111827;
+             border-radius: 4px; margin-bottom: 4px; }
+.edge-kind { display: inline-block; font-size: 10px; padding: 1px 5px;
+             border-radius: 3px; margin-right: 6px; font-weight: 600; }
+.edge-kind.implies        { background: rgba(6,182,212,0.15); color: #06B6D4; }
+.edge-kind.depends_on     { background: rgba(245,158,11,0.15); color: #F59E0B; }
+.edge-kind.conflicts_with { background: rgba(226,75,74,0.15); color: #E24B4A; }
+.edge-kind.part_of        { background: rgba(29,158,117,0.15); color: #1D9E75; }
+.edge-peer { color: #CBD5E1; }
+.edge-desc { font-size: 11px; color: #64748B; margin-top: 4px; line-height: 1.45; }
+
+.review-item { margin-bottom: 10px; padding: 10px; background: #0A0E1A;
+               border-radius: 6px; border: 1px solid #1E293B; }
+.review-date { font-size: 10px; color: #64748B; margin-bottom: 6px; }
+.review-q  { font-size: 12px; color: #94A3B8; margin-bottom: 4px; line-height: 1.45; }
+.review-a  { font-size: 12px; color: #CBD5E1; margin-bottom: 4px; line-height: 1.45;
+             font-style: italic; border-left: 2px solid #334155; padding-left: 8px; }
+.review-fb { font-size: 12px; color: #06B6D4; line-height: 1.45; margin-bottom: 6px; }
+.review-score { display: inline-block; font-size: 10px; font-weight: 600;
+                padding: 1px 6px; border-radius: 3px; }
+.review-score.known { background: rgba(29,158,117,0.15); color: #1D9E75; }
+.review-score.stale { background: rgba(239,159,39,0.15);  color: #EF9F27; }
+.review-score.gap   { background: rgba(226,75,74,0.15);   color: #E24B4A; }
+
+/* ── responsive ── */
+@media (max-width: 640px) {
+  #cards-grid { grid-template-columns: 1fr; }
+  #chord-svg { max-width: 100%; }
+  #panel { width: 100%; }
+  #topbar { flex-wrap: wrap; gap: 8px 16px; }
+}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>Rocky Project Explorer</h1>
+  <div class="g-stat">Projects: <span id="g-projects"></span></div>
+  <div class="g-stat">Topics: <span id="g-topics"></span></div>
+  <div class="g-stat">Edges: <span id="g-edges"></span></div>
+</div>
+
+<div class="section" id="cards-section">
+  <div class="section-title">Projects</div>
+  <div id="cards-grid"></div>
+</div>
+
+<div class="section" id="chord-section">
+  <div class="section-title">Cross-Project Knowledge Flow</div>
+  <div id="chord-legend" class="domain-legend"></div>
+  <div id="chord-container">
+    <svg id="chord-svg" viewBox="0 0 500 500" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <div id="chord-tooltip"></div>
+</div>
+
+<div class="section" id="timeline-section">
+  <div class="section-title">Learning Timeline</div>
+  <div id="timeline-legend" class="domain-legend"></div>
+  <svg id="timeline-svg"></svg>
+</div>
+
+<div id="graph-section">
+  <div id="graph-topbar">
+    <h2 id="graph-title">Knowledge Graph</h2>
+    <button id="graph-collapse-btn">Collapse</button>
+    <span id="graph-node-count"></span>
+  </div>
+  <div id="graph-container">
+    <div id="panel">
+      <button id="panel-close">&#10005;</button>
+      <div id="panel-inner"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PKG = __DATA_JSON__;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONSTANTS & HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const DOMAIN_COLORS = {
+  Language: '#3B82F6', Database: '#8B5CF6', Auth: '#EC4899', API: '#06B6D4',
+  Frontend: '#F59E0B', DevOps: '#EF4444', Architecture: '#10B981', Performance: '#F97316',
+  Security: '#E24B4A', Testing: '#6366F1', Tooling: '#14B8A6', Data: '#A855F7', Other: '#64748B',
+};
+
+const PROJECT_COLORS = ['#F59E0B','#06B6D4','#1D9E75','#A855F7','#EC4899','#EF4444','#3B82F6','#10B981'];
+const projectNames = Object.keys(PKG.projects).sort();
+const projectColor = Object.fromEntries(projectNames.map((p, i) => [p, PROJECT_COLORS[i % PROJECT_COLORS.length]]));
+
+const nodeById = Object.fromEntries(PKG.nodes.map(n => [n.id, n]));
+const topicNodes = PKG.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
+
+// ── global stats ──
+document.getElementById('g-projects').textContent = projectNames.length;
+document.getElementById('g-topics').textContent = topicNodes.length;
+document.getElementById('g-edges').textContent = PKG.edges.filter(e => {
+  const s = nodeById[typeof e.source === 'object' ? e.source.id : e.source];
+  const t = nodeById[typeof e.target === 'object' ? e.target.id : e.target];
+  return s && t && s.kind !== 'domain' && s.kind !== 'user' && t.kind !== 'domain' && t.kind !== 'user';
+}).length;
+
+// ── build domain legend helper ──
+function buildDomainLegend(containerId, domains) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = domains.map(d =>
+    `<div class="domain-legend-item"><div class="domain-legend-dot" style="background:${DOMAIN_COLORS[d] || DOMAIN_COLORS.Other}"></div>${d}</div>`
+  ).join('');
+}
+
+// Collect domains actually present in data
+const activeDomains = PKG.domains.filter(d => topicNodes.some(n => (n.domain || 'Other') === d));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROJECT CARDS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const grid = document.getElementById('cards-grid');
+const radarCanvases = {};
+const cardElements = {};
+
+projectNames.forEach(name => {
+  const proj = PKG.projects[name];
+  const summary = PKG.summaries[name] || '';
+  const h = proj.health;
+  const total = proj.topicCount;
+  const knownPct = total ? Math.round(h.known / total * 100) : 0;
+
+  const card = document.createElement('div');
+  card.className = 'project-card';
+  card.dataset.project = name;
+  card.onclick = () => drillDown(name);
+  cardElements[name] = card;
+
+  // Domain bar segments
+  const domainEntries = Object.entries(proj.domains).sort((a, b) => b[1] - a[1]);
+  const domainBarHtml = domainEntries.map(([d, count]) => {
+    const pct = (count / total * 100).toFixed(1);
+    return `<div class="domain-bar-seg" style="width:${pct}%;background:${DOMAIN_COLORS[d] || DOMAIN_COLORS.Other}" title="${d}: ${count}"></div>`;
+  }).join('');
+
+  // Health bar widths
+  const kw = total ? (h.known / total * 100) : 0;
+  const fw = total ? (h.fading / total * 100) : 0;
+  const gw = total ? (h.gap / total * 100) : 0;
+
+  card.innerHTML = `
+    <div class="card-name" style="color:${projectColor[name]}">${name}</div>
+    <div class="card-summary">${summary}</div>
+    <div class="card-stats">
+      <div>Topics: <span>${total}</span></div>
+      <div>Known: <span style="color:#1D9E75">${h.known}</span></div>
+      <div>Fading: <span style="color:#EF9F27">${h.fading}</span></div>
+      <div>Gap: <span style="color:#E24B4A">${h.gap}</span></div>
+    </div>
+    <div class="domain-bar">${domainBarHtml}</div>
+    <div class="health-bar-wrap">
+      <div class="health-bar">
+        <div class="health-known" style="width:${kw}%"></div>
+        <div class="health-fading" style="width:${fw}%"></div>
+        <div class="health-gap" style="width:${gw}%"></div>
+      </div>
+      <div class="health-label">${knownPct}% known</div>
+    </div>
+    <canvas class="card-radar" id="radar-${name}"></canvas>
+  `;
+  grid.appendChild(card);
+
+  // Radar chart (deferred until canvas is in DOM)
+  requestAnimationFrame(() => {
+    const canvas = document.getElementById('radar-' + name);
+    if (!canvas) return;
+    const domainLabels = PKG.domains;
+    const dataValues = domainLabels.map(d => proj.domains[d] || 0);
+    const maxVal = Math.max(...dataValues, 1);
+    radarCanvases[name] = new Chart(canvas, {
+      type: 'radar',
+      data: {
+        labels: domainLabels,
+        datasets: [{
+          data: dataValues,
+          backgroundColor: projectColor[name] + '20',
+          borderColor: projectColor[name],
+          borderWidth: 1.5,
+          pointBackgroundColor: projectColor[name],
+          pointRadius: 2,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          r: {
+            beginAtZero: true,
+            max: maxVal,
+            ticks: { display: false, stepSize: Math.ceil(maxVal / 3) },
+            grid: { color: '#1E293B' },
+            angleLines: { color: '#1E293B' },
+            pointLabels: { color: '#64748B', font: { size: 9 } },
+          },
+        },
+      },
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHORD DIAGRAM
+// ═══════════════════════════════════════════════════════════════════════════════
+
+(function drawChord() {
+  if (projectNames.length < 2 || PKG.flows.length === 0) {
+    document.getElementById('chord-section').style.display = 'none';
+    return;
+  }
+
+  // Project color legend for chord
+  const chordLegend = document.getElementById('chord-legend');
+  chordLegend.innerHTML = projectNames.map(p =>
+    `<div class="domain-legend-item"><div class="domain-legend-dot" style="background:${projectColor[p]}"></div>${p}</div>`
+  ).join('');
+
+  const size = 500, outerR = size / 2 - 60, innerR = outerR - 20;
+  const svg = d3.select('#chord-svg');
+  const g = svg.append('g').attr('transform', `translate(${size/2},${size/2})`);
+  const tooltip = document.getElementById('chord-tooltip');
+
+  // Build matrix
+  const idx = Object.fromEntries(projectNames.map((p, i) => [p, i]));
+  const n = projectNames.length;
+  const matrix = Array.from({ length: n }, () => new Array(n).fill(0));
+  const flowLookup = {};
+
+  PKG.flows.forEach(f => {
+    if (idx[f.source] !== undefined && idx[f.target] !== undefined) {
+      matrix[idx[f.source]][idx[f.target]] += f.total;
+      matrix[idx[f.target]][idx[f.source]] += f.total;
+      const key = [f.source, f.target].sort().join('|');
+      if (!flowLookup[key]) flowLookup[key] = [];
+      flowLookup[key].push(f);
+    }
+  });
+
+  const chord = d3.chord().padAngle(0.05).sortSubgroups(d3.descending);
+  const chords = chord(matrix);
+  const arc = d3.arc().innerRadius(innerR).outerRadius(outerR);
+  const ribbon = d3.ribbon().radius(innerR);
+
+  // Groups (project arcs)
+  const groups = g.append('g').selectAll('g')
+    .data(chords.groups).enter().append('g');
+
+  groups.append('path')
+    .attr('d', arc)
+    .attr('fill', d => projectColor[projectNames[d.index]])
+    .attr('stroke', '#0A0E1A')
+    .style('transition', 'opacity 0.2s');
+
+  groups.append('text')
+    .each(function(d) { d.angle = (d.startAngle + d.endAngle) / 2; })
+    .attr('dy', '.35em')
+    .attr('transform', d => `rotate(${(d.angle * 180 / Math.PI - 90)}) translate(${outerR + 10})${d.angle > Math.PI ? ' rotate(180)' : ''}`)
+    .attr('text-anchor', d => d.angle > Math.PI ? 'end' : null)
+    .text(d => projectNames[d.index])
+    .style('fill', '#CBD5E1').style('font-size', '11px').style('font-weight', '600');
+
+  // Ribbons
+  const ribbons = g.append('g').attr('fill-opacity', 0.5)
+    .selectAll('path')
+    .data(chords).enter().append('path')
+    .attr('d', ribbon)
+    .attr('fill', d => projectColor[projectNames[d.source.index]])
+    .attr('stroke', '#0A0E1A').attr('stroke-width', 0.5)
+    .style('cursor', 'pointer')
+    .style('transition', 'fill-opacity 0.15s')
+    .on('mouseover', function(event, d) {
+      ribbons.attr('fill-opacity', 0.12);
+      d3.select(this).attr('fill-opacity', 0.85);
+      const a = projectNames[d.source.index], b = projectNames[d.target.index];
+      const key = [a, b].sort().join('|');
+      const details = (flowLookup[key] || []).map(f =>
+        `${f.source} \u2192 ${f.target}: ${f.implies} implies, ${f.depends_on} depends, ${f.part_of} part_of, ${f.conflicts_with} conflicts`
+      ).join('<br>');
+      tooltip.innerHTML = `<strong>${a} \u2194 ${b}</strong> (${d.source.value} edges)<br>${details || 'No flows'}`;
+      tooltip.style.opacity = 1;
+    })
+    .on('mousemove', function(event) {
+      tooltip.style.left = Math.min(event.clientX + 12, window.innerWidth - 320) + 'px';
+      tooltip.style.top = (event.clientY - 10) + 'px';
+    })
+    .on('mouseout', function() {
+      ribbons.attr('fill-opacity', 0.5);
+      tooltip.style.opacity = 0;
+    })
+    .on('click', function(event, d) {
+      const a = projectNames[d.source.index], b = projectNames[d.target.index];
+      drillDown(null, a, b);
+    });
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TIMELINE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+(function drawTimeline() {
+  const container = document.getElementById('timeline-section');
+  const svgEl = document.getElementById('timeline-svg');
+  const margin = { top: 20, right: 24, bottom: 40, left: 110 };
+  const fullW = svgEl.clientWidth || container.clientWidth || 900;
+  const fullH = Math.max(200, projectNames.length * 50 + margin.top + margin.bottom);
+  const w = fullW - margin.left - margin.right;
+  const h = fullH - margin.top - margin.bottom;
+
+  svgEl.setAttribute('viewBox', `0 0 ${fullW} ${fullH}`);
+  svgEl.style.height = fullH + 'px';
+  const svg = d3.select(svgEl);
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const timelineData = PKG.timeline.map(d => ({ ...d, _date: new Date(d.date) })).filter(d => !isNaN(d._date));
+  if (timelineData.length === 0) { container.style.display = 'none'; return; }
+
+  // Domain legend
+  buildDomainLegend('timeline-legend', activeDomains);
+
+  const x = d3.scaleTime()
+    .domain(d3.extent(timelineData, d => d._date))
+    .range([0, w]);
+
+  const y = d3.scaleBand()
+    .domain(projectNames)
+    .range([0, h])
+    .padding(0.3);
+
+  // X axis
+  g.append('g').attr('class', 'tl-axis')
+    .attr('transform', `translate(0,${h})`)
+    .call(d3.axisBottom(x).ticks(6).tickFormat(d3.timeFormat('%b %Y')));
+
+  // Y labels
+  projectNames.forEach(p => {
+    g.append('text').attr('class', 'tl-label')
+      .attr('x', -8).attr('y', y(p) + y.bandwidth() / 2)
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+      .text(p);
+  });
+
+  // Gridlines
+  g.append('g').attr('class', 'tl-axis')
+    .selectAll('line').data(projectNames).enter()
+    .append('line')
+    .attr('x1', 0).attr('x2', w)
+    .attr('y1', d => y(d) + y.bandwidth() + y.step() * y.padding() / 2)
+    .attr('y2', d => y(d) + y.bandwidth() + y.step() * y.padding() / 2)
+    .attr('stroke', '#1E293B').attr('stroke-dasharray', '3,3');
+
+  // Dots
+  const dots = g.selectAll('.tl-dot').data(timelineData).enter()
+    .append('circle').attr('class', 'tl-dot')
+    .attr('cx', d => x(d._date))
+    .attr('cy', d => {
+      const band = y(d.repo);
+      if (band == null) return -100;
+      const jitter = (Math.random() - 0.5) * y.bandwidth() * 0.6;
+      return band + y.bandwidth() / 2 + jitter;
+    })
+    .attr('r', 4)
+    .attr('fill', d => DOMAIN_COLORS[d.domain] || DOMAIN_COLORS.Other);
+  dots.append('title').text(d => `${d.topic} (${d.domain})`);
+
+  // Brush for time range filtering
+  const brush = d3.brushX()
+    .extent([[0, 0], [w, h]])
+    .on('brush end', function(event) {
+      if (!event.selection) {
+        dots.classed('dimmed', false);
+        return;
+      }
+      const [x0, x1] = event.selection;
+      dots.classed('dimmed', d => {
+        const cx = x(d._date);
+        return cx < x0 || cx > x1;
+      });
+    });
+
+  g.append('g').attr('class', 'brush').call(brush);
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GUARDED FORCE GRAPH (PixiJS)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const GUARD_THRESHOLD = 50;
+let graphApp = null;
+let graphWorld = null;
+let graphSim = null;
+let graphDirty = true;
+let expandedProject = null;
+let graphNodes = [];
+let graphEdges = [];
+let graphNodeGfx = new Map();
+let graphLabelMap = new Map();
+let graphEdgeGfx = null;
+let graphHighlightGfx = null;
+let graphCurrentTransform = d3.zoomIdentity;
+let graphHoveredNode = null;
+let graphSelectedNodeId = null;
+let graphZoomBehavior = null;
+let graphDragNode = null;
+
+function lerpColor(a, b, t) {
+  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+  return ((Math.round(ar + (br - ar) * t) << 16) |
+          (Math.round(ag + (bg - ag) * t) << 8) |
+           Math.round(ab + (bb - ab) * t));
+}
+
+function nodeColorHex(d) {
+  if (d.kind === 'user') return 0xF59E0B;
+  if (d.kind === 'domain') return 0x1E293B;
+  if (d.kind === 'project') {
+    const c = projectColor[d.topic] || '#F59E0B';
+    return parseInt(c.slice(1), 16);
+  }
+  const r = d.retrievability;
+  if (r >= 0.7) return lerpColor(0xEF9F27, 0x1D9E75, (r - 0.7) / 0.3);
+  return lerpColor(0xE24B4A, 0xEF9F27, r / 0.7);
+}
+
+function nodeRadius(d) {
+  if (d.kind === 'user') return 28;
+  if (d.kind === 'domain') return 18;
+  if (d.kind === 'project') return Math.max(14, Math.min(30, 10 + d.topicCount * 0.4));
+  return Math.max(6, Math.min(22, 6 + d.stability * 1.2));
+}
+
+function buildGraphData(filterProject, crossA, crossB) {
+  const useGuard = topicNodes.length > GUARD_THRESHOLD && !filterProject && !crossA;
+
+  let gNodes = [];
+  let gEdges = [];
+
+  if (useGuard) {
+    // Show domain nodes + synthetic project nodes
+    gNodes = PKG.nodes.filter(n => n.kind === 'domain').map(n => ({ ...n }));
+
+    projectNames.forEach(name => {
+      const proj = PKG.projects[name];
+      const h = proj.health;
+      const total = proj.topicCount;
+      const knownRatio = total ? h.known / total : 0;
+      gNodes.push({
+        id: '__project__' + name, topic: name, kind: 'project',
+        domain: '', description: PKG.summaries[name] || '',
+        stability: 999, difficulty: 0, retrievability: knownRatio,
+        classification: knownRatio >= 0.7 ? 'known' : knownRatio >= 0.4 ? 'stale' : 'gap',
+        last_reviewed: '', review_count: 0, created_at: '', repo: name,
+        topicCount: total,
+      });
+
+      // Edges from project node to each domain it touches
+      const domains = proj.domains;
+      for (const [dom, count] of Object.entries(domains)) {
+        const domNode = gNodes.find(n => n.kind === 'domain' && n.topic === dom);
+        if (domNode) {
+          gEdges.push({
+            id: `__proj_${name}_${dom}`, source: '__project__' + name, target: domNode.id,
+            kind: 'part_of', description: `${count} topics`, strength: Math.min(1, count / 20),
+          });
+        }
+      }
+    });
+  } else {
+    // Show actual topic nodes (optionally filtered)
+    let filteredTopics;
+    if (filterProject) {
+      filteredTopics = PKG.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user' && n.repo === filterProject);
+    } else if (crossA && crossB) {
+      filteredTopics = PKG.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user' && (n.repo === crossA || n.repo === crossB));
+    } else {
+      filteredTopics = topicNodes;
+    }
+
+    const visibleIds = new Set(filteredTopics.map(n => n.id));
+    const activeDoms = new Set(filteredTopics.map(n => n.domain).filter(Boolean));
+
+    gNodes = filteredTopics.map(n => ({ ...n }));
+
+    // Add domain nodes for active domains
+    PKG.nodes.filter(n => n.kind === 'domain' && activeDoms.has(n.topic)).forEach(n => {
+      gNodes.push({ ...n });
+    });
+
+    // Edges between visible nodes
+    const allIds = new Set(gNodes.map(n => n.id));
+    PKG.edges.forEach(e => {
+      const sid = typeof e.source === 'object' ? e.source.id : e.source;
+      const tid = typeof e.target === 'object' ? e.target.id : e.target;
+      if (allIds.has(sid) && allIds.has(tid)) {
+        gEdges.push({ ...e, source: sid, target: tid });
+      }
+    });
+  }
+
+  // Assign radius and color
+  gNodes.forEach(n => {
+    n._r = nodeRadius(n);
+    n._colorHex = nodeColorHex(n);
+    n._visible = true;
+  });
+
+  return { nodes: gNodes, edges: gEdges };
+}
+
+function openGraph(filterProject, crossA, crossB) {
+  const section = document.getElementById('graph-section');
+  section.classList.add('open');
+
+  const title = filterProject
+    ? `Project: ${filterProject}`
+    : (crossA && crossB) ? `${crossA} \u2194 ${crossB}` : 'Knowledge Graph (Guarded)';
+  document.getElementById('graph-title').textContent = title;
+  expandedProject = filterProject || null;
+
+  // Highlight active card
+  Object.values(cardElements).forEach(c => c.classList.remove('active'));
+  if (filterProject && cardElements[filterProject]) cardElements[filterProject].classList.add('active');
+
+  const { nodes: gn, edges: ge } = buildGraphData(filterProject, crossA, crossB);
+  graphNodes = gn;
+  graphEdges = ge;
+
+  // Node count
+  const topicCount = gn.filter(n => n.kind !== 'domain' && n.kind !== 'user' && n.kind !== 'project').length;
+  const projCount = gn.filter(n => n.kind === 'project').length;
+  const label = projCount > 0 ? `${projCount} projects, ${gn.filter(n => n.kind === 'domain').length} domains` : `${topicCount} topics`;
+  document.getElementById('graph-node-count').textContent = label;
+
+  section.scrollIntoView({ behavior: 'smooth' });
+
+  // Tear down previous graph
+  if (graphApp) {
+    graphApp.destroy(true);
+    graphApp = null;
+  }
+  if (graphSim) {
+    graphSim.stop();
+    graphSim = null;
+  }
+  graphNodeGfx.clear();
+  graphLabelMap.clear();
+  graphHoveredNode = null;
+  graphSelectedNodeId = null;
+  graphDragNode = null;
+
+  const container = document.getElementById('graph-container');
+  // Remove any previous canvas
+  const oldCanvas = container.querySelector('canvas');
+  if (oldCanvas) oldCanvas.remove();
+
+  graphApp = new PIXI.Application({
+    background: 0x0A0E1A, resizeTo: container, antialias: true,
+    resolution: window.devicePixelRatio || 1, autoDensity: true,
+  });
+  container.insertBefore(graphApp.view, container.firstChild);
+
+  graphWorld = new PIXI.Container();
+  graphApp.stage.addChild(graphWorld);
+
+  graphEdgeGfx = new PIXI.Graphics();
+  graphWorld.addChild(graphEdgeGfx);
+  const nodeLayer = new PIXI.Container();
+  graphWorld.addChild(nodeLayer);
+  const labelLayer = new PIXI.Container();
+  graphWorld.addChild(labelLayer);
+  graphHighlightGfx = new PIXI.Graphics();
+  graphWorld.addChild(graphHighlightGfx);
+
+  const nodeByIdLocal = Object.fromEntries(graphNodes.map(n => [n.id, n]));
+
+  // Create node graphics & labels
+  graphNodes.forEach(n => {
+    const gfx = new PIXI.Graphics();
+    const strokeHex = n.kind === 'user' ? 0xF59E0B : n.kind === 'domain' ? 0x475569 : n.kind === 'project' ? parseInt((projectColor[n.topic] || '#F59E0B').slice(1), 16) : 0x0A0E1A;
+    const strokeW = (n.kind === 'user' || n.kind === 'domain' || n.kind === 'project') ? 2 : 1.5;
+    gfx.lineStyle(strokeW, strokeHex);
+    gfx.beginFill(n._colorHex);
+    gfx.drawCircle(0, 0, n._r);
+    gfx.endFill();
+    nodeLayer.addChild(gfx);
+    graphNodeGfx.set(n.id, gfx);
+
+    const fontSize = n.kind === 'project' ? 12 : n.kind === 'domain' ? 10 : 11;
+    const fontWeight = (n.kind === 'project' || n.kind === 'domain') ? 'bold' : 'normal';
+    const fillColor = n.kind === 'project' ? parseInt((projectColor[n.topic] || '#CBD5E1').slice(1), 16)
+      : n.kind === 'domain' ? 0xF1F5F9 : 0xCBD5E1;
+    const displayText = n.topic.length > 22 ? n.topic.slice(0, 20) + '\u2026' : n.topic;
+
+    const label = new PIXI.Text(displayText, {
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      fontSize, fontWeight, fill: fillColor, align: 'center',
+    });
+    label.resolution = 2;
+    if (n.kind === 'domain' || n.kind === 'project') {
+      label.anchor.set(0.5, 0.5);
+    } else {
+      label.anchor.set(0.5, 0);
+      label.position.set(0, n._r + 6);
+    }
+    labelLayer.addChild(label);
+    graphLabelMap.set(n.id, label);
+  });
+
+  // Force simulation
+  graphSim = d3.forceSimulation(graphNodes)
+    .alphaDecay(0.04)
+    .force('link', d3.forceLink(graphEdges).id(d => d.id).distance(d => {
+      const s = typeof d.source === 'object' ? d.source : nodeByIdLocal[d.source];
+      const t = typeof d.target === 'object' ? d.target : nodeByIdLocal[d.target];
+      if (s && s.kind === 'project') return 120;
+      if (s && s.kind === 'domain') return 80;
+      return 70 + (1 - (d.strength || 0.5)) * 40;
+    }))
+    .force('charge', d3.forceManyBody().strength(d =>
+      d.kind === 'project' ? -400 : d.kind === 'domain' ? -200 : -120))
+    .force('center', d3.forceCenter(0, 0))
+    .force('collision', d3.forceCollide().radius(d => d._r + 12));
+
+  graphSim.on('tick', () => { graphDirty = true; });
+
+  // Zoom — initialize centered
+  const initTx = container.clientWidth / 2;
+  const initTy = container.clientHeight / 2;
+  graphCurrentTransform = d3.zoomIdentity.translate(initTx, initTy);
+  graphWorld.position.set(initTx, initTy);
+
+  graphZoomBehavior = d3.zoom().scaleExtent([0.08, 5])
+    .filter(event => {
+      // Allow zoom always, but suppress pan when dragging a node
+      if (graphDragNode && event.type !== 'wheel') return false;
+      return true;
+    })
+    .on('zoom', ({ transform }) => {
+      graphCurrentTransform = transform;
+      graphWorld.position.set(transform.x, transform.y);
+      graphWorld.scale.set(transform.k);
+      graphDirty = true;
+    });
+
+  d3.select(graphApp.view)
+    .call(graphZoomBehavior)
+    .call(graphZoomBehavior.transform, graphCurrentTransform);
+
+  // Node drag — integrated with pointer events to avoid zoom conflict
+  let dragStartPos = null;
+
+  graphApp.view.addEventListener('pointerdown', e => {
+    const rect = graphApp.view.getBoundingClientRect();
+    const wx = (e.clientX - rect.left - graphCurrentTransform.x) / graphCurrentTransform.k;
+    const wy = (e.clientY - rect.top - graphCurrentTransform.y) / graphCurrentTransform.k;
+    const hit = hitNode(wx, wy);
+    dragStartPos = { x: e.clientX, y: e.clientY };
+    if (hit && hit.kind !== 'domain') {
+      graphDragNode = hit;
+      graphDragNode.fx = graphDragNode.x;
+      graphDragNode.fy = graphDragNode.y;
+      graphSim.alphaTarget(0.3).restart();
+      e.stopPropagation(); // prevent zoom from also starting a pan
+    }
+  });
+
+  graphApp.view.addEventListener('pointermove', e => {
+    const rect = graphApp.view.getBoundingClientRect();
+    const wx = (e.clientX - rect.left - graphCurrentTransform.x) / graphCurrentTransform.k;
+    const wy = (e.clientY - rect.top - graphCurrentTransform.y) / graphCurrentTransform.k;
+
+    if (graphDragNode) {
+      graphDragNode.fx = wx;
+      graphDragNode.fy = wy;
+      graphDirty = true;
+      return;
+    }
+
+    const hit = hitNode(wx, wy);
+    graphApp.view.style.cursor = hit ? 'pointer' : 'default';
+    if (graphHoveredNode !== hit) { graphHoveredNode = hit; graphDirty = true; }
+  });
+
+  graphApp.view.addEventListener('pointerup', e => {
+    if (graphDragNode) {
+      graphSim.alphaTarget(0);
+      graphDragNode.fx = null;
+      graphDragNode.fy = null;
+      // Check if this was a click (not a real drag)
+      const wasDrag = dragStartPos && ((e.clientX - dragStartPos.x)**2 + (e.clientY - dragStartPos.y)**2 > 9);
+      if (!wasDrag) {
+        // It was a click on this node
+        if (graphDragNode.kind === 'project') { drillDown(graphDragNode.topic); }
+        else { showPanel(graphDragNode); }
+      }
+      graphDragNode = null;
+      dragStartPos = null;
+      return;
+    }
+
+    // Click on empty space (no drag subject was found on pointerdown)
+    if (dragStartPos && (e.clientX - dragStartPos.x)**2 + (e.clientY - dragStartPos.y)**2 <= 9) {
+      closePanel();
+    }
+    dragStartPos = null;
+  });
+
+  graphApp.view.addEventListener('pointerleave', () => {
+    if (graphDragNode) {
+      graphSim.alphaTarget(0);
+      graphDragNode.fx = null;
+      graphDragNode.fy = null;
+      graphDragNode = null;
+    }
+    if (graphHoveredNode) { graphHoveredNode = null; graphDirty = true; }
+  });
+
+  // Render loop with LOD
+  graphApp.ticker.add(() => {
+    if (!graphDirty) return;
+    graphDirty = false;
+
+    const edgeColorMap = { implies: 0x06B6D4, depends_on: 0xF59E0B, conflicts_with: 0xE24B4A, part_of: 0x1D9E75 };
+    const k = graphCurrentTransform.k;
+
+    // LOD thresholds for labels
+    const showTopicLabels = k >= 0.6;
+    const topicLabelAlpha = showTopicLabels ? Math.min(1, (k - 0.6) / 0.4) : 0;
+
+    // Edges
+    graphEdgeGfx.clear();
+    graphEdges.forEach(e => {
+      const s = e.source, t = e.target;
+      if (s.x == null || t.x == null) return;
+      const color = edgeColorMap[e.kind] || 0x06B6D4;
+      let alpha = 0.4, width = Math.max(0.8, (e.strength || 0.5) * 2.5);
+      if (graphHoveredNode) {
+        const sid = typeof s === 'object' ? s.id : s;
+        const tid = typeof t === 'object' ? t.id : t;
+        if (sid === graphHoveredNode.id || tid === graphHoveredNode.id) { alpha = 0.9; width = Math.max(2, width); }
+        else alpha *= 0.12;
+      }
+      graphEdgeGfx.lineStyle(width, color, alpha);
+      graphEdgeGfx.moveTo(s.x, s.y);
+      graphEdgeGfx.lineTo(t.x, t.y);
+    });
+
+    // Hover connectivity set
+    const hoverSet = new Set();
+    if (graphHoveredNode) {
+      hoverSet.add(graphHoveredNode.id);
+      graphEdges.forEach(e => {
+        const sid = typeof e.source === 'object' ? e.source.id : e.source;
+        const tid = typeof e.target === 'object' ? e.target.id : e.target;
+        if (sid === graphHoveredNode.id) hoverSet.add(tid);
+        if (tid === graphHoveredNode.id) hoverSet.add(sid);
+      });
+    }
+
+    // Nodes & labels
+    graphNodes.forEach(n => {
+      const gfx = graphNodeGfx.get(n.id);
+      const lbl = graphLabelMap.get(n.id);
+      if (!gfx) return;
+      gfx.position.set(n.x, n.y);
+
+      if (lbl) {
+        if (n.kind === 'domain' || n.kind === 'project') {
+          lbl.position.set(n.x, n.y);
+        } else {
+          lbl.position.set(n.x, n.y + n._r + 6);
+        }
+      }
+
+      // Hover dimming
+      if (graphHoveredNode) {
+        const connected = hoverSet.has(n.id);
+        gfx.alpha = connected ? 1 : 0.15;
+        if (lbl) lbl.alpha = connected ? 1 : 0.08;
+      } else {
+        gfx.alpha = 1;
+        // LOD: always show project/domain labels, fade topic labels
+        if (lbl) {
+          if (n.kind === 'domain' || n.kind === 'project') {
+            lbl.alpha = 1;
+          } else {
+            lbl.alpha = topicLabelAlpha;
+          }
+        }
+      }
+    });
+
+    // Highlight ring
+    graphHighlightGfx.clear();
+    if (graphHoveredNode && graphHoveredNode.x != null) {
+      graphHighlightGfx.lineStyle(2.5, 0xF59E0B, 1);
+      graphHighlightGfx.drawCircle(graphHoveredNode.x, graphHoveredNode.y, graphHoveredNode._r + 2);
+    }
+    if (graphSelectedNodeId) {
+      const sn = graphNodes.find(n => n.id === graphSelectedNodeId);
+      if (sn && sn.x != null) {
+        graphHighlightGfx.lineStyle(2.5, 0xF59E0B, 0.8);
+        graphHighlightGfx.drawCircle(sn.x, sn.y, sn._r + 3);
+      }
+    }
+  });
+
+  // Auto-fit after simulation settles
+  let fitted = false;
+  graphSim.on('tick.fit', () => {
+    if (fitted) return;
+    if (graphSim.alpha() < 0.05) {
+      fitted = true;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      graphNodes.forEach(n => {
+        if (n.x == null) return;
+        minX = Math.min(minX, n.x - n._r); minY = Math.min(minY, n.y - n._r);
+        maxX = Math.max(maxX, n.x + n._r); maxY = Math.max(maxY, n.y + n._r);
+      });
+      const pad = 60;
+      const bw = (maxX - minX) + pad * 2, bh = (maxY - minY) + pad * 2;
+      const cw = container.clientWidth, ch = container.clientHeight;
+      const scale = Math.min(cw / bw, ch / bh, 1.5);
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      const tx = cw / 2 - cx * scale, ty = ch / 2 - cy * scale;
+      d3.select(graphApp.view).transition().duration(600)
+        .call(graphZoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    }
+  });
+}
+
+function hitNode(wx, wy) {
+  for (const n of graphNodes) {
+    if (n.x == null) continue;
+    const dx = wx - n.x, dy = wy - n.y;
+    if (Math.sqrt(dx*dx + dy*dy) < n._r + 4) return n;
+  }
+  return null;
+}
+
+function drillDown(project, crossA, crossB) {
+  openGraph(project, crossA, crossB);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DETAIL PANEL
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function showPanel(d) {
+  graphSelectedNodeId = d.id;
+  graphDirty = true;
+
+  const panel = document.getElementById('panel');
+  const inner = document.getElementById('panel-inner');
+
+  // Build edges index for this node
+  const nodeEdges = PKG.edges.filter(e => {
+    const sid = typeof e.source === 'object' ? e.source.id : e.source;
+    const tid = typeof e.target === 'object' ? e.target.id : e.target;
+    return sid === d.id || tid === d.id;
+  }).map(e => {
+    const sid = typeof e.source === 'object' ? e.source.id : e.source;
+    const tid = typeof e.target === 'object' ? e.target.id : e.target;
+    const peer = sid === d.id ? tid : sid;
+    return { ...e, peer };
+  });
+
+  const reviews = d.reviews || [];
+  const edgesHtml = nodeEdges.length === 0
+    ? '<div style="color:#64748B;font-size:12px">No edges</div>'
+    : nodeEdges.slice(0, 10).map(e => {
+        const label = nodeById[e.peer] ? nodeById[e.peer].topic : e.peer;
+        const desc = e.description ? `<div class="edge-desc">${e.description}</div>` : '';
+        return `<div class="edge-item"><span class="edge-kind ${e.kind}">${e.kind.replace(/_/g,' ')}</span><span class="edge-peer">${label}</span>${desc}</div>`;
+      }).join('');
+
+  const reviewsHtml = reviews.length === 0
+    ? '<div style="color:#64748B;font-size:12px">No reviews yet</div>'
+    : reviews.slice(0, 5).map(r => {
+        const pct = Math.round(r.score * 100);
+        const cls = pct >= 70 ? 'known' : pct >= 40 ? 'stale' : 'gap';
+        return `<div class="review-item">
+          <div class="review-date">${r.date}</div>
+          ${r.question ? `<div class="review-q">Q: ${r.question}</div>` : ''}
+          ${r.answer ? `<div class="review-a">${r.answer}</div>` : ''}
+          ${r.feedback ? `<div class="review-fb">${r.feedback}</div>` : ''}
+          <span class="review-score ${cls}">${pct}%</span>
+        </div>`;
+      }).join('');
+
+  inner.innerHTML = `
+    <div class="panel-topic">${d.topic}</div>
+    <div class="panel-domain">${d.domain || 'Other'}${d.repo ? ' \u00b7 ' + d.repo : ''}</div>
+    <div class="panel-desc">${d.description || '<em style="color:#475569">No description</em>'}</div>
+    <div class="panel-row"><span class="panel-label">Retrievability</span><span class="panel-value">${(d.retrievability * 100).toFixed(0)}%</span></div>
+    <div class="panel-row"><span class="panel-label">Stability</span><span class="panel-value">${d.stability.toFixed(1)}d</span></div>
+    <div class="panel-row"><span class="panel-label">Last reviewed</span><span class="panel-value">${d.last_reviewed || 'Never'}</span></div>
+    <div class="panel-row"><span class="panel-label">Reviews</span><span class="panel-value">${d.review_count}</span></div>
+    <div class="panel-section"><div class="panel-section-title">Edges (${nodeEdges.length})</div>${edgesHtml}</div>
+    <div class="panel-section"><div class="panel-section-title">Review History</div>${reviewsHtml}</div>
+  `;
+
+  panel.classList.add('open');
+}
+
+function closePanel() {
+  document.getElementById('panel').classList.remove('open');
+  graphSelectedNodeId = null;
+  graphDirty = true;
+}
+
+document.getElementById('panel-close').onclick = closePanel;
+
+document.getElementById('graph-collapse-btn').onclick = () => {
+  if (expandedProject) {
+    openGraph(null); // back to guarded view
+  } else {
+    document.getElementById('graph-section').classList.remove('open');
+    Object.values(cardElements).forEach(c => c.classList.remove('active'));
+  }
+};
+
+// Keyboard: Escape to close panel → collapse project → close graph
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const section = document.getElementById('graph-section');
+    if (section.classList.contains('open')) {
+      if (document.getElementById('panel').classList.contains('open')) {
+        closePanel();
+      } else if (expandedProject) {
+        openGraph(null);
+      } else {
+        section.classList.remove('open');
+        Object.values(cardElements).forEach(c => c.classList.remove('active'));
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>

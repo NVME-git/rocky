@@ -3,60 +3,147 @@
  * Rocky Browser Extension — Background service worker
  *
  * Handles:
- * - Context menu integration (right-click → Add to Rocky)
- * - Message passing from popup and content scripts
- * - Communication with the Rocky sync endpoint (future)
+ * - Context menus: "Add to Rocky" on page, link, and selected text
+ * - Message routing from popup and content scripts
+ * - Live topic sync from Rocky server
+ * - Badge showing count of topics due for review
  */
-// Context menu for right-click "Add to Rocky"
+// ── context menus ─────────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({
+        id: "rocky-add-page",
+        title: "Add page to Rocky PKG",
+        contexts: ["page"],
+    });
+    chrome.contextMenus.create({
         id: "rocky-add-link",
-        title: "Add to Rocky PKG",
-        contexts: ["link", "page"],
+        title: "Add link to Rocky PKG",
+        contexts: ["link"],
+    });
+    chrome.contextMenus.create({
+        id: "rocky-add-selection",
+        title: "Capture selection to Rocky PKG",
+        contexts: ["selection"],
     });
 });
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === "rocky-add-link") {
-        const url = info.linkUrl ?? info.pageUrl ?? "";
-        const title = tab?.title ?? "";
-        // Store for the popup to pick up, or process directly
-        chrome.storage.local.set({
-            pendingResource: { url, title, timestamp: Date.now() },
-        });
+    const url = info.linkUrl ?? info.pageUrl ?? tab?.url ?? "";
+    const title = tab?.title ?? "";
+    let note = "";
+    if (info.menuItemId === "rocky-add-selection") {
+        note = info.selectionText ?? "";
     }
+    chrome.storage.local.set({
+        pendingCapture: { url, title, note, timestamp: Date.now() },
+    });
+    // Open popup (opens action popup so user can confirm and select topics)
+    // We can't programmatically open the popup in MV3, but we set pendingCapture
+    // so the next popup open picks it up.
 });
-// Handle messages from popup
+// ── message handler ───────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "ADD_RESOURCE") {
         handleAddResource(message)
-            .then((result) => sendResponse(result))
-            .catch((err) => sendResponse({ success: false, error: String(err) }));
-        return true; // async response
+            .then((r) => sendResponse(r))
+            .catch((e) => sendResponse({ success: false, error: String(e) }));
+        return true;
     }
-    if (message.type === "SYNC_TOPICS") {
-        handleSyncTopics()
-            .then((result) => sendResponse(result))
-            .catch((err) => sendResponse({ success: false, error: String(err) }));
+    if (message.type === "SYNC_TOPICS_FROM_SERVER") {
+        syncTopicsFromServer()
+            .then((r) => sendResponse(r))
+            .catch((e) => sendResponse({ success: false, error: String(e) }));
+        return true;
+    }
+    if (message.type === "PAGE_DETECTED") {
+        // Store last detected page meta for the popup
+        chrome.storage.session?.set({ lastPageMeta: message }).catch(() => {
+            chrome.storage.local.set({ lastPageMeta: message });
+        });
+        sendResponse({ ok: true });
+        return false;
+    }
+    if (message.type === "GET_HISTORY") {
+        chrome.storage.local.get("captureHistory").then((data) => {
+            sendResponse({ history: data["captureHistory"] ?? [] });
+        });
         return true;
     }
 });
+// ── resource storage ──────────────────────────────────────────────────────────
 async function handleAddResource(message) {
-    // In a future version this will POST to a Rocky sync API.
-    // For now, store the resource locally for later sync.
-    const data = await chrome.storage.local.get("pendingResources");
-    const pending = data["pendingResources"] ?? [];
-    pending.push({
+    // Try to POST to the rocky server if configured
+    const data = await chrome.storage.local.get("rockyServerUrl");
+    const serverUrl = data["rockyServerUrl"]?.trim();
+    // Store locally for history
+    const histData = await chrome.storage.local.get("captureHistory");
+    const history = histData["captureHistory"] ?? [];
+    history.unshift({
         url: message.url,
         title: message.title,
         topics: message.topics,
+        note: message.note,
         addedAt: new Date().toISOString(),
     });
-    await chrome.storage.local.set({ pendingResources: pending });
+    // Keep last 50 entries
+    await chrome.storage.local.set({ captureHistory: history.slice(0, 50) });
+    // If server URL is set, POST a resource note to the server
+    if (serverUrl) {
+        try {
+            const resp = await fetch(`${serverUrl}/api/resource`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(message),
+            });
+            if (resp.ok)
+                return { success: true };
+            // Server endpoint may not exist yet — fall through to local-only success
+        }
+        catch {
+            // Server not reachable — stored locally
+        }
+    }
     return { success: true };
 }
-async function handleSyncTopics() {
-    // Placeholder: in the future, fetch topics from a Rocky sync endpoint
-    // For now, return current stored topics
-    const data = await chrome.storage.local.get("rockyTopics");
-    return { success: true, ...(data.rockyTopics ? {} : { error: "No topics synced yet" }) };
+// ── live topic sync from rocky server ────────────────────────────────────────
+async function syncTopicsFromServer() {
+    const data = await chrome.storage.local.get("rockyServerUrl");
+    const serverUrl = data["rockyServerUrl"]?.trim();
+    if (!serverUrl) {
+        return { success: false, error: "No server URL configured" };
+    }
+    try {
+        const resp = await fetch(`${serverUrl}/api/data`);
+        if (!resp.ok)
+            throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+        const nodes = (json.nodes ?? []).filter((n) => n.kind !== "domain" && n.kind !== "user");
+        // Store full node data for richer popup display
+        await chrome.storage.local.set({
+            rockyNodes: nodes,
+            rockyTopics: nodes.map((n) => n.topic),
+            lastSynced: new Date().toISOString(),
+        });
+        // Update badge with due count
+        const due = nodes.filter((n) => (n.retrievability ?? 0) < 0.4).length;
+        updateBadge(due);
+        return { success: true, count: nodes.length };
+    }
+    catch (e) {
+        return { success: false, error: String(e) };
+    }
 }
+function updateBadge(dueCount) {
+    if (dueCount > 0) {
+        chrome.action.setBadgeText({ text: String(dueCount) });
+        chrome.action.setBadgeBackgroundColor({ color: "#e74c3c" });
+    }
+    else {
+        chrome.action.setBadgeText({ text: "" });
+    }
+}
+// Sync badge on startup
+chrome.storage.local.get("rockyNodes").then((data) => {
+    const nodes = data["rockyNodes"] ?? [];
+    const due = nodes.filter((n) => (n.retrievability ?? 0) < 0.4).length;
+    updateBadge(due);
+});

@@ -1,0 +1,545 @@
+use std::sync::Arc;
+
+use anyhow::Result;
+use axum::{
+    Router,
+    extract::State,
+    http::StatusCode,
+    response::Html,
+    routing::{get, post},
+    Json,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
+use tower_http::cors::CorsLayer;
+use colored::Colorize;
+
+use crate::config::Config;
+use crate::db::Db;
+use crate::fsrs;
+use crate::teacher::Teacher;
+
+// ── state ────────────────────────────────────────────────────────────────────
+
+pub struct AppState {
+    pub db: Db,
+    pub teacher: Option<Teacher>,
+    pub config: Config,
+}
+
+// ── public entry point ───────────────────────────────────────────────────────
+
+pub fn run(db: &Db, cfg: &Config) -> Result<()> {
+    let teacher = make_teacher_optional(cfg);
+    let has_llm = teacher.is_some();
+    let state = Arc::new(AppState {
+        db: db.clone(),
+        teacher,
+        config: cfg.clone(),
+    });
+
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let app = Router::new()
+            .route("/", get(serve_app))
+            .route("/api/data", get(get_data))
+            .route("/api/quiz/start", post(quiz_start))
+            .route("/api/quiz/assess", post(quiz_assess))
+            .route("/api/quiz/evaluate", post(quiz_evaluate))
+            .layer(CorsLayer::permissive())
+            .with_state(state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+
+        println!(
+            "  {} Rocky running at http://{}",
+            "✓".truecolor(29, 158, 117),
+            addr
+        );
+        if has_llm {
+            println!("  {} LLM quiz enabled", "✓".truecolor(29, 158, 117));
+        } else {
+            println!(
+                "  {} LLM quiz disabled (no API key) — self-assessment only",
+                "⚠".truecolor(239, 159, 39)
+            );
+        }
+
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open")
+            .arg(format!("http://{addr}"))
+            .spawn();
+        #[cfg(not(target_os = "macos"))]
+        let _ = std::process::Command::new("xdg-open")
+            .arg(format!("http://{addr}"))
+            .spawn();
+
+        axum::serve(listener, app).await?;
+        Ok(())
+    })
+}
+
+fn make_teacher_optional(cfg: &Config) -> Option<Teacher> {
+    if cfg.llm_provider == "ollama" {
+        Some(Teacher::ollama(
+            cfg.ollama_base_url.clone(),
+            cfg.llm_model.clone(),
+        ))
+    } else {
+        dotenvy::dotenv().ok();
+        std::env::var("ANTHROPIC_API_KEY")
+            .ok()
+            .map(|key| Teacher::claude(key, cfg.llm_model.clone()))
+    }
+}
+
+// ── routes ───────────────────────────────────────────────────────────────────
+
+async fn serve_app() -> Html<&'static str> {
+    Html(include_str!("app.html"))
+}
+
+async fn get_data(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, StatusCode> {
+    let db = state.db.clone();
+    let cfg = state.config.clone();
+    let result = tokio::task::spawn_blocking(move || build_data_json(&db, &cfg))
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(result))
+}
+
+// ── quiz endpoints ───────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct QuizStartReq {
+    node_ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct QuizQuestion {
+    node_id: String,
+    topic: String,
+    domain: String,
+    description: String,
+    question: String,
+    clue: String,
+    has_canonical: bool,
+}
+
+#[derive(Serialize)]
+struct QuizStartResp {
+    questions: Vec<QuizQuestion>,
+    llm_available: bool,
+}
+
+async fn quiz_start(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<QuizStartReq>,
+) -> Result<Json<QuizStartResp>, StatusCode> {
+    let db = state.db.clone();
+    let has_llm = state.teacher.is_some();
+    let questions = tokio::task::spawn_blocking(move || -> Result<Vec<QuizQuestion>> {
+        let mut qs = Vec::new();
+        for nid in &req.node_ids {
+            if let Some(node) = db.get_node_by_id(nid)? {
+                let question = if !node.canonical_question.is_empty() {
+                    node.canonical_question.clone()
+                } else if !node.description.is_empty() {
+                    format!("Explain: {} — {}", node.topic, node.description)
+                } else {
+                    format!("What do you know about {}?", node.topic)
+                };
+                qs.push(QuizQuestion {
+                    node_id: nid.clone(),
+                    topic: node.topic.clone(),
+                    domain: node.domain.clone(),
+                    description: node.description.clone(),
+                    question,
+                    clue: node.canonical_clue.clone(),
+                    has_canonical: !node.canonical_question.is_empty(),
+                });
+            }
+        }
+        Ok(qs)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(QuizStartResp {
+        questions,
+        llm_available: has_llm,
+    }))
+}
+
+#[derive(Deserialize)]
+struct QuizAssessReq {
+    node_id: String,
+    score: f64,
+    question: String,
+}
+
+#[derive(Serialize)]
+struct QuizAssessResp {
+    ok: bool,
+    new_retrievability: f64,
+}
+
+async fn quiz_assess(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<QuizAssessReq>,
+) -> Result<Json<QuizAssessResp>, StatusCode> {
+    let db = state.db.clone();
+    let new_r = tokio::task::spawn_blocking(move || {
+        db.record_quiz_review(&req.node_id, req.score, &req.question)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(QuizAssessResp {
+        ok: true,
+        new_retrievability: new_r,
+    }))
+}
+
+#[derive(Deserialize)]
+struct QuizEvalReq {
+    node_id: String,
+    question: String,
+    answer: String,
+}
+
+#[derive(Serialize)]
+struct QuizEvalResp {
+    score: f64,
+    feedback: String,
+    followup: Option<String>,
+}
+
+async fn quiz_evaluate(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<QuizEvalReq>,
+) -> Result<Json<QuizEvalResp>, StatusCode> {
+    // Verify LLM is available before doing any work
+    if state.teacher.is_none() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    let db = state.db.clone();
+    let node_id = req.node_id.clone();
+
+    // Fetch node info for context
+    let node = {
+        let db2 = db.clone();
+        let nid = node_id.clone();
+        tokio::task::spawn_blocking(move || db2.get_node_by_id(&nid))
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::NOT_FOUND)?
+    };
+
+    // Teacher is Send+Sync (holds reqwest::blocking::Client) — safe to reference across await
+    let topic = node.topic.clone();
+    let description = node.description.clone();
+    let canonical_answer = if node.canonical_answer.is_empty() {
+        None
+    } else {
+        Some(node.canonical_answer.clone())
+    };
+    let question = req.question.clone();
+    let answer = req.answer.clone();
+
+    // We need to call teacher in a blocking context.
+    // Teacher is behind Arc<AppState> which is not moved into the closure,
+    // so we need to construct a new teacher or use unsafe. Instead, let's
+    // use the fact that Teacher's ask() uses reqwest::blocking::Client
+    // which is Clone. We'll reconstruct for the spawn_blocking.
+    // Actually, since AppState is Arc and teacher is &Teacher, we can clone the Arc.
+    let state2 = state.clone();
+    let eval = tokio::task::spawn_blocking(move || -> Result<crate::teacher::EvalResult> {
+        let teacher = state2.teacher.as_ref().unwrap();
+        teacher.evaluate_answer(
+            &topic,
+            &question,
+            &answer,
+            &description,
+            canonical_answer.as_deref(),
+        )
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Record the review (record_quiz_review also calls add_review internally)
+    let score = eval.score;
+    let question2 = req.question.clone();
+    let answer2 = req.answer.clone();
+    let feedback2 = eval.feedback.clone();
+    tokio::task::spawn_blocking(move || {
+        // Update FSRS + write review row
+        let _ = db.record_quiz_review(&node_id, score, &question2);
+        // Override the review row with full answer/feedback details
+        let _ = db.add_review(&node_id, &question2, &answer2, &feedback2, score);
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(QuizEvalResp {
+        score: eval.score,
+        feedback: eval.feedback,
+        followup: eval.followup,
+    }))
+}
+
+// ── data assembly ────────────────────────────────────────────────────────────
+// Extracted from run_view_projects() in main.rs
+
+fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
+    let all_nodes = db.all_nodes()?;
+    let topic_nodes: Vec<_> = all_nodes.iter().filter(|n| !n.kind.is_domain()).collect();
+    let domain_nodes: Vec<_> = all_nodes.iter().filter(|n| n.kind.is_domain()).collect();
+
+    let user_id = "__user__";
+    let user_name = &cfg.user_name;
+
+    // ── per-project aggregation
+    let mut projects: Map<String, Value> = Map::new();
+    let mut repo_topics: std::collections::HashMap<String, Vec<&crate::node::Node>> =
+        std::collections::HashMap::new();
+
+    for n in &topic_nodes {
+        let repo = if n.repo.is_empty() {
+            "Other".to_string()
+        } else {
+            n.repo.clone()
+        };
+        repo_topics.entry(repo).or_default().push(n);
+    }
+
+    for (repo, nodes_in_repo) in &repo_topics {
+        let mut domain_counts: Map<String, Value> = Map::new();
+        let mut known = 0u32;
+        let mut fading = 0u32;
+        let mut gap = 0u32;
+
+        for n in nodes_in_repo {
+            let r = fsrs::retrievability(n.stability, n.last_reviewed);
+            let cls = fsrs::classify(r);
+            match cls {
+                "known" => known += 1,
+                "stale" => fading += 1,
+                _ => gap += 1,
+            }
+            let d = if n.domain.is_empty() { "Other" } else { &n.domain };
+            let count = domain_counts.entry(d.to_string()).or_insert(json!(0));
+            *count = json!(count.as_u64().unwrap_or(0) + 1);
+        }
+
+        projects.insert(
+            repo.clone(),
+            json!({
+                "topicCount": nodes_in_repo.len(),
+                "domains": domain_counts,
+                "health": { "known": known, "fading": fading, "gap": gap },
+            }),
+        );
+    }
+
+    // ── cross-project flows
+    let all_edges = db.get_all_edges()?;
+
+    let node_repo: std::collections::HashMap<&str, &str> = topic_nodes
+        .iter()
+        .map(|n| {
+            (
+                n.id.as_str(),
+                if n.repo.is_empty() { "Other" } else { n.repo.as_str() },
+            )
+        })
+        .collect();
+
+    let mut flow_map: std::collections::HashMap<(String, String), [u32; 4]> =
+        std::collections::HashMap::new();
+    for e in &all_edges {
+        let sr = node_repo
+            .get(e.source_id.as_str())
+            .copied()
+            .unwrap_or("Other");
+        let tr = node_repo
+            .get(e.target_id.as_str())
+            .copied()
+            .unwrap_or("Other");
+        let counts = flow_map
+            .entry((sr.to_string(), tr.to_string()))
+            .or_insert([0; 4]);
+        match e.kind.as_str() {
+            "implies" => counts[0] += 1,
+            "depends_on" => counts[1] += 1,
+            "part_of" => counts[2] += 1,
+            "conflicts_with" => counts[3] += 1,
+            _ => {}
+        }
+    }
+
+    let flows: Vec<Value> = flow_map
+        .into_iter()
+        .filter(|((s, t), _)| s != t)
+        .map(|((s, t), c)| {
+            json!({
+                "source": s, "target": t,
+                "implies": c[0], "depends_on": c[1], "part_of": c[2], "conflicts_with": c[3],
+                "total": c[0] + c[1] + c[2] + c[3],
+            })
+        })
+        .collect();
+
+    // ── timeline
+    let timeline: Vec<Value> = topic_nodes
+        .iter()
+        .map(|n| {
+            json!({
+                "repo": if n.repo.is_empty() { "Other" } else { &n.repo },
+                "domain": if n.domain.is_empty() { "Other" } else { &n.domain },
+                "date": n.created_at.to_string(),
+                "topic": n.topic,
+            })
+        })
+        .collect();
+
+    // ── full node/edge arrays for graph
+    let active_domains: std::collections::HashSet<&str> = topic_nodes
+        .iter()
+        .map(|n| n.domain.as_str())
+        .filter(|d| !d.is_empty())
+        .collect();
+
+    let mut nodes_json: Vec<Value> = topic_nodes
+        .iter()
+        .map(|n| {
+            let r = fsrs::retrievability(n.stability, n.last_reviewed);
+            let cls = fsrs::classify(r);
+            let reviews: Vec<Value> = db
+                .get_reviews(&n.id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|rev| {
+                    json!({
+                        "date": rev.reviewed_at, "question": rev.question,
+                        "answer": rev.answer, "feedback": rev.feedback, "score": rev.score,
+                    })
+                })
+                .collect();
+            json!({
+                "id": n.id, "topic": n.topic, "kind": n.kind.as_str(),
+                "domain": n.domain, "description": n.description,
+                "stability": n.stability, "difficulty": n.difficulty,
+                "retrievability": r, "classification": cls,
+                "last_reviewed": n.last_reviewed.to_string(),
+                "review_count": n.review_count, "created_at": n.created_at.to_string(),
+                "repo": if n.repo.is_empty() { "Other" } else { &n.repo },
+                "canonical_question": n.canonical_question,
+                "canonical_answer": n.canonical_answer,
+                "canonical_clue": n.canonical_clue,
+                "reviews": reviews,
+            })
+        })
+        .collect();
+
+    for dn in &domain_nodes {
+        if !active_domains.contains(dn.topic.as_str()) {
+            continue;
+        }
+        nodes_json.push(json!({
+            "id": dn.id, "topic": dn.topic, "kind": "domain",
+            "domain": dn.topic, "description": dn.description,
+            "stability": 999.0, "difficulty": 0.0,
+            "retrievability": 1.0, "classification": "known",
+            "last_reviewed": dn.last_reviewed.to_string(),
+            "review_count": 0, "created_at": dn.created_at.to_string(),
+        }));
+    }
+
+    nodes_json.push(json!({
+        "id": user_id, "topic": user_name, "kind": "user",
+        "domain": "", "description": "Your personal knowledge graph",
+        "stability": 999.0, "difficulty": 0.0,
+        "retrievability": 1.0, "classification": "known",
+        "last_reviewed": "", "review_count": 0, "created_at": "",
+    }));
+
+    let topic_ids: std::collections::HashSet<&str> =
+        topic_nodes.iter().map(|n| n.id.as_str()).collect();
+    let domain_ids: std::collections::HashSet<&str> = domain_nodes
+        .iter()
+        .filter(|n| active_domains.contains(n.topic.as_str()))
+        .map(|n| n.id.as_str())
+        .collect();
+    let all_visible: std::collections::HashSet<&str> = topic_ids
+        .iter()
+        .chain(domain_ids.iter())
+        .chain(std::iter::once(&user_id))
+        .copied()
+        .collect();
+
+    let edges_json: Vec<Value> = {
+        let mut ej: Vec<Value> = all_edges
+            .into_iter()
+            .filter(|e| {
+                all_visible.contains(e.source_id.as_str())
+                    && all_visible.contains(e.target_id.as_str())
+            })
+            .map(|e| {
+                json!({
+                    "id": e.id, "source": e.source_id, "target": e.target_id,
+                    "kind": e.kind.as_str(), "description": e.description, "strength": e.strength,
+                })
+            })
+            .collect();
+
+        for dn in &domain_nodes {
+            if !active_domains.contains(dn.topic.as_str()) {
+                continue;
+            }
+            ej.push(json!({
+                "id": format!("{}-user", dn.id),
+                "source": dn.id, "target": user_id,
+                "kind": "part_of", "description": "", "strength": 1.0,
+            }));
+        }
+        ej
+    };
+
+    // ── summaries
+    let summaries_dir = cfg.rocky_dir.join("summaries");
+    let mut repo_summaries: Map<String, Value> = Map::new();
+    if let Ok(entries) = std::fs::read_dir(&summaries_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("txt") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if let Ok(summary) = std::fs::read_to_string(&path) {
+                        repo_summaries
+                            .insert(stem.to_string(), Value::String(summary.trim().to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(json!({
+        "userName": user_name,
+        "domains": ["Language","Database","Auth","API","Frontend","DevOps","Architecture","Performance","Security","Testing","Tooling","Data","Other"],
+        "projects": projects,
+        "flows": flows,
+        "timeline": timeline,
+        "nodes": nodes_json,
+        "edges": edges_json,
+        "summaries": repo_summaries,
+    }))
+}

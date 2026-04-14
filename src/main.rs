@@ -5,6 +5,7 @@ mod local_log;
 mod node;
 mod obsidian;
 mod personality;
+mod server;
 mod session;
 mod sync;
 mod teacher;
@@ -286,7 +287,7 @@ fn run() -> Result<()> {
             show_edges(&db, stats)?;
         }
         Some(Cmd::View) => {
-            run_view(&db, &cfg)?;
+            server::run(&db, &cfg)?;
         }
         Some(Cmd::Backfill { all_authors, limit, fill_clues }) => {
             run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit, fill_clues)?;
@@ -669,145 +670,6 @@ fn truncate_to(s: &str, max_chars: usize) -> String {
     format!("{}\n\n[... truncated ...]", &s[..end])
 }
 
-fn run_view(db: &Db, cfg: &Config) -> Result<()> {
-    use serde_json::{json, Value};
-
-    let all_nodes = db.all_nodes()?;
-    let topic_nodes: Vec<_> = all_nodes.iter().filter(|n| !n.kind.is_domain()).collect();
-    let domain_nodes: Vec<_> = all_nodes.iter().filter(|n| n.kind.is_domain()).collect();
-
-    if topic_nodes.is_empty() {
-        println!("  PKG is empty — add some topics first with  rocky \"<task>\"");
-        return Ok(());
-    }
-
-    // Domains that actually have at least one topic
-    let active_domains: std::collections::HashSet<&str> = topic_nodes.iter()
-        .map(|n| n.domain.as_str())
-        .filter(|d| !d.is_empty())
-        .collect();
-
-    let user_id = "__user__";
-    let user_name = &cfg.user_name;
-
-    // Serialise topic nodes
-    let mut nodes_json: Vec<Value> = topic_nodes.iter().map(|n| {
-        let r = fsrs::retrievability(n.stability, n.last_reviewed);
-        let cls = fsrs::classify(r);
-        let reviews: Vec<Value> = db.get_reviews(&n.id).unwrap_or_default()
-            .into_iter()
-            .map(|rev| json!({
-                "date":     rev.reviewed_at,
-                "question": rev.question,
-                "answer":   rev.answer,
-                "feedback": rev.feedback,
-                "score":    rev.score,
-            }))
-            .collect();
-        json!({
-            "id": n.id, "topic": n.topic, "kind": n.kind.as_str(),
-            "domain": n.domain, "description": n.description,
-            "stability": n.stability, "difficulty": n.difficulty,
-            "retrievability": r, "classification": cls,
-            "last_reviewed": n.last_reviewed.to_string(),
-            "review_count": n.review_count, "created_at": n.created_at.to_string(),
-            "repo": n.repo,
-            "canonical_question": n.canonical_question,
-            "canonical_answer": n.canonical_answer,
-            "reviews": reviews,
-        })
-    }).collect();
-
-    // Domain nodes (only those with topics)
-    for dn in &domain_nodes {
-        if !active_domains.contains(dn.topic.as_str()) { continue; }
-        nodes_json.push(json!({
-            "id": dn.id, "topic": dn.topic, "kind": "domain",
-            "domain": dn.topic, "description": dn.description,
-            "stability": 999.0, "difficulty": 0.0,
-            "retrievability": 1.0, "classification": "known",
-            "last_reviewed": dn.last_reviewed.to_string(),
-            "review_count": 0, "created_at": dn.created_at.to_string(),
-        }));
-    }
-
-    // Central user node
-    nodes_json.push(json!({
-        "id": user_id, "topic": user_name, "kind": "user",
-        "domain": "", "description": "Your personal knowledge graph",
-        "stability": 999.0, "difficulty": 0.0,
-        "retrievability": 1.0, "classification": "known",
-        "last_reviewed": "", "review_count": 0, "created_at": "",
-    }));
-
-    // Edges: topic→domain (part_of only where both ends visible), domain→user
-    let topic_ids: std::collections::HashSet<&str> = topic_nodes.iter().map(|n| n.id.as_str()).collect();
-    let domain_ids: std::collections::HashSet<&str> = domain_nodes.iter()
-        .filter(|n| active_domains.contains(n.topic.as_str()))
-        .map(|n| n.id.as_str()).collect();
-    let all_visible: std::collections::HashSet<&str> = topic_ids.iter()
-        .chain(domain_ids.iter()).chain(std::iter::once(&user_id)).copied().collect();
-
-    let mut edges_json: Vec<Value> = db.get_all_edges()?.into_iter()
-        .filter(|e| all_visible.contains(e.source_id.as_str()) && all_visible.contains(e.target_id.as_str()))
-        .map(|e| json!({
-            "id": e.id, "source": e.source_id, "target": e.target_id,
-            "kind": e.kind.as_str(), "description": e.description, "strength": e.strength,
-        }))
-        .collect();
-
-    // Synthetic domain→user edges
-    for dn in &domain_nodes {
-        if !active_domains.contains(dn.topic.as_str()) { continue; }
-        edges_json.push(json!({
-            "id": format!("{}-user", dn.id),
-            "source": dn.id, "target": user_id,
-            "kind": "part_of", "description": "", "strength": 1.0,
-        }));
-    }
-
-    // Load cached project summaries for all repos present in the PKG
-    let summaries_dir = cfg.rocky_dir.join("summaries");
-    let mut repo_summaries: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    if let Ok(entries) = std::fs::read_dir(&summaries_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("txt") {
-                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    if let Ok(summary) = std::fs::read_to_string(&path) {
-                        repo_summaries.insert(stem.to_string(), serde_json::Value::String(summary.trim().to_string()));
-                    }
-                }
-            }
-        }
-    }
-    let data = json!({
-        "nodes": nodes_json, "edges": edges_json,
-        "userName": user_name,
-        "summaries": repo_summaries,
-    });
-    let data_str = serde_json::to_string(&data)?;
-
-    let html = build_view_html(&data_str);
-
-    let out_path = cfg.rocky_dir.join("view.html");
-    std::fs::write(&out_path, &html)?;
-
-    println!("  {} Written to {}", "✓".truecolor(29, 158, 117), out_path.display());
-    println!("  {} Opening in browser...", "→".truecolor(6, 182, 212));
-
-    // Open in default browser (Linux: xdg-open, macOS: open)
-    #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(&out_path).spawn();
-    #[cfg(not(target_os = "macos"))]
-    let _ = std::process::Command::new("xdg-open").arg(&out_path).spawn();
-
-    Ok(())
-}
-
-fn build_view_html(data_json: &str) -> String {
-    include_str!("view.html").replace("__DATA_JSON__", data_json)
-}
 
 /// Called after all user-facing Q&A is done — generates implication edges silently.
 /// Errors are logged as warnings; they never surface to the user or abort anything.

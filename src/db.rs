@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS reviews (
 CREATE INDEX IF NOT EXISTS reviews_node ON reviews(node_id);
 ";
 
+#[derive(Clone)]
 pub struct Db {
     path: PathBuf,
     pub pkg_dir: PathBuf,
@@ -228,6 +229,34 @@ impl Db {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn get_node_by_id(&self, node_id: &str) -> Result<Option<Node>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare("SELECT * FROM nodes WHERE id = ?")?;
+        let mut rows = stmt.query(params![node_id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_node(&conn, row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn record_quiz_review(&self, node_id: &str, score: f64, question: &str) -> Result<f64> {
+        let node = self.get_node_by_id(node_id)?
+            .with_context(|| format!("node not found: {node_id}"))?;
+        let r = fsrs::retrievability(node.stability, node.last_reviewed);
+        let (new_s, new_d) = fsrs::update_after_review(node.stability, node.difficulty, r, score);
+        let today = Self::today();
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE nodes SET stability = ?1, difficulty = ?2, last_reviewed = ?3,
+             review_count = review_count + 1 WHERE id = ?4",
+            params![new_s, new_d, today, node_id],
+        )?;
+        self.add_review(node_id, question, "", "", score)?;
+        let new_r = fsrs::retrievability(new_s, Local::now().date_naive());
+        Ok(new_r)
     }
 
     pub fn all_nodes(&self) -> Result<Vec<Node>> {
