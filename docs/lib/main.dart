@@ -235,6 +235,14 @@ class _DocsShellState extends State<DocsShell> {
             child: Divider(color: AppColors.divider, height: 1),
           ),
           Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: _BuyMeCoffeeButton(),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Divider(color: AppColors.divider, height: 1),
+          ),
+          Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
@@ -1136,5 +1144,60 @@ Future<void> _openUrl(String url) async {
       parsedUri.hasScheme ? parsedUri : Uri.base.resolveUri(parsedUri);
   if (await canLaunchUrl(absoluteUri)) {
     await launchUrl(absoluteUri, mode: LaunchMode.externalApplication);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Buy Me a Coffee button
+// ---------------------------------------------------------------------------
+class _BuyMeCoffeeButton extends StatefulWidget {
+  @override
+  State<_BuyMeCoffeeButton> createState() => _BuyMeCoffeeButtonState();
+}
+
+class _BuyMeCoffeeButtonState extends State<_BuyMeCoffeeButton> {
+  bool _hovered = false;
+
+  static const _url = 'https://buymeacoffee.com/nabeelvandayar';
+  static const _bgColor = Color(0xFFFFDD00);
+  static const _textColor = Color(0xFF000000);
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: () => _openUrl(_url),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: _hovered ? const Color(0xFFFFCC00) : _bgColor,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: _hovered
+                ? [BoxShadow(color: _bgColor.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 2))]
+                : [],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Text('☕', style: TextStyle(fontSize: 16)),
+              SizedBox(width: 8),
+              Text(
+                'Buy me a coffee',
+                style: TextStyle(
+                  color: _textColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
