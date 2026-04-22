@@ -50,7 +50,11 @@ enum Cmd {
     Stats,
     /// List all topics in your PKG
     #[command(alias = "ls")]
-    List,
+    List {
+        /// Filter by creation date: today, yesterday, week, month, or a number of days (e.g. 7)
+        #[arg(long)]
+        since: Option<String>,
+    },
     /// Install a hook (git post-commit by default)
     Install {
         #[command(subcommand)]
@@ -60,6 +64,12 @@ enum Cmd {
     Uninstall {
         #[command(subcommand)]
         target: Option<HookTarget>,
+    },
+    /// Show all stored context for a topic: description, source commits, contexts, question bank
+    #[command(alias = "show")]
+    Inspect {
+        /// Topic name (partial match)
+        topic: String,
     },
     /// Show active configuration
     Config,
@@ -144,6 +154,9 @@ enum Cmd {
         /// Suppress output (used by Stop hook auto-refresh)
         #[arg(long)]
         quiet: bool,
+        /// Print the stored project context for the current dir without regenerating
+        #[arg(long)]
+        show: bool,
     },
     /// Process queued commits + Claude Code session transcript at session end.
     /// Called by the Claude Code Stop hook. Generates rich nodes + question bank.
@@ -320,8 +333,9 @@ fn run() -> Result<()> {
             }
             auto_sync(&db, &cfg);
         }
+        Some(Cmd::Inspect { topic }) => inspect_topic(&db, &topic)?,
         Some(Cmd::Stats) => show_stats(&db, &cfg, &p)?,
-        Some(Cmd::List) => list_topics(&db)?,
+        Some(Cmd::List { since }) => list_topics(&db, since.as_deref())?,
         Some(Cmd::Delete { query, since, before }) => {
             delete_topics(&db, &cfg.pkg_dir, query.as_deref(), since.as_deref(), before.as_deref())?;
         }
@@ -360,8 +374,12 @@ fn run() -> Result<()> {
         Some(Cmd::Backfill { all_authors, limit, fill_clues }) => {
             run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit, fill_clues)?;
         }
-        Some(Cmd::Explore { force, quiet }) => {
-            run_explore(&db, &make_teacher(&cfg)?, force, quiet)?;
+        Some(Cmd::Explore { force, quiet, show }) => {
+            if show {
+                show_project_context(&db)?;
+            } else {
+                run_explore(&db, &make_teacher(&cfg)?, force, quiet)?;
+            }
         }
         Some(Cmd::SessionEnd { hours, quiet }) => {
             run_session_end(&db, &make_teacher(&cfg)?, &cfg, hours, quiet)?;
@@ -400,6 +418,13 @@ fn run() -> Result<()> {
 }
 
 fn make_teacher(cfg: &Config) -> Result<Teacher> {
+    if cfg.privacy_strict && cfg.llm_provider != "ollama" {
+        anyhow::bail!(
+            "privacy.strict = true forbids non-local LLM providers, but provider = \"{}\".\n  \
+             Either switch to Ollama in your config, or disable privacy.strict.",
+            cfg.llm_provider
+        );
+    }
     if cfg.llm_provider == "ollama" {
         Ok(Teacher::ollama(cfg.ollama_base_url.clone(), cfg.llm_model.clone()))
     } else {
@@ -458,11 +483,34 @@ fn show_stats(db: &Db, cfg: &Config, p: &personality::Personality) -> Result<()>
     Ok(())
 }
 
-fn list_topics(db: &Db) -> Result<()> {
+fn parse_since_days(since: &str) -> Option<i64> {
+    match since.trim().to_lowercase().as_str() {
+        "today"     => Some(0),
+        "yesterday" => Some(1),
+        "week"      => Some(7),
+        "month"     => Some(30),
+        other => other.strip_suffix('d').unwrap_or(other).parse::<i64>().ok(),
+    }
+}
+
+fn list_topics(db: &Db, since: Option<&str>) -> Result<()> {
     print_header();
-    let nodes: Vec<_> = db.all_nodes()?.into_iter().filter(|n| !n.kind.is_domain()).collect();
+    let cutoff: Option<chrono::NaiveDate> = since.and_then(|s| parse_since_days(s)).map(|days| {
+        chrono::Local::now().date_naive() - chrono::Duration::days(days)
+    });
+
+    let nodes: Vec<_> = db.all_nodes()?
+        .into_iter()
+        .filter(|n| !n.kind.is_domain())
+        .filter(|n| cutoff.map_or(true, |c| n.created_at >= c))
+        .collect();
+
     if nodes.is_empty() {
-        println!("\n  PKG is empty. Run a task to populate it.");
+        if let Some(s) = since {
+            println!("\n  No topics added matching --since {s}.");
+        } else {
+            println!("\n  PKG is empty. Run a task to populate it.");
+        }
         return Ok(());
     }
 
@@ -513,6 +561,79 @@ fn list_topics(db: &Db) -> Result<()> {
         "\n  {}",
         "Stab = days until recall hits 90%  ·  Diff = topic difficulty for you (0=easy, 1=hard)  ·  Reviews = times quizzed".dimmed()
     );
+    println!();
+    Ok(())
+}
+
+fn inspect_topic(db: &Db, query: &str) -> Result<()> {
+    let nodes = db.all_nodes()?;
+    let q = query.to_lowercase();
+    let matches: Vec<_> = nodes.iter().filter(|n| n.topic.to_lowercase().contains(&q)).collect();
+
+    if matches.is_empty() {
+        println!("\n  No topic matching '{query}'.");
+        return Ok(());
+    }
+    if matches.len() > 1 {
+        println!("\n  Multiple matches — be more specific:");
+        for n in &matches {
+            println!("    · {}", n.topic);
+        }
+        return Ok(());
+    }
+
+    let n = matches[0];
+    let div = "─".repeat(60);
+
+    println!("\n  {}", div.dimmed());
+    println!("  {} {}", "◆".truecolor(29, 158, 117), n.topic.bold());
+    println!("  {}", div.dimmed());
+
+    println!("\n  {:<18} {}", "Kind:".dimmed(), n.kind.as_str());
+    println!("  {:<18} {}", "Domain:".dimmed(), if n.domain.is_empty() { "—" } else { &n.domain });
+    println!("  {:<18} {}", "Created:".dimmed(), n.created_at);
+    println!("  {:<18} {}", "Last reviewed:".dimmed(), n.last_reviewed);
+    println!("  {:<18} {}", "Reviews:".dimmed(), n.review_count);
+    println!("  {:<18} {:.2}", "Difficulty:".dimmed(), n.difficulty);
+    println!("  {:<18} {:.1}d", "Stability:".dimmed(), n.stability);
+    println!("  {:<18} {}", "Encounters:".dimmed(), n.encounter_count);
+
+    println!("\n  {}", "Description:".dimmed());
+    println!("  {}", n.description);
+
+    if !n.source_commits.is_empty() {
+        println!("\n  {}", "Source commits:".dimmed());
+        for sha in &n.source_commits {
+            println!("    · {}", sha);
+        }
+    }
+
+    if !n.contexts.is_empty() {
+        println!("\n  {}", "Creation contexts:".dimmed());
+        for ctx in &n.contexts {
+            println!("    · {}", ctx);
+        }
+    }
+
+    if !n.canonical_question.is_empty() {
+        println!("\n  {}", "Canonical Q&A:".dimmed());
+        println!("  Q: {}", n.canonical_question);
+        println!("  A: {}", n.canonical_answer);
+        if !n.canonical_clue.is_empty() {
+            println!("  Clue: {}", n.canonical_clue.dimmed());
+        }
+    }
+
+    if !n.question_bank.is_empty() {
+        println!("\n  {} ({} questions)", "Question bank:".dimmed(), n.question_bank.len());
+        for (i, q) in n.question_bank.iter().enumerate() {
+            println!("\n  {}. {} {}", i + 1, q.question, format!("[asked {}×]", q.asked_count).dimmed());
+            println!("     A: {}", q.answer);
+            println!("     Clue: {}", q.clue.dimmed());
+        }
+    }
+
+    println!("\n  {}", div.dimmed());
     println!();
     Ok(())
 }
@@ -2795,6 +2916,40 @@ const EXPLORE_DOC_DIRS: &[&str] = &[
 const MAX_EXPLORE_FILE_BYTES: u64 = 64 * 1024;
 const MAX_EXPLORE_DOCS: usize = 12;
 
+fn show_project_context(db: &Db) -> Result<()> {
+    let project_path = std::env::current_dir()?
+        .canonicalize()?
+        .to_string_lossy()
+        .to_string();
+    print_header();
+    println!("  Project: {}\n", project_path.dimmed());
+
+    let ctx = match db.get_project_context(&project_path)? {
+        Some(c) => c,
+        None => {
+            println!("  No project context stored. Run  rocky explore  to generate one.\n");
+            return Ok(());
+        }
+    };
+
+    let div = "─".repeat(60);
+    println!("  {}", div.dimmed());
+    println!("  {:<22} {}", "Last explored:".dimmed(), ctx.last_explored_at);
+    println!("  {:<22} {}", "Commits since:".dimmed(), ctx.commits_since_explore);
+    if !ctx.sources.is_empty() {
+        println!("  {:<22}", "Sources:".dimmed());
+        for s in &ctx.sources {
+            println!("    · {s}");
+        }
+    }
+    println!("  {}", div.dimmed());
+    println!("\n{}\n", ctx.summary);
+    println!("  {}", div.dimmed());
+    println!("  {}", "Re-run with  rocky explore --force  to regenerate.".dimmed());
+    println!();
+    Ok(())
+}
+
 fn run_explore(db: &Db, teacher: &Teacher, force: bool, quiet: bool) -> Result<()> {
     let project_path = std::env::current_dir()?
         .canonicalize()?
@@ -2840,7 +2995,7 @@ fn run_explore(db: &Db, teacher: &Teacher, force: bool, quiet: bool) -> Result<(
     let commits = recent_commit_messages(30);
     if !quiet {
         println!("  {} Scanned {} recent commit(s).", "·".dimmed(), commits.len());
-        println!("  {} Asking Opus to synthesise project context...", "·".dimmed());
+        println!("  {} Synthesising project context...", "·".dimmed());
     }
 
     let summary = teacher.summarize_project_docs(&project_name, &docs, &commits)

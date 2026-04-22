@@ -53,17 +53,25 @@ impl Teacher {
             provider: Provider::Claude {
                 api_key,
                 model,
-                client: reqwest::blocking::Client::new(),
+                client: reqwest::blocking::Client::builder()
+                    .timeout(std::time::Duration::from_secs(120))
+                    .build()
+                    .unwrap_or_default(),
             },
         }
     }
 
     pub fn ollama(base_url: String, model: String) -> Self {
+        // Local CPU inference of large generations (e.g. multi-paragraph summaries
+        // or JSON question banks) can take minutes. Be generous.
         Self {
             provider: Provider::Ollama {
                 base_url,
                 model,
-                client: reqwest::blocking::Client::new(),
+                client: reqwest::blocking::Client::builder()
+                    .timeout(std::time::Duration::from_secs(600))
+                    .build()
+                    .unwrap_or_default(),
             },
         }
     }
@@ -114,20 +122,39 @@ impl Teacher {
                 let _ = max_tokens;
                 let _ = model_override;
                 let prompt = format!("System: {system}\n\nUser: {user}");
-                let resp = client
-                    .post(format!("{base_url}/api/generate"))
-                    .json(&json!({
-                        "model": model,
-                        "prompt": prompt,
-                        "stream": false
-                    }))
-                    .send()?;
+                let payload = json!({
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": false
+                });
 
-                let data: Value = resp.json()?;
-                Ok(data["response"]
-                    .as_str()
-                    .ok_or_else(|| anyhow!("no response from Ollama"))?
-                    .to_string())
+                // Local Ollama can drop connections under sustained load (e.g. while
+                // generating several question banks back-to-back). Retry transport
+                // errors with backoff before bailing.
+                let mut last_err: Option<anyhow::Error> = None;
+                for attempt in 0..3 {
+                    if attempt > 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(500 * (1 << attempt)));
+                    }
+                    match client
+                        .post(format!("{base_url}/api/generate"))
+                        .json(&payload)
+                        .send()
+                    {
+                        Ok(resp) => {
+                            let data: Value = match resp.json() {
+                                Ok(v) => v,
+                                Err(e) => { last_err = Some(anyhow!(e)); continue; }
+                            };
+                            if let Some(s) = data["response"].as_str() {
+                                return Ok(s.to_string());
+                            }
+                            last_err = Some(anyhow!("no response field from Ollama"));
+                        }
+                        Err(e) => { last_err = Some(anyhow!(e)); }
+                    }
+                }
+                Err(last_err.unwrap_or_else(|| anyhow!("ollama request failed")))
             }
         }
     }
@@ -441,7 +468,7 @@ Rules:
 
     /// Summarise a project's documentation into a few-paragraph context record.
     /// Used by `rocky explore` — runs once per project and on periodic refresh.
-    /// Uses Opus for higher-quality reasoning since this only runs occasionally.
+    /// Uses Opus when provider=claude; ignored for Ollama (uses configured model).
     pub fn summarize_project_docs(
         &self,
         project_name: &str,

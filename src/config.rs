@@ -2,8 +2,8 @@
 ///
 /// Loads from (in order, later overrides earlier):
 ///   1. Built-in defaults
-///   2. ~/.rocky/.rocky.toml  (global user config)
-///   3. ./.rocky.toml         (project-level override)
+///   2. ~/.config/rocky/config.toml  (global user config)
+///   3. ./.rocky.toml                (project-level override)
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -45,6 +45,14 @@ struct TomlFile {
     ui: Option<UiSection>,
     sync: Option<SyncSection>,
     edges: Option<EdgesSection>,
+    privacy: Option<PrivacySection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PrivacySection {
+    /// When true, refuse to send code/diffs to non-local LLM providers.
+    /// Forces ollama. Errors clearly if provider="claude" is configured.
+    strict: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,6 +121,8 @@ pub struct Config {
     pub user_name: String,
     pub sync: SyncConfig,
     pub edge_reuse: EdgeReuse,
+    /// When true: refuse to send code to remote LLMs. Local-only mode.
+    pub privacy_strict: bool,
 }
 
 impl Default for Config {
@@ -139,20 +149,61 @@ impl Default for Config {
                 remote: "origin".into(),
                 branch: "main".into(),
             },
+            privacy_strict: false,
         }
     }
 }
 
+/// Data directory: $ROCKY_HOME, falling back to ~/.rocky/ (graph.db, pkg/, summaries/).
+/// Honouring ROCKY_HOME makes the tutorial / smoke-test script trivially isolatable.
 fn dirs() -> PathBuf {
+    if let Ok(custom) = std::env::var("ROCKY_HOME") {
+        if !custom.is_empty() {
+            return PathBuf::from(custom);
+        }
+    }
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".rocky")
 }
 
+/// Config directory: ~/.config/rocky/
+fn config_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".config"))
+        .join("rocky")
+}
+
+/// One-time migration: ~/.rocky/.rocky.toml → ~/.config/rocky/config.toml.
+/// Silent no-op when the new path already exists or the legacy file is absent.
+fn migrate_legacy_config_path() {
+    let new_path = config_dir().join("config.toml");
+    if new_path.exists() {
+        return;
+    }
+    let legacy = dirs().join(".rocky.toml");
+    if !legacy.exists() {
+        return;
+    }
+    if let Some(parent) = new_path.parent() {
+        if std::fs::create_dir_all(parent).is_err() {
+            return;
+        }
+    }
+    if std::fs::rename(&legacy, &new_path).is_ok() {
+        eprintln!(
+            "rocky: migrated config {} → {}",
+            legacy.display(),
+            new_path.display()
+        );
+    }
+}
+
 impl Config {
     pub fn load() -> Result<Self> {
+        migrate_legacy_config_path();
         let mut cfg = Self::default();
-        let global = dirs().join(".rocky.toml");
+        let global = config_dir().join("config.toml");
         let local = PathBuf::from(".rocky.toml");
         for path in [global, local] {
             if path.exists() {
@@ -201,6 +252,9 @@ impl Config {
             if let Some(v) = s.remote { self.sync.remote = v; }
             if let Some(v) = s.branch { self.sync.branch = v; }
         }
+        if let Some(p) = file.privacy {
+            if let Some(v) = p.strict { self.privacy_strict = v; }
+        }
     }
 
     pub fn show(&self) {
@@ -225,6 +279,15 @@ impl Config {
             EdgeReuse::Sessions(n) => format!("{n}s"),
         };
         println!("    reuse            = {reuse_str}");
+        println!("\n  [privacy]");
+        println!("    strict           = {}  {}",
+            self.privacy_strict,
+            if self.privacy_strict {
+                "(local-only — diffs/code never leave this machine)"
+            } else {
+                "(diffs are sent to the configured llm provider)"
+            }.dimmed()
+        );
         println!("\n  [ui]");
         println!("    personality      = {}", self.personality);
         println!("\n  [sync]");
