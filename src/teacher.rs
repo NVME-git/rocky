@@ -36,6 +36,31 @@ pub struct TopicInfo {
 
 fn default_kind() -> String { "concept".into() }
 
+/// Parse a TopicInfo list from LLM output that may be:
+///   1. A bare JSON array     `[{...}, {...}]`
+///   2. An object with a "topics" key  `{"topics": [...]}`
+///   3. A single object        `{"topic": "...", ...}`  (treated as one-element list)
+///
+/// Local LLMs love to wrap JSON inconsistently — accepting all three keeps
+/// the alpha pipeline from blowing up on a single bad response.
+fn parse_topics_lenient(cleaned: &str) -> Result<Vec<TopicInfo>> {
+    if let Ok(v) = serde_json::from_str::<Vec<TopicInfo>>(cleaned) {
+        return Ok(v);
+    }
+    let val: Value = serde_json::from_str(cleaned)
+        .map_err(|e| anyhow!("LLM did not return parseable JSON: {e}"))?;
+    if let Some(arr) = val.get("topics").and_then(|t| t.as_array()) {
+        return serde_json::from_value(Value::Array(arr.clone()))
+            .map_err(|e| anyhow!("LLM topics array failed to parse: {e}"));
+    }
+    if val.get("topic").is_some() {
+        let one: TopicInfo = serde_json::from_value(val)
+            .map_err(|e| anyhow!("LLM single-topic object failed to parse: {e}"))?;
+        return Ok(vec![one]);
+    }
+    Err(anyhow!("LLM returned JSON but no topic list could be extracted"))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct EvalResult {
     pub score: f64,
@@ -190,7 +215,7 @@ Return 2-6 topics maximum."#;
         let user = format!("Commit: {commit_msg}\n\nDiff:\n{diff}");
         let raw = self.ask(system, &user)?;
         let cleaned = strip_code_fence(&raw);
-        Ok(serde_json::from_str(cleaned)?)
+        parse_topics_lenient(cleaned)
     }
 
     pub fn extract_topics(&self, task: &str) -> Result<Vec<TopicInfo>> {
@@ -214,7 +239,7 @@ Example output:
 
         let raw = self.ask(system, &format!("Task: {task}"))?;
         let cleaned = strip_code_fence(&raw);
-        Ok(serde_json::from_str(cleaned)?)
+        parse_topics_lenient(cleaned)
     }
 
     pub fn generate_question(
@@ -645,7 +670,7 @@ Return 2-6 topics maximum."#;
 
         let raw = self.ask_with_overrides(system, &user, None, 1536)?;
         let cleaned = strip_code_fence(&raw);
-        Ok(serde_json::from_str(cleaned)?)
+        parse_topics_lenient(cleaned)
     }
 
     /// Generate implication edges between a newly added topic and existing PKG nodes.
