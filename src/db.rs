@@ -7,7 +7,7 @@ use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
 use crate::fsrs;
-use crate::node::{Kind, Node};
+use crate::node::{Kind, Node, QuestionBankItem};
 use crate::obsidian;
 
 // ── Edge types ────────────────────────────────────────────────────────────────
@@ -129,6 +129,24 @@ CREATE TABLE IF NOT EXISTS reviews (
     score       REAL NOT NULL DEFAULT 0.0
 );
 CREATE INDEX IF NOT EXISTS reviews_node ON reviews(node_id);
+
+CREATE TABLE IF NOT EXISTS project_context (
+    project_path           TEXT PRIMARY KEY,
+    summary                TEXT NOT NULL DEFAULT '',
+    sources                TEXT NOT NULL DEFAULT '[]',
+    last_explored_at       TEXT NOT NULL,
+    commits_since_explore  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS pending_diffs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_path TEXT NOT NULL,
+    commit_sha   TEXT NOT NULL,
+    commit_msg   TEXT NOT NULL,
+    diff         TEXT NOT NULL,
+    queued_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS pending_diffs_project ON pending_diffs(project_path);
 ";
 
 #[derive(Clone)]
@@ -164,6 +182,9 @@ impl Db {
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN canonical_clue TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN repo TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE edges ADD COLUMN last_fired_session INTEGER", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN encounter_count INTEGER NOT NULL DEFAULT 1", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN source_commits TEXT NOT NULL DEFAULT '[]'", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN question_bank TEXT NOT NULL DEFAULT '[]'", []);
         Ok(())
     }
 
@@ -197,6 +218,12 @@ impl Db {
             .filter_map(|r| r.ok())
             .collect();
 
+        let source_commits_json: String = row.get::<_, String>("source_commits").unwrap_or_else(|_| "[]".into());
+        let source_commits: Vec<String> = serde_json::from_str(&source_commits_json).unwrap_or_default();
+
+        let question_bank_json: String = row.get::<_, String>("question_bank").unwrap_or_else(|_| "[]".into());
+        let question_bank: Vec<QuestionBankItem> = serde_json::from_str(&question_bank_json).unwrap_or_default();
+
         Ok(Node {
             id: id.clone(),
             topic: row.get("topic")?,
@@ -214,6 +241,9 @@ impl Db {
             canonical_answer: row.get::<_, String>("canonical_answer").unwrap_or_default(),
             canonical_clue: row.get::<_, String>("canonical_clue").unwrap_or_default(),
             repo: row.get::<_, String>("repo").unwrap_or_default(),
+            encounter_count: row.get::<_, i64>("encounter_count").unwrap_or(1),
+            source_commits,
+            question_bank,
         })
     }
 
@@ -737,6 +767,153 @@ impl Db {
         Ok(())
     }
 
+    // ── project context ──────────────────────────────────────────────────────
+
+    /// Read the project context summary for a given project path.
+    pub fn get_project_context(&self, project_path: &str) -> Result<Option<ProjectContext>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT project_path, summary, sources, last_explored_at, commits_since_explore
+             FROM project_context WHERE project_path = ?",
+        )?;
+        let mut rows = stmt.query(params![project_path])?;
+        if let Some(row) = rows.next()? {
+            let sources_json: String = row.get(2)?;
+            let sources: Vec<String> = serde_json::from_str(&sources_json).unwrap_or_default();
+            Ok(Some(ProjectContext {
+                project_path: row.get(0)?,
+                summary: row.get(1)?,
+                sources,
+                last_explored_at: row.get(3)?,
+                commits_since_explore: row.get(4)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn upsert_project_context(
+        &self,
+        project_path: &str,
+        summary: &str,
+        sources: &[String],
+    ) -> Result<()> {
+        let conn = self.connect()?;
+        let sources_json = serde_json::to_string(sources)?;
+        conn.execute(
+            "INSERT INTO project_context (project_path, summary, sources, last_explored_at, commits_since_explore)
+             VALUES (?1, ?2, ?3, ?4, 0)
+             ON CONFLICT(project_path) DO UPDATE SET
+                summary = excluded.summary,
+                sources = excluded.sources,
+                last_explored_at = excluded.last_explored_at,
+                commits_since_explore = 0",
+            params![project_path, summary, sources_json, Self::now()],
+        )?;
+        Ok(())
+    }
+
+    /// Bump the commit counter; called from the post-commit hook.
+    pub fn bump_commits_since_explore(&self, project_path: &str) -> Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE project_context SET commits_since_explore = commits_since_explore + 1
+             WHERE project_path = ?",
+            params![project_path],
+        )?;
+        Ok(())
+    }
+
+    // ── pending diffs queue ──────────────────────────────────────────────────
+
+    pub fn queue_pending_diff(
+        &self,
+        project_path: &str,
+        commit_sha: &str,
+        commit_msg: &str,
+        diff: &str,
+    ) -> Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "INSERT INTO pending_diffs (project_path, commit_sha, commit_msg, diff, queued_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![project_path, commit_sha, commit_msg, diff, Self::now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn drain_pending_diffs(&self, project_path: &str) -> Result<Vec<PendingDiff>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, commit_sha, commit_msg, diff, queued_at
+             FROM pending_diffs WHERE project_path = ? ORDER BY id ASC",
+        )?;
+        let diffs: Vec<PendingDiff> = stmt
+            .query_map(params![project_path], |r| {
+                Ok(PendingDiff {
+                    id: r.get(0)?,
+                    commit_sha: r.get(1)?,
+                    commit_msg: r.get(2)?,
+                    diff: r.get(3)?,
+                    queued_at: r.get(4)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        // Drain after collecting
+        conn.execute(
+            "DELETE FROM pending_diffs WHERE project_path = ?",
+            params![project_path],
+        )?;
+        Ok(diffs)
+    }
+
+    pub fn pending_diff_count(&self, project_path: &str) -> Result<i64> {
+        let conn = self.connect()?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pending_diffs WHERE project_path = ?",
+            params![project_path],
+            |r| r.get(0),
+        )?;
+        Ok(count)
+    }
+
+    // ── node enrichment ──────────────────────────────────────────────────────
+
+    /// Save a question bank for a node (overwrites existing bank).
+    pub fn set_question_bank(&self, topic: &str, bank: &[QuestionBankItem]) -> Result<()> {
+        let node_id = Self::node_id(topic);
+        let conn = self.connect()?;
+        let json = serde_json::to_string(bank)?;
+        conn.execute(
+            "UPDATE nodes SET question_bank = ? WHERE id = ?",
+            params![json, node_id],
+        )?;
+        Ok(())
+    }
+
+    /// Increment encounter_count and append a new commit SHA to source_commits.
+    /// Used when an existing topic is matched again (Layer 1 dedup).
+    pub fn record_topic_encounter(&self, topic: &str, commit_sha: &str) -> Result<()> {
+        let node_id = Self::node_id(topic);
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare("SELECT source_commits, encounter_count FROM nodes WHERE id = ?")?;
+        let mut rows = stmt.query(params![node_id])?;
+        if let Some(row) = rows.next()? {
+            let current_json: String = row.get(0)?;
+            let mut commits: Vec<String> = serde_json::from_str(&current_json).unwrap_or_default();
+            if !commit_sha.is_empty() && !commits.contains(&commit_sha.to_string()) {
+                commits.push(commit_sha.to_string());
+            }
+            let new_json = serde_json::to_string(&commits)?;
+            conn.execute(
+                "UPDATE nodes SET source_commits = ?, encounter_count = encounter_count + 1 WHERE id = ?",
+                params![new_json, node_id],
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn get_reviews(&self, node_id: &str) -> Result<Vec<Review>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
@@ -758,6 +935,28 @@ impl Db {
             .collect();
         Ok(reviews)
     }
+}
+
+// ── value structs for new tables ─────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct ProjectContext {
+    pub project_path: String,
+    pub summary: String,
+    pub sources: Vec<String>,
+    pub last_explored_at: String,
+    pub commits_since_explore: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingDiff {
+    #[allow(dead_code)]
+    pub id: i64,
+    pub commit_sha: String,
+    pub commit_msg: String,
+    pub diff: String,
+    #[allow(dead_code)]
+    pub queued_at: String,
 }
 
 // ── JSON serialisation structs ────────────────────────────────────────────────

@@ -1,4 +1,17 @@
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+
+/// A single pre-generated question with its ideal answer and clue.
+/// Stored in `question_bank` JSON on each node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionBankItem {
+    pub question: String,
+    pub answer: String,
+    pub clue: String,
+    /// Number of times this specific question has been asked (used for rotation)
+    #[serde(default)]
+    pub asked_count: u32,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
@@ -95,4 +108,11 @@ pub struct Node {
     pub canonical_clue: String,
     /// Git repo/project name this node originated from
     pub repo: String,
+    /// How many times this topic has been encountered across commits/sessions.
+    /// Different from review_count (which counts quiz reviews).
+    pub encounter_count: i64,
+    /// Commit SHAs where this topic appeared. Audit trail for dedup decisions.
+    pub source_commits: Vec<String>,
+    /// Pre-generated bank of 3-5 questions (rotated through during reviews).
+    pub question_bank: Vec<QuestionBankItem>,
 }

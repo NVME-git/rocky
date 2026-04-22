@@ -69,16 +69,29 @@ impl Teacher {
     }
 
     fn ask(&self, system: &str, user: &str) -> Result<String> {
+        self.ask_with_overrides(system, user, None, 1024)
+    }
+
+    /// Same as `ask`, but allows overriding the model and max_tokens for this call only.
+    /// Used by `summarize_project_docs` (uses Opus) and `generate_question_bank` (needs more tokens).
+    fn ask_with_overrides(
+        &self,
+        system: &str,
+        user: &str,
+        model_override: Option<&str>,
+        max_tokens: u32,
+    ) -> Result<String> {
         match &self.provider {
             Provider::Claude { api_key, model, client } => {
+                let effective_model = model_override.unwrap_or(model);
                 let resp = client
                     .post("https://api.anthropic.com/v1/messages")
                     .header("x-api-key", api_key)
                     .header("anthropic-version", "2023-06-01")
                     .header("content-type", "application/json")
                     .json(&json!({
-                        "model": model,
-                        "max_tokens": 1024,
+                        "model": effective_model,
+                        "max_tokens": max_tokens,
                         "system": system,
                         "messages": [{"role": "user", "content": user}]
                     }))
@@ -98,6 +111,8 @@ impl Teacher {
             }
 
             Provider::Ollama { base_url, model, client } => {
+                let _ = max_tokens;
+                let _ = model_override;
                 let prompt = format!("System: {system}\n\nUser: {user}");
                 let resp = client
                     .post(format!("{base_url}/api/generate"))
@@ -422,6 +437,182 @@ Rules:
         );
 
         self.ask(system, &user)
+    }
+
+    /// Summarise a project's documentation into a few-paragraph context record.
+    /// Used by `rocky explore` — runs once per project and on periodic refresh.
+    /// Uses Opus for higher-quality reasoning since this only runs occasionally.
+    pub fn summarize_project_docs(
+        &self,
+        project_name: &str,
+        docs: &[(String, String)],
+        recent_commits: &[String],
+    ) -> Result<String> {
+        let system = r#"You are summarising a software project so that a knowledge-graph tool
+can ground future quiz questions in real architectural context.
+
+Produce a 3-5 paragraph summary that covers:
+1. What this project does and the problem it solves.
+2. Core architectural decisions and the patterns it uses (e.g. event-driven, layered, CQRS, etc.).
+3. Key technologies, frameworks, and external dependencies.
+4. Any explicit conventions or constraints (testing strategy, security posture, performance budgets).
+5. Active areas of development based on recent commits.
+
+Write in plain prose. No bullet lists unless absolutely necessary. Be specific and concrete —
+this summary will be quoted verbatim into prompts that generate questions, so vague generalities
+ruin downstream quality. Do not include code snippets, file paths, or anything that looks like
+implementation detail. Concepts and decisions only."#;
+
+        let mut input = format!("Project: {project_name}\n\n");
+
+        if !docs.is_empty() {
+            input.push_str("Documentation files:\n\n");
+            for (path, content) in docs {
+                let excerpt = if content.len() > 6000 {
+                    let mut end = 6000;
+                    while !content.is_char_boundary(end) && end > 0 {
+                        end -= 1;
+                    }
+                    &content[..end]
+                } else {
+                    content.as_str()
+                };
+                input.push_str(&format!("--- {path} ---\n{excerpt}\n\n"));
+            }
+        }
+
+        if !recent_commits.is_empty() {
+            input.push_str("Recent commit messages:\n");
+            for c in recent_commits.iter().take(30) {
+                input.push_str(&format!("- {c}\n"));
+            }
+        }
+
+        // Opus for higher-quality project synthesis. Only runs on `rocky explore`.
+        self.ask_with_overrides(system, &input, Some("claude-opus-4-7"), 2048)
+    }
+
+    /// Pre-generate a bank of 3-5 questions per topic using rich context
+    /// (project summary + transcript + diff). Returns parsed JSON questions.
+    pub fn generate_question_bank(
+        &self,
+        topic: &str,
+        description: &str,
+        project_context: &str,
+        transcript_block: &str,
+        diff_excerpt: &str,
+    ) -> Result<Vec<crate::node::QuestionBankItem>> {
+        let system = r#"You are a Socratic technical mentor pre-generating a bank of quiz questions
+for a developer's personal knowledge graph.
+
+Generate 4 questions about the given topic. Each must:
+- Force reasoning about IMPLICATIONS, TRADE-OFFS, or CONSEQUENCES — not recall of definitions.
+- Be grounded in the actual context provided (project, session, code).
+- Target a different angle: what breaks, when NOT to use it, how it interacts with adjacent
+  systems, what would change if a key constraint was removed.
+- Be 1-2 sentences, specific to this codebase.
+
+For each question also produce:
+- An ideal answer (3-5 sentences) demonstrating real understanding of the consequences.
+- A short clue (1-2 sentences) that nudges without revealing the answer.
+
+Return ONLY valid JSON of this exact shape:
+{"questions": [
+  {"question": "...", "answer": "...", "clue": "..."},
+  ...
+]}"#;
+
+        let mut user = format!(
+            "Topic: {topic}\nTopic description: {description}\n\n"
+        );
+        if !project_context.is_empty() {
+            user.push_str(&format!("Project context:\n{project_context}\n\n"));
+        }
+        if !transcript_block.is_empty() {
+            user.push_str(&format!("Recent session activity:\n{transcript_block}\n"));
+        }
+        if !diff_excerpt.is_empty() {
+            let excerpt = if diff_excerpt.len() > 2500 {
+                let mut end = 2500;
+                while !diff_excerpt.is_char_boundary(end) && end > 0 {
+                    end -= 1;
+                }
+                &diff_excerpt[..end]
+            } else {
+                diff_excerpt
+            };
+            user.push_str(&format!("Diff excerpt:\n{excerpt}\n"));
+        }
+
+        let raw = self.ask_with_overrides(&system, &user, None, 2048)?;
+        let cleaned = strip_code_fence(&raw);
+
+        #[derive(Deserialize)]
+        struct Bank { questions: Vec<crate::node::QuestionBankItem> }
+        let bank: Bank = serde_json::from_str(cleaned)
+            .map_err(|e| anyhow!("question bank parse failed: {e} — raw: {raw}"))?;
+        Ok(bank.questions)
+    }
+
+    /// Extract topics from a diff with awareness of existing topics in the graph.
+    /// If a new topic is semantically equivalent to an existing one, the LLM is
+    /// instructed to return the EXACT existing topic name — no separate dedup pass needed.
+    pub fn extract_topics_with_dedup(
+        &self,
+        commit_msg: &str,
+        diff: &str,
+        existing_topics: &[(String, String)], // (topic, domain)
+        project_context: &str,
+    ) -> Result<Vec<TopicInfo>> {
+        let system = r#"You are a technical knowledge analyst reviewing a git diff.
+Extract the distinct technical topics a developer needs to genuinely understand based on this diff.
+
+Focus on:
+- Libraries, frameworks, or APIs introduced or heavily used
+- Patterns or architectural decisions visible in the code
+- Non-obvious implementation details that could cause bugs if misunderstood
+
+Ignore trivial changes (renaming, formatting, comments) and pure boilerplate.
+
+CRITICAL — Deduplication:
+You will be given a list of topics that already exist in the developer's knowledge graph.
+If a topic from this diff is semantically equivalent to one in that list (same concept, just
+different wording), return the EXACT existing topic name unchanged. Only create a new topic
+when the concept is genuinely distinct from all existing ones.
+
+Return ONLY valid JSON: a list of objects with keys:
+- "topic": exact topic name (reuse existing if equivalent; otherwise 2-5 word new name)
+- "kind": one of "concept", "pattern", "implementation"
+- "domain": one of "Language", "Database", "Auth", "API", "Frontend", "DevOps", "Architecture", "Performance", "Security", "Testing", "Tooling", "Data", "Other"
+- "description": one specific sentence explaining what this topic is and why it matters in THIS codebase
+
+Return 2-6 topics maximum."#;
+
+        let mut user = String::new();
+        if !project_context.is_empty() {
+            user.push_str(&format!("Project context:\n{project_context}\n\n"));
+        }
+        if !existing_topics.is_empty() {
+            user.push_str("Existing topics in this developer's graph (reuse these names if semantically equivalent):\n");
+            for (t, d) in existing_topics.iter().take(200) {
+                user.push_str(&format!("- {t} ({d})\n"));
+            }
+            user.push('\n');
+        }
+        let diff_excerpt = if diff.len() > 4000 {
+            let mut end = 4000;
+            while !diff.is_char_boundary(end) && end > 0 {
+                end -= 1;
+            }
+            &diff[..end]
+        } else {
+            diff
+        };
+        user.push_str(&format!("Commit: {commit_msg}\n\nDiff:\n{diff_excerpt}"));
+
+        let raw = self.ask_with_overrides(system, &user, None, 1536)?;
+        let cleaned = strip_code_fence(&raw);
+        Ok(serde_json::from_str(cleaned)?)
     }
 
     /// Generate implication edges between a newly added topic and existing PKG nodes.

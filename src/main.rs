@@ -9,6 +9,7 @@ mod server;
 mod session;
 mod sync;
 mod teacher;
+mod transcript;
 
 use std::io::{self, Read as _, Write as _};
 
@@ -134,6 +135,30 @@ enum Cmd {
         #[arg(long)]
         fill_clues: bool,
     },
+    /// Build a project context summary from CLAUDE.md, README, docs, and recent commits.
+    /// Used as grounding context for question generation. Run once when adding Rocky to a project.
+    Explore {
+        /// Re-summarise even if a recent context exists
+        #[arg(long)]
+        force: bool,
+        /// Suppress output (used by Stop hook auto-refresh)
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// Process queued commits + Claude Code session transcript at session end.
+    /// Called by the Claude Code Stop hook. Generates rich nodes + question bank.
+    SessionEnd {
+        /// Look back N hours for transcript activity (default: 6)
+        #[arg(long, default_value = "6")]
+        hours: u32,
+        /// Suppress output
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// Silently queue the latest commit's diff for later batch processing.
+    /// Intended for the git post-commit hook in Claude-aware queue mode.
+    /// No LLM call. Stop hook (`rocky session-end`) does the enrichment.
+    PostCommit,
 }
 
 #[derive(Subcommand)]
@@ -144,6 +169,10 @@ enum HookTarget {
     Claude,
     /// Enable prompt logging for this project without the git hook
     Prompt,
+    /// Claude Code Stop hook — runs `rocky session-end` when a session closes
+    Stop,
+    /// Full Claude-aware install: prompt logging + Stop hook + queue-mode git hook
+    ClaudeAll,
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -207,6 +236,33 @@ fn run() -> Result<()> {
                         println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
+                HookTarget::Stop => {
+                    let (ok, msg) = install_claude_stop_hook()?;
+                    let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "✗".truecolor(226, 75, 74) };
+                    println!("  {glyph} {msg}");
+                    if ok {
+                        println!("  {}", "Rocky will batch-process commits + transcript when each Claude Code session ends.".dimmed());
+                    }
+                }
+                HookTarget::ClaudeAll => {
+                    p.banner();
+                    println!("  {}", "Installing full Claude-aware integration:".dimmed());
+
+                    let (ok1, msg1) = install_claude_hook()?;
+                    println!("    {} {msg1}", if ok1 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
+
+                    let (ok2, msg2) = install_claude_stop_hook()?;
+                    println!("    {} {msg2}", if ok2 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
+
+                    let (ok3, msg3) = install_git_hook_queue_mode()?;
+                    println!("    {} {msg3}", if ok3 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
+
+                    let (ok4, msg4) = local_log::install_prompt_marker()?;
+                    println!("    {} {msg4}", if ok4 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
+
+                    println!();
+                    println!("  {}", "Next: run  rocky explore  to build the project context summary.".dimmed());
+                }
             }
         }
         Some(Cmd::Uninstall { target }) => {
@@ -234,6 +290,18 @@ fn run() -> Result<()> {
                     } else {
                         println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
+                }
+                HookTarget::Stop => {
+                    let (ok, msg) = uninstall_claude_stop_hook()?;
+                    let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "✗".truecolor(226, 75, 74) };
+                    println!("  {glyph} {msg}");
+                }
+                HookTarget::ClaudeAll => {
+                    let _ = uninstall_claude_hook()?;
+                    let _ = uninstall_claude_stop_hook()?;
+                    let _ = uninstall_git_hook()?;
+                    let _ = local_log::uninstall_prompt_marker()?;
+                    println!("  {} Claude integration removed.", "✓".truecolor(29, 158, 117));
                 }
             }
         }
@@ -291,6 +359,15 @@ fn run() -> Result<()> {
         }
         Some(Cmd::Backfill { all_authors, limit, fill_clues }) => {
             run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit, fill_clues)?;
+        }
+        Some(Cmd::Explore { force, quiet }) => {
+            run_explore(&db, &make_teacher(&cfg)?, force, quiet)?;
+        }
+        Some(Cmd::SessionEnd { hours, quiet }) => {
+            run_session_end(&db, &make_teacher(&cfg)?, &cfg, hours, quiet)?;
+        }
+        Some(Cmd::PostCommit) => {
+            run_post_commit(&db)?;
         }
         None => {
             if let Some(msg) = cli.after {
@@ -2174,6 +2251,183 @@ fn uninstall_claude_hook() -> Result<(bool, String)> {
     Ok((true, "Claude Code hook removed".into()))
 }
 
+// ── Stop hook (Claude Code session-end) ──────────────────────────────────────
+
+const STOP_HOOK_MATCHER_TAG: &str = "rocky session-end";
+
+fn install_claude_stop_hook() -> Result<(bool, String)> {
+    let path = claude_settings_path()
+        .ok_or_else(|| anyhow::anyhow!("could not locate home directory"))?;
+
+    let mut settings: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path)?;
+        serde_json::from_str(&text).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let hooks = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings.json is not a JSON object"))?
+        .entry("hooks")
+        .or_insert(serde_json::json!({}));
+
+    let stop = hooks
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("hooks is not a JSON object"))?
+        .entry("Stop")
+        .or_insert(serde_json::json!([]));
+
+    let arr = stop
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("Stop is not an array"))?;
+
+    let rocky_bin = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "rocky".to_string());
+    let cmd = format!("{rocky_bin} session-end --quiet");
+
+    let already = arr.iter().any(|v| {
+        v.get("hooks")
+            .and_then(|h| h.as_array())
+            .map(|hs| hs.iter().any(|h| {
+                h.get("command").and_then(|c| c.as_str())
+                    .map(|c| c.contains(STOP_HOOK_MATCHER_TAG))
+                    .unwrap_or(false)
+            }))
+            .unwrap_or(false)
+    });
+    if already {
+        return Ok((false, "Claude Code Stop hook already installed".into()));
+    }
+
+    arr.push(serde_json::json!({
+        "hooks": [{"command": cmd, "type": "command"}]
+    }));
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&settings)?)?;
+    Ok((true, format!("Claude Code Stop hook installed in {}", path.display())))
+}
+
+fn uninstall_claude_stop_hook() -> Result<(bool, String)> {
+    let path = claude_settings_path()
+        .ok_or_else(|| anyhow::anyhow!("could not locate home directory"))?;
+    if !path.exists() {
+        return Ok((false, "~/.claude/settings.json not found".into()));
+    }
+
+    let text = std::fs::read_to_string(&path)?;
+    let mut settings: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or(serde_json::json!({}));
+
+    let removed = if let Some(arr) = settings
+        .get_mut("hooks")
+        .and_then(|h| h.get_mut("Stop"))
+        .and_then(|v| v.as_array_mut())
+    {
+        let before = arr.len();
+        arr.retain(|v| {
+            let is_rocky = v.get("hooks")
+                .and_then(|h| h.as_array())
+                .map(|hs| hs.iter().any(|h| {
+                    h.get("command").and_then(|c| c.as_str())
+                        .map(|c| c.contains(STOP_HOOK_MATCHER_TAG))
+                        .unwrap_or(false)
+                }))
+                .unwrap_or(false);
+            !is_rocky
+        });
+        arr.len() < before
+    } else {
+        false
+    };
+
+    if !removed {
+        return Ok((false, "Claude Code Stop hook not found".into()));
+    }
+
+    std::fs::write(&path, serde_json::to_string_pretty(&settings)?)?;
+    Ok((true, "Claude Code Stop hook removed".into()))
+}
+
+/// Like install_git_hook but uses queue-mode (`rocky post-commit`) so commits
+/// stay fast and the Stop hook handles enrichment in one batch at session end.
+fn install_git_hook_queue_mode() -> Result<(bool, String)> {
+    let hook_path = std::path::Path::new(".git/hooks/post-commit");
+    if !std::path::Path::new(".git").exists() {
+        return Ok((false, "not a git repository".into()));
+    }
+    if hook_path.exists() {
+        let existing = std::fs::read_to_string(hook_path)?;
+        if existing.contains("rocky post-commit") {
+            return Ok((false, "queue-mode git hook already installed".into()));
+        }
+        // Replace any prior `rocky diff` invocation with `rocky post-commit`
+        if existing.contains("rocky diff") {
+            let updated = existing.replace("rocky diff", "rocky post-commit");
+            std::fs::write(hook_path, updated)?;
+            local_log::ensure_gitignored()?;
+            return Ok((true, "git hook switched to queue mode".into()));
+        }
+        let appended = format!("{existing}\nrocky post-commit\n");
+        std::fs::write(hook_path, appended)?;
+    } else {
+        std::fs::write(hook_path, "#!/bin/sh\nrocky post-commit\n")?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(hook_path, std::fs::Permissions::from_mode(0o755))?;
+        }
+    }
+    local_log::ensure_gitignored()?;
+    Ok((true, "git hook installed in queue mode".into()))
+}
+
+// ── post-commit queue command ────────────────────────────────────────────────
+
+fn run_post_commit(db: &Db) -> Result<()> {
+    let project_path = std::env::current_dir()?
+        .canonicalize()?
+        .to_string_lossy()
+        .to_string();
+
+    let sha = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    let commit_msg = std::process::Command::new("git")
+        .args(["log", "-1", "--pretty=%B"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    let diff = std::process::Command::new("git")
+        .args(["show", "--stat", "--patch", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    if sha.is_empty() || diff.is_empty() {
+        return Ok(());
+    }
+
+    db.queue_pending_diff(&project_path, &sha, &commit_msg, &diff)?;
+    db.bump_commits_since_explore(&project_path).ok();
+    Ok(())
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /// Check if adding this topic crossed a milestone and print Rocky's reaction.
@@ -2451,4 +2705,337 @@ fn is_hotfix(msg: &str) -> bool {
         || lower.starts_with("bugfix")
         || lower.starts_with("patch")
         || lower.starts_with("[hotfix]")
+}
+
+// ── rocky explore ─────────────────────────────────────────────────────────────
+
+const EXPLORE_DOC_FILES: &[&str] = &[
+    "CLAUDE.md",
+    "README.md",
+    "README",
+    "readme.md",
+    "ARCHITECTURE.md",
+    "architecture.md",
+    "DESIGN.md",
+];
+
+const EXPLORE_DOC_DIRS: &[&str] = &[
+    "docs/decisions",
+    "docs/architecture",
+    "docs/adr",
+    "docs",
+    "architecture",
+];
+
+const MAX_EXPLORE_FILE_BYTES: u64 = 64 * 1024;
+const MAX_EXPLORE_DOCS: usize = 12;
+
+fn run_explore(db: &Db, teacher: &Teacher, force: bool, quiet: bool) -> Result<()> {
+    let project_path = std::env::current_dir()?
+        .canonicalize()?
+        .to_string_lossy()
+        .to_string();
+    let project_name = std::path::Path::new(&project_path)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "project".into());
+
+    if !quiet {
+        print_header();
+        println!("  Exploring {}...\n", project_path.dimmed());
+    }
+
+    if !force {
+        if let Ok(Some(existing)) = db.get_project_context(&project_path) {
+            let stale = existing.commits_since_explore > 20;
+            if !stale {
+                if !quiet {
+                    println!("  {} Project context already up to date ({} commits since last explore).",
+                        "·".dimmed(), existing.commits_since_explore);
+                    println!("  {}", "Use --force to refresh anyway.".dimmed());
+                }
+                return Ok(());
+            }
+        }
+    }
+
+    let docs = collect_project_docs(&std::path::PathBuf::from(&project_path))?;
+    if docs.is_empty() && !quiet {
+        println!("  {} No documentation files found. Project context will be sparse.", "!".truecolor(239, 159, 39));
+    }
+
+    if !quiet && !docs.is_empty() {
+        println!("  {} Reading {} documentation file(s):", "·".dimmed(), docs.len());
+        for (path, _) in &docs {
+            println!("    · {path}");
+        }
+        println!();
+    }
+
+    let commits = recent_commit_messages(30);
+    if !quiet {
+        println!("  {} Scanned {} recent commit(s).", "·".dimmed(), commits.len());
+        println!("  {} Asking Opus to synthesise project context...", "·".dimmed());
+    }
+
+    let summary = teacher.summarize_project_docs(&project_name, &docs, &commits)
+        .context("project context summarisation failed")?;
+
+    let sources: Vec<String> = docs.iter().map(|(p, _)| p.clone()).collect();
+    db.upsert_project_context(&project_path, &summary, &sources)?;
+
+    if !quiet {
+        println!("  {} Project context saved.\n", "✓".truecolor(29, 158, 117));
+        println!("  {}", "Future quiz questions will be grounded in this summary.".dimmed());
+        println!("  {}", "Re-run  rocky explore --force  whenever the project's shape changes.".dimmed());
+    }
+    Ok(())
+}
+
+/// Collect known documentation files from the project, capped to MAX_EXPLORE_DOCS.
+fn collect_project_docs(project_root: &std::path::Path) -> Result<Vec<(String, String)>> {
+    let mut found: Vec<(String, String)> = Vec::new();
+    let mut seen: std::collections::HashSet<std::path::PathBuf> = std::collections::HashSet::new();
+
+    // Top-level marker files
+    for name in EXPLORE_DOC_FILES {
+        let path = project_root.join(name);
+        if let Ok(canonical) = path.canonicalize() {
+            if seen.insert(canonical.clone()) {
+                if let Some(content) = read_capped(&path) {
+                    found.push((name.to_string(), content));
+                    if found.len() >= MAX_EXPLORE_DOCS {
+                        return Ok(found);
+                    }
+                }
+            }
+        }
+    }
+
+    // Walk a few known doc directories (one level deep)
+    for dir in EXPLORE_DOC_DIRS {
+        let dir_path = project_root.join(dir);
+        if !dir_path.is_dir() {
+            continue;
+        }
+        let entries = match std::fs::read_dir(&dir_path) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let mut paths: Vec<std::path::PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("");
+                p.is_file() && (ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("txt") || name.starts_with("ADR"))
+            })
+            .collect();
+        paths.sort();
+        for path in paths {
+            if let Ok(canonical) = path.canonicalize() {
+                if !seen.insert(canonical) {
+                    continue;
+                }
+            }
+            if let Some(content) = read_capped(&path) {
+                let display = path.strip_prefix(project_root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .to_string();
+                found.push((display, content));
+                if found.len() >= MAX_EXPLORE_DOCS {
+                    return Ok(found);
+                }
+            }
+        }
+    }
+
+    Ok(found)
+}
+
+fn read_capped(path: &std::path::Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > MAX_EXPLORE_FILE_BYTES {
+        // Read only the first portion to keep prompt size bounded
+        let mut f = std::fs::File::open(path).ok()?;
+        let mut buf = vec![0u8; MAX_EXPLORE_FILE_BYTES as usize];
+        let n = std::io::Read::read(&mut f, &mut buf).ok()?;
+        buf.truncate(n);
+        // Drop trailing partial UTF-8 sequence
+        while !buf.is_empty() && std::str::from_utf8(&buf).is_err() {
+            buf.pop();
+        }
+        return String::from_utf8(buf).ok();
+    }
+    std::fs::read_to_string(path).ok()
+}
+
+fn recent_commit_messages(limit: usize) -> Vec<String> {
+    let output = std::process::Command::new("git")
+        .args(["log", &format!("-{limit}"), "--pretty=format:%s"])
+        .output()
+        .ok();
+    match output {
+        Some(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|s| s.to_string())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+// ── rocky session-end ─────────────────────────────────────────────────────────
+
+fn run_session_end(
+    db: &Db,
+    teacher: &Teacher,
+    cfg: &Config,
+    hours: u32,
+    quiet: bool,
+) -> Result<()> {
+    let project_path = std::env::current_dir()?
+        .canonicalize()?
+        .to_string_lossy()
+        .to_string();
+
+    // 1. Drain queued diffs
+    let pending = db.drain_pending_diffs(&project_path)?;
+    if pending.is_empty() {
+        if !quiet {
+            println!("  {} No pending commits to process.", "·".dimmed());
+        }
+        return Ok(());
+    }
+
+    if !quiet {
+        print_header();
+        println!("  Processing {} commit(s) from this session...\n", pending.len());
+    }
+
+    // 2. Load project context (may be empty)
+    let project_ctx = db.get_project_context(&project_path)?
+        .map(|c| c.summary)
+        .unwrap_or_default();
+
+    // 3. Read session transcript
+    let transcript = transcript::read_recent(
+        &std::path::PathBuf::from(&project_path),
+        hours,
+    ).unwrap_or_default();
+    let transcript_block = transcript.to_prompt_block();
+
+    if !quiet && !transcript.is_empty() {
+        println!("  {} Loaded transcript: {} prompts, {} agent messages, {} files read",
+            "·".dimmed(),
+            transcript.user_prompts.len(),
+            transcript.assistant_messages.len(),
+            transcript.files_read.len(),
+        );
+    }
+
+    // 4. Build existing topic list (for Layer 1 dedup)
+    let existing: Vec<(String, String)> = db.all_nodes()?
+        .into_iter()
+        .filter(|n| !n.kind.is_domain())
+        .map(|n| (n.topic, n.domain))
+        .collect();
+
+    let repo = detect_repo_name();
+    let mut new_topics = 0u32;
+    let mut deduped = 0u32;
+
+    // 5. Process each pending diff
+    for pd in &pending {
+        if !quiet {
+            println!("\n  {} {}", "▸".truecolor(124, 158, 243), pd.commit_msg.lines().next().unwrap_or(""));
+        }
+
+        let topics = match teacher.extract_topics_with_dedup(
+            &pd.commit_msg,
+            &pd.diff,
+            &existing,
+            &project_ctx,
+        ) {
+            Ok(t) => t,
+            Err(e) => {
+                if !quiet {
+                    eprintln!("    {} extract failed: {e}", "!".truecolor(226, 75, 74));
+                }
+                continue;
+            }
+        };
+
+        for t in topics {
+            let topic_id = Db::node_id_static(&t.topic);
+            let exists = db.get_node_by_id(&topic_id)?.is_some();
+
+            if exists {
+                // Layer 1 dedup hit — record encounter, no node creation
+                db.record_topic_encounter(&t.topic, &pd.commit_sha).ok();
+                deduped += 1;
+                if !quiet {
+                    println!("    {} {} (existing — encounter +1)", "◇".dimmed(), t.topic.dimmed());
+                }
+                continue;
+            }
+
+            // New topic: insert node with rich data
+            db.add_or_update(
+                &t.topic,
+                0.5,
+                &Kind::from_str(&t.kind),
+                &t.domain,
+                &t.description,
+                &pd.commit_msg,
+                None,
+                &repo,
+                None,
+            )?;
+
+            // Generate question bank using ALL the rich context
+            match teacher.generate_question_bank(
+                &t.topic,
+                &t.description,
+                &project_ctx,
+                &transcript_block,
+                &pd.diff,
+            ) {
+                Ok(bank) if !bank.is_empty() => {
+                    db.set_question_bank(&t.topic, &bank).ok();
+                    // Mirror the first question into the canonical_question slot
+                    // so the existing quiz flow has something to grab without changes.
+                    if let Some(first) = bank.first() {
+                        db.set_canonical_qa(&t.topic, &first.question, &first.answer, &first.clue).ok();
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    if !quiet {
+                        eprintln!("    {} question bank failed for {}: {e}", "!".truecolor(239, 159, 39), t.topic);
+                    }
+                }
+            }
+
+            // Bump source_commits with this commit SHA
+            db.record_topic_encounter(&t.topic, &pd.commit_sha).ok();
+            new_topics += 1;
+
+            if !quiet {
+                println!("    {} {}", "+".truecolor(29, 158, 117), t.topic);
+            }
+        }
+    }
+
+    if !quiet {
+        println!();
+        println!(
+            "  {} {new_topics} new topic(s), {deduped} encounter update(s).",
+            "Done.".truecolor(29, 158, 117).bold()
+        );
+        println!("  {}", "Run  rocky quiz  to review the new material.".dimmed());
+    }
+
+    auto_sync(db, cfg);
+    Ok(())
 }
