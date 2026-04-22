@@ -419,6 +419,8 @@ fn show_stats(db: &Db, cfg: &Config, p: &personality::Personality) -> Result<()>
     println!("  {}", format!("Fading:        {stale}").truecolor(239, 159, 39));
     println!("  {}", format!("Gaps/weak:     {gaps}").truecolor(226, 75, 74));
 
+    nudge_if_context_stale(db);
+
     let session = Session::new(
         Db::open(&cfg.db_path, &cfg.pkg_dir)?,
         cfg.daily_budget,
@@ -1180,8 +1182,20 @@ fn run_socratic_loop(
                 }
             }
         }
-        // Use pre-generated canonical question if available, otherwise generate live
+        // Prefer the question_bank (rotates through least-asked), fall back to
+        // canonical_question, then generate live.
         if let Ok(Some(ref n)) = db.get_node(topic) {
+            if !n.question_bank.is_empty() {
+                if let Some((idx, q)) = pick_least_asked(&n.question_bank) {
+                    let mut bank = n.question_bank.clone();
+                    bank[idx].asked_count = bank[idx].asked_count.saturating_add(1);
+                    db.set_question_bank(topic, &bank).ok();
+                    // Sync canonical_qa to the chosen question so answer/clue lookups below
+                    // pick up the correct triple without further changes.
+                    db.set_canonical_qa(topic, &q.question, &q.answer, &q.clue).ok();
+                    break 'q q.question.clone();
+                }
+            }
             if !n.canonical_question.is_empty() {
                 break 'q n.canonical_question.clone();
             }
@@ -2705,6 +2719,57 @@ fn is_hotfix(msg: &str) -> bool {
         || lower.starts_with("bugfix")
         || lower.starts_with("patch")
         || lower.starts_with("[hotfix]")
+}
+
+/// Pick the bank entry that has been asked the fewest times.
+/// Returns the index and a reference for borrowing convenience.
+fn pick_least_asked(
+    bank: &[crate::node::QuestionBankItem],
+) -> Option<(usize, &crate::node::QuestionBankItem)> {
+    bank.iter()
+        .enumerate()
+        .min_by_key(|(_, q)| q.asked_count)
+        .map(|(i, q)| (i, q))
+}
+
+/// If the project context is missing or stale, print a one-line nudge.
+/// Stale = > 20 commits since explore OR > 14 days since last_explored_at.
+fn nudge_if_context_stale(db: &Db) {
+    let project_path = match std::env::current_dir().and_then(|p| p.canonicalize()) {
+        Ok(p) => p.to_string_lossy().to_string(),
+        Err(_) => return,
+    };
+    let ctx = match db.get_project_context(&project_path) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            println!(
+                "\n  {} {}",
+                "·".dimmed(),
+                "No project context yet — run  rocky explore  to ground future questions in real architecture.".dimmed()
+            );
+            return;
+        }
+        Err(_) => return,
+    };
+
+    let stale_by_commits = ctx.commits_since_explore > 20;
+    let stale_by_age = chrono::NaiveDateTime::parse_from_str(&ctx.last_explored_at, "%Y-%m-%d %H:%M:%S%.f")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(&ctx.last_explored_at, "%Y-%m-%d %H:%M:%S"))
+        .map(|d| (chrono::Local::now().naive_local() - d).num_days() > 14)
+        .unwrap_or(false);
+
+    if stale_by_commits || stale_by_age {
+        let reason = if stale_by_commits {
+            format!("{} commits since last explore", ctx.commits_since_explore)
+        } else {
+            "context is over 14 days old".into()
+        };
+        println!(
+            "\n  {} Project context is stale ({}). Run  rocky explore  to refresh.",
+            "!".truecolor(239, 159, 39),
+            reason
+        );
+    }
 }
 
 // ── rocky explore ─────────────────────────────────────────────────────────────
