@@ -3,7 +3,7 @@
 ///
 /// Surfaces:
 ///   - Web UI: POST /api/transcribe uploads a WAV, Stt::transcribe returns text
-///   - CLI:    `rocky quiz --voice` (planned) — cpal capture + webrtc-vad + STT
+///   - CLI:    `rocky quiz --voice` — arecord/sox mic capture + whisper-cli STT + system TTS
 use anyhow::{anyhow, bail, Result};
 
 use crate::config::{Config, VoiceConfig};
@@ -81,13 +81,141 @@ impl Stt for WhisperCppSubprocess {
     }
 }
 
-fn expand_home(path: &str) -> String {
+pub(crate) fn expand_home(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {
             return home.join(rest).to_string_lossy().into_owned();
         }
     }
     path.to_string()
+}
+
+// ── CLI voice session ─────────────────────────────────────────────────────────
+
+/// CLI voice session wrapping STT + TTS + mic recording.
+/// Used by `rocky quiz --voice`.
+pub struct CliVoice {
+    pub stt: Box<dyn Stt>,
+}
+
+impl CliVoice {
+    pub fn new(stt: Box<dyn Stt>) -> Self {
+        Self { stt }
+    }
+
+    /// Speak `text` aloud using the platform TTS binary (non-blocking best-effort).
+    pub fn speak(&self, text: &str) {
+        speak_text(text);
+    }
+
+    /// Record from mic until the user presses Enter, then transcribe.
+    pub fn record_and_transcribe(&self) -> Result<String> {
+        let wav = record_until_enter()?;
+        self.stt.transcribe(&wav)
+    }
+}
+
+/// Speak text using the platform TTS binary (`say` on macOS, `espeak-ng`/`spd-say` on Linux).
+/// Strips simple Markdown punctuation so prose sounds natural.
+pub fn speak_text(text: &str) {
+    let clean: String = text
+        .chars()
+        .filter(|c| !matches!(*c, '*' | '_' | '`' | '#' | '[' | ']'))
+        .collect();
+    let clean = clean.trim();
+    if clean.is_empty() {
+        return;
+    }
+
+    if cfg!(target_os = "macos") {
+        std::process::Command::new("say")
+            .arg(clean)
+            .status()
+            .ok();
+    } else {
+        // Try espeak-ng first, fall back to spd-say
+        let ok = std::process::Command::new("espeak-ng")
+            .args(["-s", "150", clean])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ok {
+            std::process::Command::new("spd-say")
+                .arg(clean)
+                .stderr(std::process::Stdio::null())
+                .status()
+                .ok();
+        }
+    }
+}
+
+/// Check whether a mic recorder binary is available on this system.
+pub fn recorder_available() -> bool {
+    let cmd = if cfg!(target_os = "macos") { "rec" } else { "arecord" };
+    std::process::Command::new("which")
+        .arg(cmd)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Record audio from the default microphone at 16 kHz mono until the user presses
+/// Enter. Returns raw WAV bytes suitable for `Stt::transcribe`.
+///
+/// Uses `arecord` on Linux and `rec` (SoX) on macOS — no native Rust audio deps.
+pub fn record_until_enter() -> Result<Vec<u8>> {
+    let dir = tempfile::tempdir().map_err(|e| anyhow!("tempdir: {e}"))?;
+    let wav_path = dir.path().join("cli_recording.wav");
+    let wav_path_bg = wav_path.clone();
+
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+
+    let recorder = std::thread::spawn(move || {
+        let mut cmd = if cfg!(target_os = "macos") {
+            let mut c = std::process::Command::new("rec");
+            c.args([
+                "-q", "-r", "16000", "-c", "1",
+                wav_path_bg.to_str().unwrap_or("audio.wav"),
+            ]);
+            c
+        } else {
+            let mut c = std::process::Command::new("arecord");
+            c.args([
+                "-q", "-f", "S16_LE", "-r", "16000", "-c", "1",
+                wav_path_bg.to_str().unwrap_or("audio.wav"),
+            ]);
+            c
+        };
+        let mut child = match cmd.stderr(std::process::Stdio::null()).spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("   recorder failed to start: {e}");
+                return;
+            }
+        };
+        rx.recv().ok(); // block until stop signal
+        child.kill().ok();
+        child.wait().ok();
+    });
+
+    // Main thread waits for user to press Enter
+    let mut buf = String::new();
+    std::io::stdin().read_line(&mut buf)?;
+
+    tx.send(()).ok();
+    recorder.join().ok();
+
+    // Give OS a moment to flush file buffers
+    std::thread::sleep(std::time::Duration::from_millis(150));
+
+    let bytes = std::fs::read(&wav_path)
+        .map_err(|e| anyhow!("could not read recording: {e}"))?;
+
+    if bytes.len() < 100 {
+        bail!("recording too short — is a microphone available?");
+    }
+    Ok(bytes)
 }
 
 /// Browser-side STT placeholder. The actual Web Speech API call happens in JS;

@@ -471,6 +471,46 @@ impl Db {
         Ok(())
     }
 
+    /// Merge `delete_id` into `keep_id`: copies contexts + reviews, reroutes edges,
+    /// then deletes the duplicate node (FK cascade cleans up remaining refs).
+    pub fn merge_nodes(&self, keep_id: &str, delete_id: &str) -> Result<()> {
+        let conn = self.connect()?;
+
+        // Copy contexts (deduped by PRIMARY KEY(node_id, context))
+        conn.execute(
+            "INSERT OR IGNORE INTO contexts (node_id, context, added_at)
+             SELECT ?, context, added_at FROM contexts WHERE node_id = ?",
+            params![keep_id, delete_id],
+        )?;
+
+        // Copy reviews (auto-increment id, no unique constraint)
+        conn.execute(
+            "INSERT INTO reviews (node_id, reviewed_at, question, answer, feedback, score)
+             SELECT ?, reviewed_at, question, answer, feedback, score
+             FROM reviews WHERE node_id = ?",
+            params![keep_id, delete_id],
+        )?;
+
+        // Reroute edges: avoid creating self-loops on keep_id
+        conn.execute(
+            "UPDATE edges SET source_id = ? WHERE source_id = ? AND target_id != ?",
+            params![keep_id, delete_id, keep_id],
+        )?;
+        conn.execute(
+            "UPDATE edges SET target_id = ? WHERE target_id = ? AND source_id != ?",
+            params![keep_id, delete_id, keep_id],
+        )?;
+        // Remove any self-loops created on keep_id
+        conn.execute(
+            "DELETE FROM edges WHERE source_id = ? AND target_id = ?",
+            params![keep_id, keep_id],
+        )?;
+
+        // Delete node — FK CASCADE cleans up remaining contexts, reviews, edges
+        conn.execute("DELETE FROM nodes WHERE id = ?", params![delete_id])?;
+        Ok(())
+    }
+
     // ── edges ─────────────────────────────────────────────────────────────────
 
     #[allow(dead_code)]

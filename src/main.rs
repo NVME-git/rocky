@@ -81,6 +81,10 @@ enum Cmd {
         /// Look back N hours for prompt context (default: 24)
         #[arg(long, default_value = "24")]
         hours: u32,
+        /// Voice mode: reads questions aloud (TTS) and transcribes mic input for answers.
+        /// Requires [voice] provider = "whisper-cpp" in config and arecord (Linux) or rec/sox (macOS).
+        #[arg(long)]
+        voice: bool,
     },
     /// Analyze a git diff and quiz on topics found in the code changes
     Diff {
@@ -176,6 +180,16 @@ enum Cmd {
     /// Intended for the git post-commit hook in Claude-aware queue mode.
     /// No LLM call. Stop hook (`rocky session-end`) does the enrichment.
     PostCommit,
+    /// Find and interactively merge near-duplicate topics in your PKG.
+    /// Scans all topics for word-overlap candidates, then lets you decide which to keep.
+    Dedupe {
+        /// Preview candidates without making any changes.
+        #[arg(long)]
+        dry_run: bool,
+        /// Pre-filter candidates using the LLM before showing them to you (slower but more precise).
+        #[arg(long)]
+        auto: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -323,19 +337,48 @@ fn run() -> Result<()> {
             }
         }
         Some(Cmd::Config) => cfg.show(),
-        Some(Cmd::Quiz { topic, hours }) => {
+        Some(Cmd::Quiz { topic, hours, voice }) => {
             let teacher = make_teacher(&cfg)?;
+            let cli_voice: Option<voice::CliVoice> = if voice {
+                match voice::make_stt(&cfg)? {
+                    Some(stt) => {
+                        if !voice::recorder_available() {
+                            eprintln!(
+                                "  {} No recorder found — install arecord (Linux: sudo apt install alsa-utils) \
+                                 or rec (macOS: brew install sox).",
+                                "!".truecolor(239, 159, 39)
+                            );
+                            None
+                        } else {
+                            Some(voice::CliVoice::new(stt))
+                        }
+                    }
+                    None => {
+                        eprintln!(
+                            "  {} Voice is off — set [voice] provider = \"whisper-cpp\" in ~/.config/rocky/config.toml.",
+                            "!".truecolor(239, 159, 39)
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
             let session = Session::new(
                 Db::open(&cfg.db_path, &cfg.pkg_dir)?,
                 cfg.daily_budget,
                 cfg.min_gap_minutes,
             );
             if let Some(query) = topic {
-                run_quiz_topic(&db, &teacher, &session, &p, &query, &cfg.edge_reuse)?;
+                run_quiz_topic(&db, &teacher, &session, &p, &query, &cfg.edge_reuse, cli_voice.as_ref())?;
             } else {
-                run_quiz(&db, &teacher, &session, &p, hours, &cfg.edge_reuse)?;
+                run_quiz(&db, &teacher, &session, &p, hours, &cfg.edge_reuse, cli_voice.as_ref())?;
             }
             auto_sync(&db, &cfg);
+        }
+        Some(Cmd::Dedupe { dry_run, auto }) => {
+            let teacher = make_teacher(&cfg)?;
+            run_dedupe(&db, &teacher, dry_run, auto)?;
         }
         Some(Cmd::Inspect { topic }) => inspect_topic(&db, &topic)?,
         Some(Cmd::Stats) => show_stats(&db, &cfg, &p)?,
@@ -1233,7 +1276,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse, &repo, commit_dt)?;
+                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse, &repo, commit_dt, None)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -1289,6 +1332,7 @@ fn run_socratic_loop(
     edge_reuse: &config::EdgeReuse,
     repo: &str,
     node_date: Option<chrono::NaiveDate>,
+    cli_voice: Option<&voice::CliVoice>,
 ) -> Result<(bool, bool)> {
     let topic = &topic_info.topic;
     println!("\n{} New topic — {topic}", "Rocky:".truecolor(6, 182, 212).bold());
@@ -1409,23 +1453,29 @@ fn run_socratic_loop(
         } else {
             " (generated)".dimmed().to_string()
         };
+
+        // Speak question aloud in voice mode (plain text, no ANSI)
+        if let Some(v) = cli_voice {
+            v.speak(&question);
+        }
+
         println!("{}{} {display_q}", format!("Q{questions_asked}.").bold(), source_label);
-        println!(
-            "{}",
-            "   [e] too easy  [s] simpler  [h] harder  [c] clue  [?] explain it  [i] not relevant  or type your answer:".dimmed()
-        );
+
+        let hint_line = if cli_voice.is_some() {
+            "   [e] too easy  [s] simpler  [h] harder  [c] clue  [?] explain it  [i] not relevant  or type / [Enter] to record:"
+        } else {
+            "   [e] too easy  [s] simpler  [h] harder  [c] clue  [?] explain it  [i] not relevant  or type your answer:"
+        };
+        println!("{}", hint_line.dimmed());
         print!("   > ");
         io::stdout().flush()?;
 
-        let mut line = String::new();
-        match io::stdin().read_line(&mut line) {
-            Err(_) | Ok(0) => {
-                println!("\n   Skipped.");
-                break;
-            }
-            Ok(_) => {}
+        let answer: String = read_answer_cli(cli_voice)?;
+        if answer.starts_with('\x00') {
+            // EOF / error sentinel
+            println!("\n   Skipped.");
+            break;
         }
-        let answer = line.trim();
 
         // Skip / quit — queue for later without touching PKG
         if answer.is_empty() {
@@ -1528,11 +1578,11 @@ fn run_socratic_loop(
 
         // Normal answer — evaluate it
         last_question = question.clone();
-        last_answer = answer.to_string();
+        last_answer = answer.clone();
 
         println!("{}", "   Evaluating...".dimmed());
         let result = teacher.evaluate_answer(
-            topic, &question, answer, &topic_info.description,
+            topic, &question, &answer, &topic_info.description,
             canonical_answer.as_deref(),
         )?;
         total_score += result.score;
@@ -1549,7 +1599,7 @@ fn run_socratic_loop(
                 task,
                 node_date, repo, node_date,
             )?;
-            db.add_review(&Db::node_id_static(topic), &question, answer, &result.feedback, result.score).ok();
+            db.add_review(&Db::node_id_static(topic), &question, &answer, &result.feedback, result.score).ok();
             if let Some(msg) = p.correct() { println!("   {msg}"); }
             else { println!("{}", "   Added to your PKG.".truecolor(29, 158, 117)); }
             print_milestone(db, p, topic);
@@ -1598,7 +1648,7 @@ fn run_socratic_loop(
     Ok((true, true))
 }
 
-fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, query: &str, edge_reuse: &config::EdgeReuse) -> Result<()> {
+fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, query: &str, edge_reuse: &config::EdgeReuse, cli_voice: Option<&voice::CliVoice>) -> Result<()> {
     print_header();
     p.print_rocky(false);
 
@@ -1677,7 +1727,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
             description: node.description.clone(),
         };
         let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
-        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
+        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
         if completed {
             session.record_quiz()?;
         }
@@ -1694,7 +1744,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
     Ok(())
 }
 
-fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, hours: u32, edge_reuse: &config::EdgeReuse) -> Result<()> {
+fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, hours: u32, edge_reuse: &config::EdgeReuse, cli_voice: Option<&voice::CliVoice>) -> Result<()> {
     print_header();
     p.print_rocky(false);
 
@@ -1774,7 +1824,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 domain: String::new(),
                 description: description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
             if completed {
                 session.record_quiz()?;
                 // Remove from queue now that it has been properly reviewed
@@ -1821,7 +1871,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             domain: node.domain.clone(),
                 description: node.description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -1840,7 +1890,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             .collect();
 
         for topic_info in new_from_prompts {
-            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse, "", None)?;
+            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -2131,7 +2181,7 @@ fn run_diff(
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse, "", None)?;
+                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse, "", None, None)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -2910,6 +2960,232 @@ fn pick_least_asked(
         .enumerate()
         .min_by_key(|(_, q)| q.asked_count)
         .map(|(i, q)| (i, q))
+}
+
+// ── Voice CLI helper ──────────────────────────────────────────────────────────
+
+/// Read an answer from stdin. In voice mode, an empty line triggers mic recording.
+/// Returns the answer text, or a string starting with `\x00` to signal EOF/skip.
+fn read_answer_cli(cli_voice: Option<&voice::CliVoice>) -> Result<String> {
+    let mut line = String::new();
+    match io::stdin().read_line(&mut line) {
+        Err(_) | Ok(0) => return Ok("\x00eof".into()),
+        Ok(_) => {}
+    }
+    let input = line.trim().to_string();
+
+    // In voice mode, empty Enter → record mic until Enter pressed again
+    if input.is_empty() {
+        if let Some(v) = cli_voice {
+            println!("{}", "   🎤 Recording... press Enter to stop.".truecolor(6, 182, 212));
+            match v.record_and_transcribe() {
+                Ok(transcript) if !transcript.is_empty() => {
+                    println!("{}", format!("   Heard: \"{}\"", transcript).truecolor(167, 139, 250));
+                    println!("{}", "   Press Enter to submit, or type to override:".dimmed());
+                    print!("   > ");
+                    io::stdout().flush()?;
+                    let mut confirm = String::new();
+                    io::stdin().read_line(&mut confirm)?;
+                    let override_text = confirm.trim().to_string();
+                    return Ok(if override_text.is_empty() { transcript } else { override_text });
+                }
+                Ok(_) => {
+                    println!("{}", "   (Nothing heard — treating as skip)".dimmed());
+                    return Ok(String::new());
+                }
+                Err(e) => {
+                    println!("{}", format!("   Recording failed: {e} — type your answer instead:").truecolor(226, 75, 74));
+                    print!("   > ");
+                    io::stdout().flush()?;
+                    let mut fallback = String::new();
+                    io::stdin().read_line(&mut fallback)?;
+                    return Ok(fallback.trim().to_string());
+                }
+            }
+        }
+    }
+
+    Ok(input)
+}
+
+// ── rocky dedupe ──────────────────────────────────────────────────────────────
+
+/// Word-set Jaccard similarity for two topic name strings.
+fn topic_jaccard(a: &str, b: &str) -> f64 {
+    let words = |s: &str| -> std::collections::HashSet<String> {
+        s.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.len() >= 3)
+            .map(|w| w.to_lowercase())
+            .collect()
+    };
+    let sa = words(a);
+    let sb = words(b);
+    if sa.is_empty() || sb.is_empty() {
+        return 0.0;
+    }
+    let intersection = sa.intersection(&sb).count();
+    let union = sa.union(&sb).count();
+    intersection as f64 / union as f64
+}
+
+fn is_candidate_pair(a: &str, b: &str) -> bool {
+    if topic_jaccard(a, b) >= 0.5 {
+        return true;
+    }
+    // Substring: one name fully contained in the other
+    let an = a.to_lowercase();
+    let bn = b.to_lowercase();
+    an.contains(bn.as_str()) || bn.contains(an.as_str())
+}
+
+/// Merge two question banks, deduplicating by question text, capped at 8 items.
+fn merge_question_banks(
+    primary: &[crate::node::QuestionBankItem],
+    secondary: &[crate::node::QuestionBankItem],
+) -> Vec<crate::node::QuestionBankItem> {
+    let mut result = primary.to_vec();
+    let existing: std::collections::HashSet<String> =
+        result.iter().map(|q| q.question.clone()).collect();
+    for item in secondary {
+        if !existing.contains(&item.question) && result.len() < 8 {
+            result.push(item.clone());
+        }
+    }
+    result
+}
+
+fn run_dedupe(db: &Db, teacher: &Teacher, dry_run: bool, auto: bool) -> Result<()> {
+    print_header();
+    if dry_run {
+        println!("  {} Dry-run mode — no changes will be written.\n", "~".truecolor(239, 159, 39));
+    }
+    println!("  {}", "Scanning PKG for duplicate topics...".dimmed());
+
+    let all_nodes: Vec<_> = db.all_nodes()?.into_iter().filter(|n| !n.kind.is_domain()).collect();
+    if all_nodes.len() < 2 {
+        println!("  {} Not enough topics to scan.", "✗".truecolor(226, 75, 74));
+        return Ok(());
+    }
+
+    // Build candidate pairs via word-overlap heuristic
+    let mut candidates: Vec<(usize, usize)> = Vec::new();
+    for i in 0..all_nodes.len() {
+        for j in (i + 1)..all_nodes.len() {
+            if is_candidate_pair(&all_nodes[i].topic, &all_nodes[j].topic) {
+                candidates.push((i, j));
+            }
+        }
+    }
+
+    if candidates.is_empty() {
+        println!("  {} No near-duplicate candidates found.", "✓".truecolor(29, 158, 117));
+        return Ok(());
+    }
+
+    println!(
+        "  {} candidate pair{} found.\n",
+        candidates.len(),
+        if candidates.len() == 1 { "" } else { "s" }
+    );
+
+    let mut merged_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut merge_count = 0usize;
+
+    for (i, j) in &candidates {
+        let a = &all_nodes[*i];
+        let b = &all_nodes[*j];
+
+        if merged_ids.contains(&a.id) || merged_ids.contains(&b.id) {
+            continue;
+        }
+
+        // Optional LLM pre-filter
+        if auto {
+            match teacher.is_duplicate_pair(&a.topic, &a.description, &b.topic, &b.description) {
+                Ok(false) => continue,
+                Err(e) => {
+                    eprintln!("  {} LLM check failed for pair ({}, {}): {e}", "!".truecolor(239, 159, 39), a.topic, b.topic);
+                }
+                Ok(true) => {}
+            }
+        }
+
+        println!(
+            "  ┌─ A: {} {}",
+            a.topic.truecolor(6, 182, 212).bold(),
+            format!("({})", a.domain).dimmed()
+        );
+        println!("  │     {}", a.description.dimmed());
+        println!("  │");
+        println!(
+            "  └─ B: {} {}",
+            b.topic.truecolor(239, 159, 39).bold(),
+            format!("({})", b.domain).dimmed()
+        );
+        println!("        {}", b.description.dimmed());
+        println!();
+        println!("  {}", "[a] keep A, delete B   [b] keep B, delete A   [s] skip   [q] quit".dimmed());
+        print!("  > ");
+        io::stdout().flush()?;
+
+        let mut line = String::new();
+        match io::stdin().read_line(&mut line) {
+            Err(_) | Ok(0) => break,
+            Ok(_) => {}
+        }
+
+        match line.trim().to_lowercase().as_str() {
+            "a" => {
+                if !dry_run {
+                    let merged_bank = merge_question_banks(&a.question_bank, &b.question_bank);
+                    db.merge_nodes(&a.id, &b.id)?;
+                    if !merged_bank.is_empty() {
+                        db.set_question_bank(&a.topic, &merged_bank).ok();
+                    }
+                }
+                println!(
+                    "  {} Kept A ({}), deleted B ({})\n",
+                    "✓".truecolor(29, 158, 117),
+                    a.topic,
+                    b.topic
+                );
+                merged_ids.insert(b.id.clone());
+                merge_count += 1;
+            }
+            "b" => {
+                if !dry_run {
+                    let merged_bank = merge_question_banks(&b.question_bank, &a.question_bank);
+                    db.merge_nodes(&b.id, &a.id)?;
+                    if !merged_bank.is_empty() {
+                        db.set_question_bank(&b.topic, &merged_bank).ok();
+                    }
+                }
+                println!(
+                    "  {} Kept B ({}), deleted A ({})\n",
+                    "✓".truecolor(29, 158, 117),
+                    b.topic,
+                    a.topic
+                );
+                merged_ids.insert(a.id.clone());
+                merge_count += 1;
+            }
+            "q" => {
+                println!("  Quitting.");
+                break;
+            }
+            _ => {
+                println!("  Skipped.\n");
+            }
+        }
+    }
+
+    println!(
+        "  {} topic{} merged{}.",
+        merge_count,
+        if merge_count == 1 { "" } else { "s" },
+        if dry_run { " (dry-run — nothing written)" } else { "" }
+    );
+    Ok(())
 }
 
 /// If the project context is missing or stale, print a one-line nudge.

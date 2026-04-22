@@ -718,6 +718,34 @@ If no strongly related relationships exist return: []"#;
         let cleaned = strip_code_fence(&raw);
         Ok(serde_json::from_str(cleaned).unwrap_or_default())
     }
+
+    /// Ask the LLM whether two topics from the PKG represent the same concept.
+    /// Used by `rocky dedupe` after the word-overlap heuristic narrows the candidate set.
+    pub fn is_duplicate_pair(
+        &self,
+        a: &str,
+        desc_a: &str,
+        b: &str,
+        desc_b: &str,
+    ) -> Result<bool> {
+        let system = r#"You are a knowledge graph deduplication assistant.
+Given two topics from a developer's PKG, decide if they represent the same underlying concept.
+
+Answer ONLY with one of these exact JSON values (no other text):
+{"duplicate": true}
+{"duplicate": false}
+
+Rules:
+- TRUE  if topics are the same concept with different wording (e.g. "exponential backoff" vs "retry with exponential backoff")
+- FALSE if one is a meaningful sub-concept or specialisation of the other
+- FALSE when in doubt — the human will confirm"#;
+
+        let user = format!(
+            "Topic A: {a}\nDescription A: {desc_a}\n\nTopic B: {b}\nDescription B: {desc_b}\n\nSame concept?"
+        );
+        let raw = self.ask(system, &user)?;
+        Ok(raw.contains("\"duplicate\": true") || raw.contains("\"duplicate\":true"))
+    }
 }
 
 fn strip_code_fence(s: &str) -> &str {
