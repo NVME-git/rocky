@@ -471,6 +471,16 @@ impl Db {
         Ok(())
     }
 
+    /// Update a node's topic name and description in-place (after a custom-name merge).
+    pub fn update_topic_name(&self, id: &str, new_topic: &str, new_description: &str) -> Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE nodes SET topic = ?, description = ? WHERE id = ?",
+            params![new_topic, new_description, id],
+        )?;
+        Ok(())
+    }
+
     /// Merge `delete_id` into `keep_id`: copies contexts + reviews, reroutes edges,
     /// then deletes the duplicate node (FK cascade cleans up remaining refs).
     pub fn merge_nodes(&self, keep_id: &str, delete_id: &str) -> Result<()> {

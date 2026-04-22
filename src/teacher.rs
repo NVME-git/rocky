@@ -719,6 +719,33 @@ If no strongly related relationships exist return: []"#;
         Ok(serde_json::from_str(cleaned).unwrap_or_default())
     }
 
+    /// Given two duplicate topics, ask the LLM to pick the cleaner canonical name
+    /// and write a unified description. Returns (name, description).
+    pub fn suggest_merge_name(
+        &self,
+        a: &str,
+        desc_a: &str,
+        b: &str,
+        desc_b: &str,
+    ) -> Result<(String, String)> {
+        let system = r#"You are a knowledge graph curator. Two topics are duplicates and will be merged.
+Choose the clearer, more canonical name and write a single concise description.
+
+Respond ONLY with valid JSON — no other text:
+{"name": "chosen topic name", "description": "1-2 sentence unified description"}"#;
+
+        let user = format!(
+            "Topic A: {a}\nDescription A: {desc_a}\n\nTopic B: {b}\nDescription B: {desc_b}\n\nPick the best canonical name and write a unified description."
+        );
+        let raw = self.ask(system, &user)?;
+        let cleaned = strip_code_fence(&raw);
+        let val: serde_json::Value = serde_json::from_str(cleaned)
+            .map_err(|e| anyhow::anyhow!("suggest_merge_name: bad JSON: {e}\nraw: {raw}"))?;
+        let name = val["name"].as_str().unwrap_or(a).to_string();
+        let desc = val["description"].as_str().unwrap_or(desc_a).to_string();
+        Ok((name, desc))
+    }
+
     /// Ask the LLM whether two topics from the PKG represent the same concept.
     /// Used by `rocky dedupe` after the word-overlap heuristic narrows the candidate set.
     pub fn is_duplicate_pair(

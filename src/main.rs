@@ -3124,7 +3124,10 @@ fn run_dedupe(db: &Db, teacher: &Teacher, dry_run: bool, auto: bool) -> Result<(
         );
         println!("        {}", b.description.dimmed());
         println!();
-        println!("  {}", "[a] keep A, delete B   [b] keep B, delete A   [s] skip   [q] quit".dimmed());
+        println!(
+            "  {}",
+            "[a] merge → A   [b] merge → B   [m] merge → best name (LLM)   [s] skip   [q] quit".dimmed()
+        );
         print!("  > ");
         io::stdout().flush()?;
 
@@ -3144,10 +3147,9 @@ fn run_dedupe(db: &Db, teacher: &Teacher, dry_run: bool, auto: bool) -> Result<(
                     }
                 }
                 println!(
-                    "  {} Kept A ({}), deleted B ({})\n",
+                    "  {} Merged into A: \"{}\"\n",
                     "✓".truecolor(29, 158, 117),
-                    a.topic,
-                    b.topic
+                    a.topic
                 );
                 merged_ids.insert(b.id.clone());
                 merge_count += 1;
@@ -3161,12 +3163,65 @@ fn run_dedupe(db: &Db, teacher: &Teacher, dry_run: bool, auto: bool) -> Result<(
                     }
                 }
                 println!(
-                    "  {} Kept B ({}), deleted A ({})\n",
+                    "  {} Merged into B: \"{}\"\n",
                     "✓".truecolor(29, 158, 117),
-                    b.topic,
-                    a.topic
+                    b.topic
                 );
                 merged_ids.insert(a.id.clone());
+                merge_count += 1;
+            }
+            "m" => {
+                // LLM picks the best canonical name + description; user can override
+                println!("{}", "  Asking LLM for best canonical name...".dimmed());
+                let (suggested_name, suggested_desc) = match teacher.suggest_merge_name(
+                    &a.topic, &a.description, &b.topic, &b.description,
+                ) {
+                    Ok(pair) => pair,
+                    Err(e) => {
+                        println!("  {} LLM failed: {e} — falling back to A.", "!".truecolor(239, 159, 39));
+                        (a.topic.clone(), a.description.clone())
+                    }
+                };
+
+                println!(
+                    "  {} \"{}\"",
+                    "LLM suggests:".truecolor(167, 139, 250).bold(),
+                    suggested_name.truecolor(167, 139, 250)
+                );
+                println!("            {}", suggested_desc.dimmed());
+                println!("{}", "  Press Enter to accept, or type a custom name:".dimmed());
+                print!("  > ");
+                io::stdout().flush()?;
+
+                let mut name_line = String::new();
+                io::stdin().read_line(&mut name_line)?;
+                let final_name = {
+                    let typed = name_line.trim();
+                    if typed.is_empty() { suggested_name.clone() } else { typed.to_string() }
+                };
+                let final_desc = if final_name == suggested_name {
+                    suggested_desc.clone()
+                } else {
+                    // User typed their own name — keep the LLM description unless it mentions
+                    // either original topic name (would be misleading)
+                    suggested_desc.clone()
+                };
+
+                if !dry_run {
+                    let merged_bank = merge_question_banks(&a.question_bank, &b.question_bank);
+                    // Merge B into A, then rename A to the chosen name
+                    db.merge_nodes(&a.id, &b.id)?;
+                    db.update_topic_name(&a.id, &final_name, &final_desc)?;
+                    if !merged_bank.is_empty() {
+                        db.set_question_bank(&final_name, &merged_bank).ok();
+                    }
+                }
+                println!(
+                    "  {} Merged into: \"{}\"\n",
+                    "✓".truecolor(29, 158, 117),
+                    final_name
+                );
+                merged_ids.insert(b.id.clone());
                 merge_count += 1;
             }
             "q" => {
