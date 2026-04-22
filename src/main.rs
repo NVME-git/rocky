@@ -2952,6 +2952,12 @@ fn recent_commit_messages(limit: usize) -> Vec<String> {
 
 // ── rocky session-end ─────────────────────────────────────────────────────────
 
+/// Cap commits processed per Stop-hook invocation so we never block the user's
+/// terminal for minutes while they're trying to exit Claude Code. Anything over
+/// the cap stays queued and gets picked up by the next session-end (or
+/// `rocky session-end` invoked manually).
+const MAX_COMMITS_PER_SESSION_END: usize = 5;
+
 fn run_session_end(
     db: &Db,
     teacher: &Teacher,
@@ -2964,8 +2970,8 @@ fn run_session_end(
         .to_string_lossy()
         .to_string();
 
-    // 1. Drain queued diffs
-    let pending = db.drain_pending_diffs(&project_path)?;
+    // 1. Drain queued diffs (cap to keep terminal-exit latency bounded)
+    let mut pending = db.drain_pending_diffs(&project_path)?;
     if pending.is_empty() {
         if !quiet {
             println!("  {} No pending commits to process.", "·".dimmed());
@@ -2973,9 +2979,22 @@ fn run_session_end(
         return Ok(());
     }
 
+    let deferred: Vec<crate::db::PendingDiff> = if pending.len() > MAX_COMMITS_PER_SESSION_END {
+        pending.split_off(MAX_COMMITS_PER_SESSION_END)
+    } else {
+        Vec::new()
+    };
+
     if !quiet {
         print_header();
         println!("  Processing {} commit(s) from this session...\n", pending.len());
+        if !deferred.is_empty() {
+            println!(
+                "  {} {} additional commit(s) deferred to the next session-end.",
+                "·".dimmed(),
+                deferred.len()
+            );
+        }
     }
 
     // 2. Load project context (may be empty)
@@ -3092,12 +3111,26 @@ fn run_session_end(
         }
     }
 
+    // Re-queue anything we deferred so it isn't lost — the next session-end will
+    // pick it up. Done after the main loop in case any of those calls fail; we
+    // never want to silently drop a commit's diff.
+    for d in &deferred {
+        db.queue_pending_diff(&project_path, &d.commit_sha, &d.commit_msg, &d.diff).ok();
+    }
+
     if !quiet {
         println!();
         println!(
             "  {} {new_topics} new topic(s), {deduped} encounter update(s).",
             "Done.".truecolor(29, 158, 117).bold()
         );
+        if !deferred.is_empty() {
+            println!(
+                "  {} {} commit(s) re-queued for the next session-end.",
+                "·".dimmed(),
+                deferred.len()
+            );
+        }
         println!("  {}", "Run  rocky quiz  to review the new material.".dimmed());
     }
 
