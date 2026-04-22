@@ -796,8 +796,7 @@ function initGraph() {
   const canvas = document.getElementById('pixi-canvas');
   let W = canvas.parentElement.clientWidth;
   let H = canvas.parentElement.clientHeight;
-  // If the parent hasn't been laid out yet (e.g. tab-map was hidden when this
-  // ran), fall back to the viewport minus the sidebar so we never start at 0x0.
+  // Fallback for the case where the parent hasn't been laid out yet.
   if (W < 50 || H < 50) {
     W = Math.max(400, window.innerWidth - 200);
     H = Math.max(300, window.innerHeight);
@@ -841,6 +840,17 @@ function initGraph() {
 
   buildFilters();
   rebuildGraph();
+
+  // Pre-converge the simulation so the user lands on a settled layout
+  // instead of nodes piled at the centre, then force a synchronous PIXI
+  // frame. PIXI's auto-ticker can take a few rAF ticks to draw its first
+  // frame in some browser contexts, which made the graph appear empty
+  // until the user moved the mouse over the canvas.
+  if (sim) {
+    for (let i = 0; i < 200; i++) sim.tick();
+    renderTick(sim.nodes(), allEdges);
+  }
+  if (app && app.renderer) app.renderer.render(app.stage);
 
   if (pendingProjectFilter) {
     applyProjectFilter(pendingProjectFilter);
@@ -1660,7 +1670,19 @@ function applyPlanningStyle() {
 // ══════════════════════════════════════════════════════════
 // BOOT
 // ══════════════════════════════════════════════════════════
-loadData();
+loadData().then(() => {
+  // URL-hash routing: open in a specific tab via #map / #queue / #sessions / #projects
+  const initial = (location.hash || '').replace(/^#/, '').toLowerCase();
+  const known = new Set(['dashboard', 'map', 'queue', 'sessions', 'projects']);
+  if (known.has(initial) && initial !== currentTab) {
+    switchTab(initial);
+  }
+});
+window.addEventListener('hashchange', () => {
+  const t = (location.hash || '').replace(/^#/, '').toLowerCase();
+  const known = new Set(['dashboard', 'map', 'queue', 'sessions', 'projects']);
+  if (known.has(t) && t !== currentTab) switchTab(t);
+});
 </script>
 </body>
 </html>
