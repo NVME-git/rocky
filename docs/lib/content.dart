@@ -202,12 +202,14 @@ Or create a `.env` file in your project directory.
 ```bash
 ollama pull qwen2.5-coder:7b
 ```
-3. Create `~/.rocky/.rocky.toml`:
+3. Create `~/.config/rocky/config.toml`:
 ```toml
 [llm]
 provider = "ollama"
-model = "qwen2.5-coder:7b"
+model = "qwen2.5-coder:7b"   # or "llama3.1:8b" for general-purpose
 ```
+
+> Coming from a Rocky version that wrote `~/.rocky/.rocky.toml`? It auto-migrates on first run.
 
 See the **Configuration** page for model recommendations by GPU VRAM.
 
@@ -432,6 +434,91 @@ Rocky searches your PKG and queued topics for anything matching "redis", shows y
 Rocky uses a memory model similar to Anki (spaced repetition). Topics you know well decay slowly. Topics you barely know decay fast. Over time, Rocky surfaces the right things at the right moments without spamming you.
 
 By default, Rocky runs a maximum of 3 quizzes per day via automatic triggers (git hook, Claude Code hook), with a 2-hour gap between them. Manual `rocky quiz` calls always run — no limits.
+''';
+
+const kRichContext = r'''
+# Rich-Context Pipeline (alpha)
+
+This is the flow that ships in the alpha branch. It replaces the older "extract topics from a single commit at commit time" path with a richer, **session-aware** pipeline:
+
+| Stage | What happens | Where |
+|---|---|---|
+| `rocky explore` | Reads CLAUDE.md / README / docs / recent commits and synthesises a **project context** summary | Run once per project (and after major shape changes) |
+| `rocky post-commit` | Silently appends the latest commit's diff to a queue. **No LLM call.** | Wired to the git post-commit hook |
+| `rocky session-end` | Drains the queue, reads the Claude Code session transcript, and produces **rich nodes with a question bank** (4 implication-grounded Q+A+clue triples per topic). Honours layer-1 dedup so existing topic names get reused instead of fragmented. | Wired to the Claude Code Stop hook |
+
+The motivation: a single commit message like *"feat: rotate refresh tokens"* is too thin a context to generate good questions from. By batching at session end, Rocky has the project summary, the actual diffs, **and** the agent's reasoning trail to ground questions in.
+
+## Try it on a throwaway repo
+
+The repo ships a tutorial / smoke-test script that walks the whole flow without touching your real PKG:
+
+```bash
+$ ollama serve &                     # in another terminal
+$ scripts/tutorial.sh --noninteractive
+```
+
+It creates `~/.rocky-tutorial/`, isolates Rocky to it via the `ROCKY_HOME` env var, makes a fake auth-service repo, and walks every step end-to-end. A typical run finishes with output like:
+
+```
+▶ 6a. Inspect the first topic in detail
+
+  ◆ JWT
+  Encounters: 2
+
+  Description: JSON Web Tokens (JWTs) are used for stateless authentication
+  sessions, ensuring that token revocation can only be performed on refresh.
+
+  Question bank: (4 questions)
+
+  1. What happens if a user tries to access the service using an expired
+     refresh token after rotating it?
+  2. What are the implications of not rotating refresh tokens on every use?
+  3. How does this JWT-based authentication system interact with Redis?
+  4. What would change if Redis were not available for storing refresh tokens?
+```
+
+Notice the question style: every question forces reasoning about **trade-offs and consequences**, never recall of a definition. That's the rich-context pipeline doing its job.
+
+## Inspecting what was generated
+
+```bash
+rocky list --since today              # what was added in the last 24h
+rocky inspect "<topic>"               # full detail: contexts, source commits,
+                                      # canonical Q&A, question bank, asked counts
+rocky explore --show                  # print the stored project context
+```
+
+## Layer-1 deduplication
+
+When the LLM extracts topics, Rocky passes the existing topic list as part of the prompt and asks for **exact** name reuse when a new finding is semantically equivalent. The third commit in the tutorial demonstrates this:
+
+```
+▸ refactor: surface is_rotated helper for refresh token reuse checks
+  ◇ Token Rotation (existing — encounter +1)
+
+Done. 0 new topic(s), 1 encounter update(s).
+```
+
+The existing **Token Rotation** node's `encounter_count` ticks up by 1 instead of a near-duplicate "Refresh Token Reuse Check" being created next to it. Layer-2 (LLM-assisted merge of long-tail near-duplicates) is on the roadmap.
+
+## Backfilling legacy nodes
+
+If you have nodes from before the question bank existed:
+
+```bash
+rocky backfill --fill-question-bank   # generates 4-Q banks for nodes missing them
+rocky backfill --fill-clues           # fills missing canonical clues
+```
+
+## Privacy mode
+
+```toml
+[privacy]
+strict = true
+```
+
+With `privacy.strict = true`, Rocky refuses any non-local LLM provider — diffs and code never leave the machine, even if you accidentally configure Claude. The CLI errors with a clear message instead of sending data.
 ''';
 
 const kCommands = r'''
@@ -961,7 +1048,7 @@ const kConfiguration = r'''
 
 Rocky looks for config files in two places, applied in this order (later overrides earlier):
 
-1. `~/.rocky/.rocky.toml` — your global settings, applies everywhere
+1. `~/.config/rocky/config.toml` — your global settings, applies everywhere
 2. `./.rocky.toml` — project-level override, only applies in that folder
 
 If neither exists, Rocky uses sensible defaults.
@@ -1093,7 +1180,7 @@ Only one of `remind_push_sessions` or `remind_push_days` should be non-zero.
 ```bash
 # 1. Enable sync in your config
 echo '[sync]
-enabled = true' >> ~/.rocky/.rocky.toml
+enabled = true' >> ~/.config/rocky/config.toml
 
 # 2. Initialise the git repo (optionally set a remote at the same time)
 rocky sync --init https://github.com/you/rocky-pkg.git
@@ -1155,11 +1242,13 @@ rocky uninstall claude
 
 | Path | What it is |
 |---|---|
+| `~/.config/rocky/config.toml` | Your global config |
 | `~/.rocky/graph.db` | Your PKG — all topics, recall scores, review history |
-| `~/.rocky/.rocky.toml` | Your global config |
 | `~/.rocky/pkg/` | Markdown notes + `pkg.json` backup |
 | `~/.rocky/pkg/pkg.json` | Full PKG export for backup and cross-machine restore |
+| `~/.rocky/summaries/` | Cached project context summaries (`rocky explore`) |
 | `./.rocky` | Per-project prompt log (only in hooked projects) |
+| `$ROCKY_HOME` | If set, overrides the `~/.rocky/` data dir entirely (useful for testing) |
 
 `graph.db` is never tracked by git. Everything in `pkg/` is tracked when sync is enabled.
 ''';
@@ -1342,7 +1431,7 @@ Rocky writes your entire knowledge graph as Markdown files into a PKG directory.
 
 ### 1. Tell Rocky where your PKG directory is
 
-In `~/.rocky/.rocky.toml`:
+In `~/.config/rocky/config.toml`:
 
 ```toml
 [export]
@@ -1540,7 +1629,7 @@ Rocky can version-control your PKG using git, giving you backup, history, and cr
 ## Quick start
 
 ```bash
-# Enable in config (~/.rocky/.rocky.toml)
+# Enable in config (~/.config/rocky/config.toml)
 [sync]
 enabled = true
 
@@ -1657,7 +1746,7 @@ Rocky tracks how many sessions have passed since your last push and reminds you 
 Rocky: 5 sessions unsynced — consider `rocky sync --push` to back up, question?
 ```
 
-Configure the threshold in `~/.rocky/.rocky.toml`:
+Configure the threshold in `~/.config/rocky/config.toml`:
 
 ```toml
 [sync]

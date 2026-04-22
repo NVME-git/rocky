@@ -78,12 +78,14 @@ Or create a `.env` file in your project directory.
 ```bash
 ollama pull qwen2.5-coder:7b
 ```
-3. Create `~/.rocky/.rocky.toml`:
+3. Create `~/.config/rocky/config.toml`:
 ```toml
 [llm]
 provider = "ollama"
-model = "qwen2.5-coder:7b"
+model = "qwen2.5-coder:7b"   # or "llama3.1:8b" for general-purpose
 ```
+
+> Coming from a Rocky version that wrote `~/.rocky/.rocky.toml`? It will be auto-migrated to `~/.config/rocky/config.toml` on first run.
 
 ### Verify the installation
 
@@ -203,6 +205,30 @@ At any question you can:
 - **Type `i`** to ignore the topic (useful for hallucinated topics)
 - **Type `k`** if you already know this well (Rocky records it without a full Q&A)
 
+### Try the rich-context pipeline end-to-end
+
+Rocky ships with a smoke-test / tutorial script that walks the full flow on a throwaway repo so it never touches your real PKG:
+
+```bash
+ollama serve &                                 # in another terminal
+scripts/tutorial.sh --noninteractive
+```
+
+The script creates `~/.rocky-tutorial/`, isolates Rocky to it via `ROCKY_HOME`, makes a fake project with two real commits, then walks through:
+
+1. `rocky explore` — generates a project context summary from README/CLAUDE.md/docs
+2. `rocky post-commit` — queues the latest commit's diff (no LLM call)
+3. `rocky session-end` — drains the queue and produces nodes with a 4-question bank each
+4. `rocky list --since today` — shows what was added
+5. `rocky inspect <topic>` — full detail including the generated question bank
+6. A third commit demonstrating Layer-1 dedup (existing topic gets `encounter +1` instead of a new duplicate)
+
+When it finishes, you can quiz on the freshly-generated content:
+
+```bash
+ROCKY_HOME=~/.rocky-tutorial/data XDG_CONFIG_HOME=~/.rocky-tutorial/config rocky quiz
+```
+
 ---
 
 ## Commands
@@ -218,8 +244,17 @@ At any question you can:
 | `rocky quiz <topic>` | Search and quiz on specific topics |
 | `rocky ls` | Full topic list with recall, stability, difficulty |
 | `rocky stats` | PKG summary (known / fading / gaps) |
+| `rocky ls --since today` | Topics added today (also `yesterday`, `week`, `month`, `7d`) |
+| `rocky inspect <topic>` | Full node detail: contexts, source commits, question bank |
+| `rocky explore` | Build a project context summary (run once per project) |
+| `rocky explore --show` | Print the stored project context without regenerating |
+| `rocky session-end` | Process queued commits + Claude session into rich nodes (called by Stop hook) |
+| `rocky post-commit` | Silent queue mode for the git post-commit hook |
+| `rocky backfill --fill-question-bank` | Generate question banks for legacy nodes |
+| `rocky backfill --fill-clues` | Generate missing clues for nodes with canonical Q&A |
 | `rocky install` | Install git post-commit hook (default) |
-| `rocky install claude` | Install Claude Code hook |
+| `rocky install claude` | Install Claude Code Stop hook (runs `session-end`) |
+| `rocky install claude all` | Install both Stop hook and prompt logger |
 | `rocky uninstall` | Remove git post-commit hook |
 | `rocky uninstall claude` | Remove Claude Code hook |
 | `rocky export` | Write PKG to Markdown files |
@@ -470,7 +505,10 @@ Every topic is assigned to one of 13 domains:
 
 ## Configuration
 
-Rocky reads `~/.rocky/.rocky.toml` (global) and `./.rocky.toml` (project override).
+Rocky reads `~/.config/rocky/config.toml` (global) and `./.rocky.toml` (project override).
+A legacy `~/.rocky/.rocky.toml` is silently auto-migrated on first run.
+
+Rocky's data directory defaults to `~/.rocky/`. Override with the `ROCKY_HOME` environment variable when you want a fully isolated playground (handy for testing — see `scripts/tutorial.sh`).
 
 ```toml
 [llm]
@@ -521,9 +559,12 @@ ollama_base_url = "http://localhost:11434"
 
 | Your GPU VRAM | Recommended model |
 |---|---|
-| 6 GB | `qwen2.5-coder:7b` |
+| 6 GB+ | `qwen2.5-coder:7b` (best for code-heavy diffs) |
+| 8 GB+ | `llama3.1:8b` (verified end-to-end with the tutorial; slower on CPU) |
 | 4 GB | `qwen2.5:3b` or `phi4-mini` |
 | No GPU / CPU only | `qwen2.5:3b` (slow) |
+
+> Local CPU inference of question banks can take a minute per topic. Rocky uses a 600s timeout and a 3-attempt retry with backoff so transient drops on big generations don't lose data.
 
 ### Session settings
 
@@ -544,6 +585,19 @@ ollama_base_url = "http://localhost:11434"
 |---|---|---|
 | `personality` | `true` | Rocky the alien's voice, ASCII art, and milestone celebrations |
 
+### Privacy settings
+
+| Setting | Default | What it does |
+|---|---|---|
+| `strict` | `false` | When `true`, refuse non-local LLM providers — diffs and code never leave the machine. Forces Ollama. |
+
+```toml
+[privacy]
+strict = true
+```
+
+With `privacy.strict = true`, Rocky errors out clearly if you try to use Claude (or any non-Ollama provider) so you can't accidentally send code to an external API.
+
 ### Sync settings
 
 | Setting | Default | What it does |
@@ -560,11 +614,13 @@ ollama_base_url = "http://localhost:11434"
 
 | Path | What it is |
 |---|---|
+| `~/.config/rocky/config.toml` | Your global config |
 | `~/.rocky/graph.db` | Your PKG — all topics, recall scores, review history |
-| `~/.rocky/.rocky.toml` | Your global config |
 | `~/.rocky/pkg/` | Markdown notes + `pkg.json` backup |
 | `~/.rocky/pkg/pkg.json` | Full PKG export for backup and cross-machine restore |
+| `~/.rocky/summaries/` | Cached project context summaries (`rocky explore`) |
 | `./.rocky` | Per-project prompt log (only in hooked projects) |
+| `$ROCKY_HOME` | If set, overrides the `~/.rocky/` data dir entirely |
 
 `graph.db` is never tracked by git. Everything in `pkg/` is tracked when sync is enabled.
 
@@ -575,7 +631,7 @@ ollama_base_url = "http://localhost:11434"
 Rocky can version-control your PKG and sync it across machines:
 
 ```bash
-# Enable in ~/.rocky/.rocky.toml
+# Enable in ~/.config/rocky/config.toml
 [sync]
 enabled = true
 

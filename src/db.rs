@@ -623,6 +623,24 @@ impl Db {
         Ok(nodes)
     }
 
+    /// Nodes with no question bank yet (legacy nodes from before the bank existed,
+    /// or nodes whose extraction succeeded but whose bank generation failed).
+    pub fn nodes_missing_question_bank(&self) -> Result<Vec<Node>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT * FROM nodes \
+             WHERE (question_bank = '' OR question_bank = '[]') \
+               AND domain != 'taxonomy' \
+             ORDER BY topic"
+        )?;
+        let nodes = stmt
+            .query_map([], |row| Self::row_to_node(&conn, row))?
+            .filter_map(|r| r.ok())
+            .filter(|n| !matches!(n.kind, crate::node::Kind::Domain))
+            .collect();
+        Ok(nodes)
+    }
+
     pub fn undomained_nodes(&self) -> Result<Vec<Node>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare("SELECT * FROM nodes WHERE domain = '' ORDER BY topic")?;

@@ -144,6 +144,9 @@ enum Cmd {
         /// Retroactively generate missing clues for nodes that already have canonical Q&A
         #[arg(long)]
         fill_clues: bool,
+        /// Retroactively generate question_bank for nodes that don't have one yet
+        #[arg(long)]
+        fill_question_bank: bool,
     },
     /// Build a project context summary from CLAUDE.md, README, docs, and recent commits.
     /// Used as grounding context for question generation. Run once when adding Rocky to a project.
@@ -371,8 +374,8 @@ fn run() -> Result<()> {
         Some(Cmd::View) => {
             server::run(&db, &cfg)?;
         }
-        Some(Cmd::Backfill { all_authors, limit, fill_clues }) => {
-            run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit, fill_clues)?;
+        Some(Cmd::Backfill { all_authors, limit, fill_clues, fill_question_bank }) => {
+            run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit, fill_clues, fill_question_bank)?;
         }
         Some(Cmd::Explore { force, quiet, show }) => {
             if show {
@@ -645,8 +648,63 @@ const BACKFILL_COMMIT_DELAY_MS: u64 = 1_000;
 // Pause between edge-generation calls after all nodes are added
 const BACKFILL_EDGE_DELAY_MS: u64 = 800;
 
-fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, limit: Option<usize>, fill_clues: bool) -> Result<()> {
+fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, limit: Option<usize>, fill_clues: bool, fill_question_bank: bool) -> Result<()> {
     use std::process::Command;
+
+    // ── Fill-question-bank mode: retroactively generate question banks ─────────
+    if fill_question_bank {
+        let missing = db.nodes_missing_question_bank()?;
+        if missing.is_empty() {
+            println!("  {} All nodes already have a question bank.", "✓".truecolor(29, 158, 117));
+            return Ok(());
+        }
+
+        // Try to ground bank generation in the project context for the current dir.
+        let project_path = std::env::current_dir()
+            .ok()
+            .and_then(|p| p.canonicalize().ok())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let project_summary = if project_path.is_empty() {
+            String::new()
+        } else {
+            db.get_project_context(&project_path)
+                .ok()
+                .flatten()
+                .map(|c| c.summary)
+                .unwrap_or_default()
+        };
+
+        println!("  Generating question banks for {} node(s)...\n", missing.len());
+        let mut filled = 0usize;
+        for node in &missing {
+            print!("    {} {}... ", "·".dimmed(), node.topic);
+            io::stdout().flush()?;
+            // Synthesise a "diff excerpt" from any creation contexts we have on
+            // record. Better than nothing for legacy nodes; richer for nodes
+            // created via session-end (which stored a real commit message).
+            let diff_excerpt = node.contexts.join("\n");
+            match teacher.generate_question_bank(
+                &node.topic,
+                &node.description,
+                &project_summary,
+                "",            // no transcript context for backfill
+                &diff_excerpt,
+            ) {
+                Ok(bank) if !bank.is_empty() => {
+                    db.set_question_bank(&node.topic, &bank).ok();
+                    filled += 1;
+                    println!("{}", format!("done ({} qs)", bank.len()).truecolor(29, 158, 117));
+                }
+                Ok(_) => println!("{}", "empty".truecolor(239, 159, 39)),
+                Err(e) => println!("{}", format!("failed ({e})").truecolor(231, 130, 132)),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        println!("\n  {} {}/{} question banks generated.",
+            "✓".truecolor(29, 158, 117), filled, missing.len());
+        return Ok(());
+    }
 
     // ── Fill-clues mode: retroactively generate clues for existing canonical nodes ──
     if fill_clues {
