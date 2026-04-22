@@ -2491,6 +2491,29 @@ This is your knowledge graph for one project, one week in. Each edge is a relati
 After backfilling **home-bank**, four more topics appear in the Data domain: CSV parsing, transaction categorisation, Pandas DataFrame operations, and double-entry bookkeeping. They carry commit dates from October 2025 — Rocky knows exactly how long ago you last touched that code.
 ''';
 
+const kArchitecture = r'''
+# Architecture decisions
+
+The major design choices behind Rocky's alpha (and the planned voice integration) are captured as **ADRs** — Architecture Decision Records, one per file, in [`docs/decisions/`](https://github.com/NVME-git/rocky/tree/main/docs/decisions) on the repo. They use the [Michael Nygard format](https://github.com/joelparkerhenderson/architecture-decision-record): context (why this even came up), decision (what we chose), consequences (good and bad).
+
+| # | Title | Status |
+|---|---|---|
+| 0001 | [Rich-context pipeline](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0001-rich-context-pipeline.md) — explore + post-commit queue + session-end | Accepted |
+| 0002 | [Layer-1 dedup + question bank with rotation](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0002-dedup-and-question-bank.md) | Accepted |
+| 0003 | [LLM resilience](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0003-llm-resilience.md) — timeouts, retries, lenient JSON parsing | Accepted |
+| 0004 | [Config layout, ROCKY_HOME, privacy.strict](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0004-config-paths-and-privacy.md) | Accepted |
+| 0005 | [Rocky IQ score + sidebar UI redesign](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0005-rocky-iq-and-ui.md) | Accepted |
+| 0006 | [Voice architecture](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0006-voice-architecture.md) — whisper.cpp default, push-to-talk only | Proposed |
+
+Read these if you want to know **why** Rocky is shaped the way it is — the rest of the docs cover **what** it does.
+
+## What constitutes a new ADR?
+
+Anything where the answer to *"why did we do it this way?"* is non-obvious six months later. New cross-cutting features get an ADR; bug fixes and refactors don't.
+
+When a decision is reversed, the new ADR **supersedes** the old one — never edit the historical file.
+''';
+
 const kRoadmap = r'''
 # Roadmap
 

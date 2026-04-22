@@ -854,6 +854,10 @@ Add content to your knowledge graph while browsing. Capture YouTube videos, arti
 
 ---
 
+## Architecture decisions
+
+The major design choices behind the rich-context pipeline, the Rocky IQ score, the UI redesign, privacy mode, and the planned voice integration are recorded as ADRs in [`docs/decisions/`](docs/decisions/). Each ADR is one Nygard-style file: context, decision, consequences. Read those if you want to know *why* a thing is the way it is — the README documents *what*.
+
 ## License
 
 MIT
