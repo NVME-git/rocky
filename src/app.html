@@ -35,7 +35,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .atrophy-banner .score-value{font-size:30px;font-weight:700;color:#F59E0B;line-height:1}
 .atrophy-banner .score-meta{font-size:11px;color:#6b7594;margin-top:4px}
 .atrophy-banner .score-bar{flex:1;height:10px;border-radius:5px;background:#1e2340;overflow:hidden;position:relative}
-.atrophy-banner .score-fill{height:100%;background:linear-gradient(90deg,#1d9e75,#e6a817 50%,#e74c3c);border-radius:5px;transition:width .5s}
+.atrophy-banner .score-fill{height:100%;background:linear-gradient(90deg,#e74c3c,#e6a817 40%,#1d9e75 80%);border-radius:5px;transition:width .5s}
 .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
 .dash-card{background:#1a1d27;border:1px solid #2d3148;border-radius:10px;padding:16px;min-height:200px}
 .dash-card .dc-h{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#555e7a;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
@@ -124,11 +124,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .card-health-bar{flex:1;height:4px;border-radius:2px;background:#1e2340;overflow:hidden}
 .card-health-fill{height:100%;background:linear-gradient(90deg,#1d9e75,#2cb08a);border-radius:2px}
 
-.viz-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px}
+.viz-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .viz-box{background:#1a1d27;border:1px solid #2d3148;border-radius:8px;padding:12px}
 .viz-box svg{width:100%;display:block}
 #chord-svg{min-height:320px}
-#timeline-svg{min-height:200px}
+#timeline-svg{min-height:380px}
+.viz-full{background:#1a1d27;border:1px solid #2d3148;border-radius:8px;padding:14px;margin-bottom:8px}
+.viz-full svg{width:100%;display:block}
+.viz-full .timeline-modes{display:flex;gap:6px;margin-bottom:8px}
+.viz-full .timeline-mode-btn{font-size:10px;padding:3px 10px;border-radius:10px;border:1px solid #3d4468;background:#1a1d27;color:#8892a4;cursor:pointer;transition:all .12s}
+.viz-full .timeline-mode-btn.active{background:#1e2340;border-color:#7c9ef3;color:#7c9ef3;font-weight:600}
+.viz-full .timeline-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 
 /* ── graph tab ── */
 #tab-map{flex-direction:row;overflow:hidden;position:relative}
@@ -267,9 +273,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div id="tab-dashboard" class="tab-content active">
   <div class="atrophy-banner">
     <div>
-      <div class="label">AI Atrophy Score</div>
+      <div class="label">Rocky IQ</div>
       <div class="score-value" id="atrophy-value">—</div>
-      <div class="score-meta" id="atrophy-meta">recent material that is decaying</div>
+      <div class="score-meta" id="atrophy-meta">how well you are retaining recent material</div>
     </div>
     <div class="score-bar"><div class="score-fill" id="atrophy-fill" style="width:0"></div></div>
   </div>
@@ -303,9 +309,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <svg id="chord-svg"></svg>
     </div>
     <div class="viz-box">
-      <p class="section-title">Knowledge timeline</p>
-      <svg id="timeline-svg"></svg>
+      <p class="section-title">Domain mix</p>
+      <svg id="domain-mix-svg"></svg>
     </div>
+  </div>
+  <div class="viz-full">
+    <div class="timeline-header">
+      <p class="section-title" style="margin-bottom:0">Knowledge timeline</p>
+      <div class="timeline-modes">
+        <button class="timeline-mode-btn active" data-mode="repo" onclick="setTimelineMode('repo')">By project</button>
+        <button class="timeline-mode-btn" data-mode="domain" onclick="setTimelineMode('domain')">By domain</button>
+      </div>
+    </div>
+    <svg id="timeline-svg"></svg>
   </div>
 </div>
 
@@ -473,10 +489,18 @@ function switchTab(name) {
 
   if (name === 'map') {
     if (!graphInitialized) {
-      setTimeout(initGraph, 50);
-    } else if (pendingProjectFilter) {
-      applyProjectFilter(pendingProjectFilter);
-      pendingProjectFilter = null;
+      // requestAnimationFrame x2 ensures the tab is laid out before we read
+      // canvas dimensions — otherwise a tab that started hidden gives 0x0 and
+      // the force simulation centers everything at the corner.
+      requestAnimationFrame(() => requestAnimationFrame(initGraph));
+    } else {
+      // Tab already initialised — but if window resized while we were on
+      // another tab, reflow PIXI to match the current parent dimensions.
+      resizeGraph();
+      if (pendingProjectFilter) {
+        applyProjectFilter(pendingProjectFilter);
+        pendingProjectFilter = null;
+      }
     }
   } else if (name === 'queue') {
     renderQueue();
@@ -531,6 +555,7 @@ function renderProjects() {
     grid.appendChild(card);
   }
   renderChord();
+  renderDomainMix();
   renderTimeline();
 }
 
@@ -599,44 +624,142 @@ function renderChord() {
     .on('mousemove',moveTip).on('mouseleave',hideTip);
 }
 
-// ── timeline
+// ── timeline (rows = projects OR domains, controlled by timelineMode)
+let timelineMode = 'repo';   // 'repo' | 'domain'
+function setTimelineMode(mode) {
+  timelineMode = mode;
+  document.querySelectorAll('.timeline-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  renderTimeline();
+}
+
 function renderTimeline() {
-  if (!DATA || !DATA.timeline || DATA.timeline.length===0) return;
+  if (!DATA || !DATA.timeline || DATA.timeline.length === 0) return;
   const svg = document.getElementById('timeline-svg');
-  const W = svg.parentElement.clientWidth - 24;
-  const H = 200;
+  const W = Math.max(400, svg.parentElement.clientWidth - 24);
+  const groupKey = timelineMode === 'domain' ? 'domain' : 'repo';
+
+  const parseDate = d3.timeParse('%Y-%m-%d');
+  const points = DATA.timeline.map(d => ({ ...d, date: parseDate(d.date) || new Date(d.date) }))
+    .filter(d => d.date && !isNaN(d.date));
+  if (points.length === 0) return;
+
+  const groups = [...new Set(points.map(d => d[groupKey] || 'Other'))].sort();
+  const rowH = 24;
+  const H = Math.max(220, 30 + groups.length * rowH);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.innerHTML = '';
 
-  const repos = [...new Set(DATA.timeline.map(d=>d.repo))];
-  const colors = Object.fromEntries(repos.map((r,i)=>[r,d3.schemeTableau10[i%10]]));
+  const colors = groupKey === 'domain'
+    ? Object.fromEntries(groups.map(g => [g, DOMAIN_COLORS[g] || '#607d8b']))
+    : Object.fromEntries(groups.map((g, i) => [g, d3.schemeTableau10[i % 10]]));
 
-  const parseDate = d3.timeParse('%Y-%m-%d');
-  const points = DATA.timeline.map(d=>({...d, date: parseDate(d.date)||new Date(d.date)}))
-    .filter(d=>d.date && !isNaN(d.date));
-  if (points.length===0) return;
+  const margin = { top: 10, right: 10, bottom: 30, left: 110 };
+  const iW = W - margin.left - margin.right, iH = H - margin.top - margin.bottom;
 
-  const margin={top:10,right:10,bottom:30,left:30};
-  const iW=W-margin.left-margin.right, iH=H-margin.top-margin.bottom;
-
-  const x = d3.scaleTime().domain(d3.extent(points,d=>d.date)).range([0,iW]);
-  const y = d3.scaleBand().domain(repos).range([0,iH]).padding(.4);
+  const x = d3.scaleTime().domain(d3.extent(points, d => d.date)).range([0, iW]);
+  const y = d3.scaleBand().domain(groups).range([0, iH]).padding(.35);
 
   const d3svg = d3.select(svg);
-  const g = d3svg.append('g').attr('transform',`translate(${margin.left},${margin.top})`);
+  const g = d3svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
 
-  // axes
-  g.append('g').attr('transform',`translate(0,${iH})`).call(d3.axisBottom(x).ticks(5).tickSize(-iH))
-    .call(g=>{g.select('.domain').attr('stroke','#2d3148');g.selectAll('.tick line').attr('stroke','#1e2340');g.selectAll('text').attr('fill','#555e7a').attr('font-size','9px');});
+  // X axis
+  g.append('g').attr('transform', `translate(0,${iH})`)
+    .call(d3.axisBottom(x).ticks(6).tickSize(-iH))
+    .call(gg => {
+      gg.select('.domain').attr('stroke', '#2d3148');
+      gg.selectAll('.tick line').attr('stroke', '#1e2340');
+      gg.selectAll('text').attr('fill', '#555e7a').attr('font-size', '10px');
+    });
+
+  // Y axis (group labels)
   g.append('g').call(d3.axisLeft(y).tickSize(0))
-    .call(g=>{g.select('.domain').remove();g.selectAll('text').attr('fill','#8892a4').attr('font-size','9px');});
+    .call(gg => {
+      gg.select('.domain').remove();
+      gg.selectAll('text').attr('fill', '#8892a4').attr('font-size', '11px')
+        .attr('x', -8).attr('text-anchor', 'end');
+    });
 
-  const tooltip = document.getElementById('tooltip');
-  g.selectAll('circle').data(points).enter().append('circle')
-    .attr('cx',d=>x(d.date)).attr('cy',d=>y(d.repo)+y.bandwidth()/2)
-    .attr('r',3).attr('fill',d=>colors[d.repo]||'#607d8b').attr('opacity',.7)
-    .on('mouseover',(ev,d)=>showTip(ev,`${d.topic}\n${d.repo}\n${d.date.toDateString()}`))
-    .on('mousemove',moveTip).on('mouseleave',hideTip);
+  // Row backgrounds for readability
+  g.selectAll('rect.row').data(groups).enter().append('rect').attr('class', 'row')
+    .attr('x', 0).attr('y', d => y(d))
+    .attr('width', iW).attr('height', y.bandwidth())
+    .attr('fill', '#0f1629').attr('rx', 4);
+
+  // Coloured stripe per group
+  g.selectAll('rect.stripe').data(groups).enter().append('rect').attr('class', 'stripe')
+    .attr('x', -4).attr('y', d => y(d))
+    .attr('width', 3).attr('height', y.bandwidth())
+    .attr('fill', d => colors[d]).attr('rx', 1.5);
+
+  // Topic dots
+  g.selectAll('circle.topic').data(points).enter().append('circle').attr('class', 'topic')
+    .attr('cx', d => x(d.date))
+    .attr('cy', d => y(d[groupKey] || 'Other') + y.bandwidth() / 2)
+    .attr('r', 4)
+    .attr('fill', d => colors[d[groupKey] || 'Other'] || '#607d8b')
+    .attr('opacity', .8)
+    .on('mouseover', (ev, d) => showTip(ev, `${d.topic}\n${d.repo} · ${d.domain}\n${d.date.toDateString()}`))
+    .on('mousemove', moveTip).on('mouseleave', hideTip);
+}
+
+// ── domain mix donut (NEW for Projects tab — replaces the second chord box)
+function renderDomainMix() {
+  if (!DATA) return;
+  const svg = document.getElementById('domain-mix-svg');
+  if (!svg) return;
+  const W = Math.max(200, svg.parentElement.clientWidth - 24);
+  const H = 320;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = '';
+
+  const tally = {};
+  for (const n of DATA.nodes) {
+    if (n.kind === 'domain' || n.kind === 'user') continue;
+    const d = n.domain || 'Other';
+    tally[d] = (tally[d] || 0) + 1;
+  }
+  const data = Object.entries(tally).map(([d, c]) => ({ domain: d, count: c }))
+    .sort((a, b) => b.count - a.count);
+  if (data.length === 0) return;
+
+  const total = data.reduce((s, x) => s + x.count, 0);
+  const cx = W / 2, cy = H / 2;
+  const r = Math.min(cx, cy) - 30;
+  const ir = r - 28;
+
+  const arc = d3.arc().innerRadius(ir).outerRadius(r);
+  const pie = d3.pie().value(d => d.count).sort(null);
+
+  const d3svg = d3.select(svg);
+  const g = d3svg.append('g').attr('transform', `translate(${cx},${cy})`);
+
+  g.selectAll('path').data(pie(data)).enter().append('path')
+    .attr('d', arc)
+    .attr('fill', d => DOMAIN_COLORS[d.data.domain] || '#607d8b')
+    .attr('stroke', '#0f1117').attr('stroke-width', 1.5)
+    .attr('opacity', .85)
+    .on('mouseover', (ev, d) => showTip(ev, `${d.data.domain}: ${d.data.count} (${Math.round(d.data.count/total*100)}%)`))
+    .on('mousemove', moveTip).on('mouseleave', hideTip);
+
+  // Centre label: total topics
+  g.append('text').attr('text-anchor', 'middle').attr('dy', '-0.2em')
+    .attr('fill', '#c4cde0').attr('font-size', '24px').attr('font-weight', '700')
+    .text(total);
+  g.append('text').attr('text-anchor', 'middle').attr('dy', '1.2em')
+    .attr('fill', '#555e7a').attr('font-size', '10px')
+    .attr('text-transform', 'uppercase').text('topics');
+
+  // Compact legend below
+  const legend = d3svg.append('g').attr('transform', `translate(10, ${H - 14})`);
+  let xPos = 0;
+  data.slice(0, 6).forEach(d => {
+    const txt = `${d.domain} ${d.count}`;
+    legend.append('rect').attr('x', xPos).attr('y', -8).attr('width', 8).attr('height', 8)
+      .attr('fill', DOMAIN_COLORS[d.domain] || '#607d8b').attr('rx', 2);
+    const label = legend.append('text').attr('x', xPos + 12).attr('y', 0)
+      .attr('fill', '#8892a4').attr('font-size', '10px').text(txt);
+    xPos += 12 + label.node().getBBox().width + 14;
+  });
 }
 
 // tooltip helpers
@@ -669,11 +792,17 @@ let guardActive=false, expandedProject=null;
 
 function initGraph() {
   if (!DATA || graphInitialized) return;
-  graphInitialized = true;
 
   const canvas = document.getElementById('pixi-canvas');
-  const W = canvas.parentElement.clientWidth;
-  const H = canvas.parentElement.clientHeight;
+  let W = canvas.parentElement.clientWidth;
+  let H = canvas.parentElement.clientHeight;
+  // If the parent hasn't been laid out yet (e.g. tab-map was hidden when this
+  // ran), fall back to the viewport minus the sidebar so we never start at 0x0.
+  if (W < 50 || H < 50) {
+    W = Math.max(400, window.innerWidth - 200);
+    H = Math.max(300, window.innerHeight);
+  }
+  graphInitialized = true;
   canvas.width = W; canvas.height = H;
 
   app = new PIXI.Application({
@@ -716,6 +845,25 @@ function initGraph() {
   if (pendingProjectFilter) {
     applyProjectFilter(pendingProjectFilter);
     pendingProjectFilter = null;
+  }
+
+  // Keep canvas + simulation centre in sync if the user resizes the window
+  // while the map is mounted.
+  window.addEventListener('resize', () => {
+    if (currentTab === 'map') resizeGraph();
+  });
+}
+
+function resizeGraph() {
+  if (!app || !graphInitialized) return;
+  const canvas = document.getElementById('pixi-canvas');
+  const W = Math.max(50, canvas.parentElement.clientWidth);
+  const H = Math.max(50, canvas.parentElement.clientHeight);
+  if (W === app.screen.width && H === app.screen.height) return;
+  app.renderer.resize(W, H);
+  if (sim) {
+    sim.force('center', d3.forceCenter(W / 2, H / 2));
+    sim.alpha(0.4).restart();
   }
 }
 
@@ -1261,14 +1409,16 @@ document.getElementById('quiz-overlay').addEventListener('click', e => {
 function renderDashboard() {
   if (!DATA) return;
 
-  // Atrophy score
-  const a = Number(DATA.atrophyScore || 0);
-  const pct = Math.round(a * 100);
-  document.getElementById('atrophy-value').textContent = pct + '%';
-  document.getElementById('atrophy-fill').style.width = Math.max(2, pct) + '%';
-  const meta = pct < 20 ? 'fresh — recent topics are mostly retained'
-             : pct < 50 ? 'some recent material is fading — schedule a review'
-             : 'recent material is decaying fast — quiz now to recover';
+  // Rocky IQ — inverse of atrophy. 100% = recent material fully retained;
+  // 0% = recent material decayed. Easier to root for "go up" than "go down".
+  const atrophy = Number(DATA.atrophyScore || 0);
+  const iq = Math.max(0, Math.min(100, Math.round((1 - atrophy) * 100)));
+  document.getElementById('atrophy-value').textContent = iq + '%';
+  document.getElementById('atrophy-fill').style.width = Math.max(2, iq) + '%';
+  const meta = iq >= 80 ? 'sharp — recent material is being retained'
+             : iq >= 50 ? 'holding — some recent topics are starting to fade'
+             : iq >= 30 ? 'slipping — schedule a review session soon'
+             : 'fading — recent material is decaying fast, quiz now to recover';
   document.getElementById('atrophy-meta').textContent = meta;
 
   // Due for review
