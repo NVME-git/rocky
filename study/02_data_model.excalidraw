@@ -1,7 +1,7 @@
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "https://marketplace.visualstudio.com/items?itemName=pomdtr.excalidraw-editor",
+  "source": "https://excalidraw.com",
   "elements": [
     {
       "id": "1swjckjl",
@@ -23,22 +23,17 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
-      "text": "02 · Data Model — Node struct + DB schema",
+      "text": "02 \u00b7 Data Model \u2014 Node struct + DB schema",
       "fontSize": 18,
       "fontFamily": 3,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "02 · Data Model — Node struct + DB schema",
-      "lineHeight": 1.4,
-      "version": 2,
-      "versionNonce": 2001238274,
-      "index": "a0",
-      "seed": 1,
-      "autoResize": true
+      "originalText": "02 \u00b7 Data Model \u2014 Node struct + DB schema",
+      "lineHeight": 1.4
     },
     {
       "id": "teiyzcot",
@@ -60,22 +55,17 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
-      "text": "src/node.rs · src/db.rs  (struct Node, SCHEMA const, row_to_node)",
+      "text": "src/node.rs \u00b7 src/db.rs  (struct Node, SCHEMA const, row_to_node)",
       "fontSize": 11,
       "fontFamily": 3,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "src/node.rs · src/db.rs  (struct Node, SCHEMA const, row_to_node)",
-      "lineHeight": 1.4,
-      "version": 2,
-      "versionNonce": 1515786270,
-      "index": "a1",
-      "seed": 1,
-      "autoResize": true
+      "originalText": "src/node.rs \u00b7 src/db.rs  (struct Node, SCHEMA const, row_to_node)",
+      "lineHeight": 1.4
     },
     {
       "id": "ohp6vz41",
@@ -102,13 +92,9 @@
           "id": "nam148p0"
         }
       ],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
-      "locked": false,
-      "version": 2,
-      "versionNonce": 1603668162,
-      "index": "a2",
-      "seed": 1
+      "locked": false
     },
     {
       "id": "nam148p0",
@@ -130,22 +116,17 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Node  (src/node.rs)\n─────────────────────────────\nIDENTITY\n  id: String          sha256(topic.lower())[..16]\n  topic: String        human-readable name\n  kind: Kind           concept | pattern | implementation | domain\n  domain: String       one of 13 taxonomy domains\n\nFSRS MEMORY MODEL\n  stability: f64       how embedded — higher = decays slower\n  difficulty: f64      how hard historically (0.0–1.0)\n  last_reviewed: Date  last time user was quizzed\n  last_encountered: Date  last time topic appeared in any context\n  review_count: i64    total quiz sessions for this topic\n\nCONTENT\n  description: String  1-2 sentence summary\n  contexts: Vec<String>  task/commit messages this appeared in\n  canonical_question: String  pre-generated at backfill (or empty)\n  canonical_answer: String    ideal answer for evaluator reference\n  canonical_clue: String      short hint shown on [c]\n\nORIGIN\n  repo: String         parsed from git remote URL\n  created_at: Date     commit date (backfill) or today (live)\n\nCOMPUTED (not stored)\n  retrievability: f64  R = (1 + t / 9s)^-1  →  0.0..1.0\n  classification: str  known | fading | gap",
+      "text": "Node  (src/node.rs)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nIDENTITY\n  id: String          sha256(topic.lower())[..16]\n  topic: String        human-readable name\n  kind: Kind           concept | pattern | implementation | domain\n  domain: String       one of 13 taxonomy domains\n\nFSRS MEMORY MODEL\n  stability: f64       how embedded \u2014 higher = decays slower\n  difficulty: f64      how hard historically (0.0\u20131.0)\n  last_reviewed: Date  last time user was quizzed\n  last_encountered: Date  last time topic appeared in any context\n  review_count: i64    total quiz sessions for this topic\n\nCONTENT\n  description: String  1-2 sentence summary\n  contexts: Vec<String>  task/commit messages this appeared in\n  canonical_question: String  pre-generated at backfill (or empty)\n  canonical_answer: String    ideal answer for evaluator reference\n  canonical_clue: String      short hint shown on [c]\n\nORIGIN\n  repo: String         parsed from git remote URL\n  created_at: Date     commit date (backfill) or today (live)\n\nCOMPUTED (not stored)\n  retrievability: f64  R = (1 + t / 9s)^-1  \u2192  0.0..1.0\n  classification: str  known | fading | gap",
       "fontSize": 12,
       "fontFamily": 3,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "ohp6vz41",
-      "originalText": "Node  (src/node.rs)\n─────────────────────────────\nIDENTITY\n  id: String          sha256(topic.lower())[..16]\n  topic: String        human-readable name\n  kind: Kind           concept | pattern | implementation | domain\n  domain: String       one of 13 taxonomy domains\n\nFSRS MEMORY MODEL\n  stability: f64       how embedded — higher = decays slower\n  difficulty: f64      how hard historically (0.0–1.0)\n  last_reviewed: Date  last time user was quizzed\n  last_encountered: Date  last time topic appeared in any context\n  review_count: i64    total quiz sessions for this topic\n\nCONTENT\n  description: String  1-2 sentence summary\n  contexts: Vec<String>  task/commit messages this appeared in\n  canonical_question: String  pre-generated at backfill (or empty)\n  canonical_answer: String    ideal answer for evaluator reference\n  canonical_clue: String      short hint shown on [c]\n\nORIGIN\n  repo: String         parsed from git remote URL\n  created_at: Date     commit date (backfill) or today (live)\n\nCOMPUTED (not stored)\n  retrievability: f64  R = (1 + t / 9s)^-1  →  0.0..1.0\n  classification: str  known | fading | gap",
-      "lineHeight": 1.4,
-      "version": 2,
-      "versionNonce": 322788446,
-      "index": "a3",
-      "seed": 1,
-      "autoResize": true
+      "originalText": "Node  (src/node.rs)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nIDENTITY\n  id: String          sha256(topic.lower())[..16]\n  topic: String        human-readable name\n  kind: Kind           concept | pattern | implementation | domain\n  domain: String       one of 13 taxonomy domains\n\nFSRS MEMORY MODEL\n  stability: f64       how embedded \u2014 higher = decays slower\n  difficulty: f64      how hard historically (0.0\u20131.0)\n  last_reviewed: Date  last time user was quizzed\n  last_encountered: Date  last time topic appeared in any context\n  review_count: i64    total quiz sessions for this topic\n\nCONTENT\n  description: String  1-2 sentence summary\n  contexts: Vec<String>  task/commit messages this appeared in\n  canonical_question: String  pre-generated at backfill (or empty)\n  canonical_answer: String    ideal answer for evaluator reference\n  canonical_clue: String      short hint shown on [c]\n\nORIGIN\n  repo: String         parsed from git remote URL\n  created_at: Date     commit date (backfill) or today (live)\n\nCOMPUTED (not stored)\n  retrievability: f64  R = (1 + t / 9s)^-1  \u2192  0.0..1.0\n  classification: str  known | fading | gap",
+      "lineHeight": 1.4
     },
     {
       "id": "tvhhpbmy",
@@ -172,13 +153,9 @@
           "id": "ofqewaou"
         }
       ],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
-      "locked": false,
-      "version": 2,
-      "versionNonce": 1327210626,
-      "index": "a4",
-      "seed": 1
+      "locked": false
     },
     {
       "id": "ofqewaou",
@@ -200,22 +177,17 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
-      "text": "contexts  (DB table)\n──────────────────────\nnode_id TEXT  FK → nodes.id\ncontext TEXT  task or commit msg\nadded_at TEXT date",
+      "text": "contexts  (DB table)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nnode_id TEXT  FK \u2192 nodes.id\ncontext TEXT  task or commit msg\nadded_at TEXT date",
       "fontSize": 12,
       "fontFamily": 3,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "tvhhpbmy",
-      "originalText": "contexts  (DB table)\n──────────────────────\nnode_id TEXT  FK → nodes.id\ncontext TEXT  task or commit msg\nadded_at TEXT date",
-      "lineHeight": 1.4,
-      "version": 2,
-      "versionNonce": 2051940510,
-      "index": "a5",
-      "seed": 1,
-      "autoResize": true
+      "originalText": "contexts  (DB table)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nnode_id TEXT  FK \u2192 nodes.id\ncontext TEXT  task or commit msg\nadded_at TEXT date",
+      "lineHeight": 1.4
     },
     {
       "id": "axeqbnhl",
@@ -239,7 +211,7 @@
       },
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
       "points": [
@@ -255,26 +227,22 @@
       "lastCommittedPoint": null,
       "startBinding": {
         "elementId": "ohp6vz41",
-        "focus": 0,
+        "focus": 0.0,
         "gap": 6
       },
       "endBinding": {
         "elementId": "tvhhpbmy",
-        "focus": 0,
+        "focus": 0.0,
         "gap": 6
       },
       "startArrowhead": null,
-      "endArrowhead": "arrow",
-      "version": 2,
-      "versionNonce": 832061506,
-      "index": "a6",
-      "seed": 1
+      "endArrowhead": "arrow"
     },
     {
       "id": "1n13jcat",
       "type": "text",
-      "x": 609,
-      "y": 155,
+      "x": 609.0,
+      "y": 155.0,
       "width": 60,
       "height": 19,
       "angle": 0,
@@ -290,7 +258,7 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
       "text": "1:many",
@@ -300,12 +268,7 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "1:many",
-      "lineHeight": 1.4,
-      "version": 2,
-      "versionNonce": 54287582,
-      "index": "a7",
-      "seed": 1,
-      "autoResize": true
+      "lineHeight": 1.4
     },
     {
       "id": "9mx2x18h",
@@ -332,13 +295,9 @@
           "id": "afeyuhz1"
         }
       ],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
-      "locked": false,
-      "version": 2,
-      "versionNonce": 585820162,
-      "index": "a8",
-      "seed": 1
+      "locked": false
     },
     {
       "id": "afeyuhz1",
@@ -360,22 +319,17 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
-      "text": "reviews  (DB table)\n──────────────────────────────────\nnode_id TEXT    FK → nodes.id\nquestion TEXT   question asked\nanswer TEXT     user's answer\nfeedback TEXT   Rocky's feedback\nscore REAL      0.0–1.0\nreviewed_at TEXT date\n\n⚠ struggle score not yet stored here\n  (planned: follow_up_count, clue_used,\n   explain_used, simpler_used)",
+      "text": "reviews  (DB table)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nnode_id TEXT    FK \u2192 nodes.id\nquestion TEXT   question asked\nanswer TEXT     user's answer\nfeedback TEXT   Rocky's feedback\nscore REAL      0.0\u20131.0\nreviewed_at TEXT date\n\n\u26a0 struggle score not yet stored here\n  (planned: follow_up_count, clue_used,\n   explain_used, simpler_used)",
       "fontSize": 12,
       "fontFamily": 3,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "9mx2x18h",
-      "originalText": "reviews  (DB table)\n──────────────────────────────────\nnode_id TEXT    FK → nodes.id\nquestion TEXT   question asked\nanswer TEXT     user's answer\nfeedback TEXT   Rocky's feedback\nscore REAL      0.0–1.0\nreviewed_at TEXT date\n\n⚠ struggle score not yet stored here\n  (planned: follow_up_count, clue_used,\n   explain_used, simpler_used)",
-      "lineHeight": 1.4,
-      "version": 2,
-      "versionNonce": 60363038,
-      "index": "a9",
-      "seed": 1,
-      "autoResize": true
+      "originalText": "reviews  (DB table)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nnode_id TEXT    FK \u2192 nodes.id\nquestion TEXT   question asked\nanswer TEXT     user's answer\nfeedback TEXT   Rocky's feedback\nscore REAL      0.0\u20131.0\nreviewed_at TEXT date\n\n\u26a0 struggle score not yet stored here\n  (planned: follow_up_count, clue_used,\n   explain_used, simpler_used)",
+      "lineHeight": 1.4
     },
     {
       "id": "gv0e38da",
@@ -399,7 +353,7 @@
       },
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
       "points": [
@@ -415,26 +369,22 @@
       "lastCommittedPoint": null,
       "startBinding": {
         "elementId": "ohp6vz41",
-        "focus": 0,
+        "focus": 0.0,
         "gap": 6
       },
       "endBinding": {
         "elementId": "9mx2x18h",
-        "focus": 0,
+        "focus": 0.0,
         "gap": 6
       },
       "startArrowhead": null,
-      "endArrowhead": "arrow",
-      "version": 2,
-      "versionNonce": 1796380610,
-      "index": "aA",
-      "seed": 1
+      "endArrowhead": "arrow"
     },
     {
       "id": "ly8ozcyw",
       "type": "text",
-      "x": 609,
-      "y": 295,
+      "x": 609.0,
+      "y": 295.0,
       "width": 60,
       "height": 19,
       "angle": 0,
@@ -450,7 +400,7 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
       "text": "1:many",
@@ -460,12 +410,7 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "1:many",
-      "lineHeight": 1.4,
-      "version": 2,
-      "versionNonce": 1993686366,
-      "index": "aB",
-      "seed": 1,
-      "autoResize": true
+      "lineHeight": 1.4
     },
     {
       "id": "d14ve92m",
@@ -473,7 +418,7 @@
       "x": 660,
       "y": 450,
       "width": 340,
-      "height": 229,
+      "height": 200,
       "angle": 0,
       "strokeColor": "#334155",
       "backgroundColor": "#0f172a",
@@ -492,21 +437,17 @@
           "id": "pnsm43d8"
         }
       ],
-      "updated": 1775865299818,
+      "updated": 1,
       "link": null,
-      "locked": false,
-      "version": 3,
-      "versionNonce": 954740034,
-      "index": "aC",
-      "seed": 1
+      "locked": false
     },
     {
       "id": "pnsm43d8",
       "type": "text",
-      "x": 668.28125,
-      "y": 455.3,
-      "width": 323.4375,
-      "height": 218.39999999999998,
+      "x": 668,
+      "y": 458,
+      "width": 324,
+      "height": 184,
       "angle": 0,
       "strokeColor": "#94a3b8",
       "backgroundColor": "transparent",
@@ -520,22 +461,17 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865300608,
+      "updated": 1,
       "link": null,
       "locked": false,
-      "text": "edges  (DB table)\n──────────────────────────────────────\nid TEXT            unique edge id\nsource_id TEXT     FK → nodes.id\ntarget_id TEXT     FK → nodes.id\nkind TEXT          implies | depends_on\n                   conflicts_with | part_of\ndescription TEXT   why Rocky created this edge\nstrength REAL      0.0–1.0\ncreated_at TEXT\nlast_fired TEXT    last time edge triggered a\nquestion\nlast_fired_session INT  session index",
+      "text": "edges  (DB table)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nid TEXT            unique edge id\nsource_id TEXT     FK \u2192 nodes.id\ntarget_id TEXT     FK \u2192 nodes.id\nkind TEXT          implies | depends_on\n                   conflicts_with | part_of\ndescription TEXT   why Rocky created this edge\nstrength REAL      0.0\u20131.0\ncreated_at TEXT\nlast_fired TEXT    last time edge triggered a question\nlast_fired_session INT  session index",
       "fontSize": 12,
       "fontFamily": 3,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "d14ve92m",
-      "originalText": "edges  (DB table)\n──────────────────────────────────────\nid TEXT            unique edge id\nsource_id TEXT     FK → nodes.id\ntarget_id TEXT     FK → nodes.id\nkind TEXT          implies | depends_on\n                   conflicts_with | part_of\ndescription TEXT   why Rocky created this edge\nstrength REAL      0.0–1.0\ncreated_at TEXT\nlast_fired TEXT    last time edge triggered a question\nlast_fired_session INT  session index",
-      "lineHeight": 1.4,
-      "version": 4,
-      "versionNonce": 891687966,
-      "index": "aD",
-      "seed": 1,
-      "autoResize": true
+      "originalText": "edges  (DB table)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nid TEXT            unique edge id\nsource_id TEXT     FK \u2192 nodes.id\ntarget_id TEXT     FK \u2192 nodes.id\nkind TEXT          implies | depends_on\n                   conflicts_with | part_of\ndescription TEXT   why Rocky created this edge\nstrength REAL      0.0\u20131.0\ncreated_at TEXT\nlast_fired TEXT    last time edge triggered a question\nlast_fired_session INT  session index",
+      "lineHeight": 1.4
     },
     {
       "id": "w3zp08j3",
@@ -559,7 +495,7 @@
       },
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
       "points": [
@@ -575,26 +511,22 @@
       "lastCommittedPoint": null,
       "startBinding": {
         "elementId": "ohp6vz41",
-        "focus": 0,
+        "focus": 0.0,
         "gap": 6
       },
       "endBinding": {
         "elementId": "d14ve92m",
-        "focus": 0,
+        "focus": 0.0,
         "gap": 6
       },
       "startArrowhead": null,
-      "endArrowhead": "arrow",
-      "version": 2,
-      "versionNonce": 1685917506,
-      "index": "aE",
-      "seed": 1
+      "endArrowhead": "arrow"
     },
     {
       "id": "trp0j43d",
       "type": "text",
       "x": 598.5,
-      "y": 450,
+      "y": 450.0,
       "width": 63,
       "height": 19,
       "angle": 0,
@@ -610,7 +542,7 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865183219,
+      "updated": 1,
       "link": null,
       "locked": false,
       "text": "many:many",
@@ -620,18 +552,13 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "many:many",
-      "lineHeight": 1.4,
-      "version": 2,
-      "versionNonce": 2031091166,
-      "index": "aF",
-      "seed": 1,
-      "autoResize": true
+      "lineHeight": 1.4
     },
     {
       "id": "5iqvnb4g",
       "type": "rectangle",
-      "x": -86.03622436523438,
-      "y": 628.454833984375,
+      "x": 40,
+      "y": 640,
       "width": 260,
       "height": 140,
       "angle": 0,
@@ -652,19 +579,15 @@
           "id": "h2m5zja8"
         }
       ],
-      "updated": 1775865308275,
+      "updated": 1,
       "link": null,
-      "locked": false,
-      "version": 35,
-      "versionNonce": 890715266,
-      "index": "aG",
-      "seed": 1
+      "locked": false
     },
     {
       "id": "h2m5zja8",
       "type": "text",
-      "x": -78.03622436523438,
-      "y": 636.454833984375,
+      "x": 48,
+      "y": 648,
       "width": 244,
       "height": 124,
       "angle": 0,
@@ -680,28 +603,23 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865308275,
+      "updated": 1,
       "link": null,
       "locked": false,
-      "text": "session  (DB table — key/value)\n────────────────────────────────\nkey TEXT    PK\nvalue TEXT\n\nKeys used:\n  quiz_count_today\n  last_quiz_time\n  total_quizzes",
+      "text": "session  (DB table \u2014 key/value)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nkey TEXT    PK\nvalue TEXT\n\nKeys used:\n  quiz_count_today\n  last_quiz_time\n  total_quizzes",
       "fontSize": 12,
       "fontFamily": 3,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "5iqvnb4g",
-      "originalText": "session  (DB table — key/value)\n────────────────────────────────\nkey TEXT    PK\nvalue TEXT\n\nKeys used:\n  quiz_count_today\n  last_quiz_time\n  total_quizzes",
-      "lineHeight": 1.4,
-      "version": 35,
-      "versionNonce": 230710338,
-      "index": "aH",
-      "seed": 1,
-      "autoResize": true
+      "originalText": "session  (DB table \u2014 key/value)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nkey TEXT    PK\nvalue TEXT\n\nKeys used:\n  quiz_count_today\n  last_quiz_time\n  total_quizzes",
+      "lineHeight": 1.4
     },
     {
       "id": "dzr1yxr2",
       "type": "rectangle",
-      "x": 230.2674560546875,
-      "y": 633.3458251953125,
+      "x": 320,
+      "y": 640,
       "width": 380,
       "height": 160,
       "angle": 0,
@@ -722,19 +640,15 @@
           "id": "dhylurtp"
         }
       ],
-      "updated": 1775865310368,
+      "updated": 1,
       "link": null,
-      "locked": false,
-      "version": 33,
-      "versionNonce": 49943746,
-      "index": "aI",
-      "seed": 1
+      "locked": false
     },
     {
       "id": "dhylurtp",
       "type": "text",
-      "x": 238.2674560546875,
-      "y": 641.3458251953125,
+      "x": 328,
+      "y": 648,
       "width": 364,
       "height": 144,
       "angle": 0,
@@ -750,28 +664,23 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865310368,
+      "updated": 1,
       "link": null,
       "locked": false,
-      "text": "DB Migrations  (src/db.rs — open())\n─────────────────────────────────────────\nAll ALTER TABLE calls are idempotent.\nColumns added over time:\n  domain, canonical_question,\n  canonical_answer, canonical_clue, repo\n\nNew columns needed (planned):\n  co_authored BOOL  DEFAULT 0\n  source TEXT       DEFAULT 'own_code'",
+      "text": "DB Migrations  (src/db.rs \u2014 open())\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nAll ALTER TABLE calls are idempotent.\nColumns added over time:\n  domain, canonical_question,\n  canonical_answer, canonical_clue, repo\n\nNew columns needed (planned):\n  co_authored BOOL  DEFAULT 0\n  source TEXT       DEFAULT 'own_code'",
       "fontSize": 12,
       "fontFamily": 3,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "dzr1yxr2",
-      "originalText": "DB Migrations  (src/db.rs — open())\n─────────────────────────────────────────\nAll ALTER TABLE calls are idempotent.\nColumns added over time:\n  domain, canonical_question,\n  canonical_answer, canonical_clue, repo\n\nNew columns needed (planned):\n  co_authored BOOL  DEFAULT 0\n  source TEXT       DEFAULT 'own_code'",
-      "lineHeight": 1.4,
-      "version": 33,
-      "versionNonce": 35531906,
-      "index": "aJ",
-      "seed": 1,
-      "autoResize": true
+      "originalText": "DB Migrations  (src/db.rs \u2014 open())\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nAll ALTER TABLE calls are idempotent.\nColumns added over time:\n  domain, canonical_question,\n  canonical_answer, canonical_clue, repo\n\nNew columns needed (planned):\n  co_authored BOOL  DEFAULT 0\n  source TEXT       DEFAULT 'own_code'",
+      "lineHeight": 1.4
     },
     {
       "id": "0lzjjege",
       "type": "rectangle",
-      "x": 774.1573486328125,
-      "y": 698.2405395507812,
+      "x": 660,
+      "y": 660,
       "width": 340,
       "height": 100,
       "angle": 0,
@@ -794,19 +703,15 @@
           "id": "t1ghr09s"
         }
       ],
-      "updated": 1775865305984,
+      "updated": 1,
       "link": null,
-      "locked": false,
-      "version": 33,
-      "versionNonce": 1988697410,
-      "index": "aK",
-      "seed": 1
+      "locked": false
     },
     {
       "id": "t1ghr09s",
       "type": "text",
-      "x": 782.1573486328125,
-      "y": 706.2405395507812,
+      "x": 668,
+      "y": 668,
       "width": 324,
       "height": 84,
       "angle": 0,
@@ -822,28 +727,21 @@
       "roundness": null,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1775865305984,
+      "updated": 1,
       "link": null,
       "locked": false,
-      "text": "📝 ANNOTATION: Which fields are\nmissing or should change?\nMark them here.",
+      "text": "\ud83d\udcdd ANNOTATION: Which fields are\nmissing or should change?\nMark them here.",
       "fontSize": 12,
       "fontFamily": 3,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "0lzjjege",
-      "originalText": "📝 ANNOTATION: Which fields are\nmissing or should change?\nMark them here.",
-      "lineHeight": 1.4,
-      "version": 33,
-      "versionNonce": 800597250,
-      "index": "aL",
-      "seed": 1,
-      "autoResize": true
+      "originalText": "\ud83d\udcdd ANNOTATION: Which fields are\nmissing or should change?\nMark them here.",
+      "lineHeight": 1.4
     }
   ],
   "appState": {
     "gridSize": 20,
-    "gridStep": 5,
-    "gridModeEnabled": false,
     "viewBackgroundColor": "#0a0e1a"
   },
   "files": {}

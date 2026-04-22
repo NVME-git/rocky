@@ -13,9 +13,10 @@ flowchart TD
     CC_CHECK -- YES\nfire edge --> CC_Q[generate_cross_concept_question\n🤖 generated — live\nuses edge description + both topics]
     CC_CHECK -- NO edge qualifies --> CAN_CHECK
 
-    CAN_CHECK{canonical_question\nnon-empty?}
-    CAN_CHECK -- YES --> CAN_Q[use canonical_question\n✅ canonical — from diff\nloaded from DB]
-    CAN_CHECK -- NO --> GEN_Q[generate_question\n🤖 generated — live\nfrom description + task context]
+    CAN_CHECK{question_bank\nnon-empty?}
+    CAN_CHECK -- YES --> BANK_Q[pick_least_asked from bank\n✅ bank rotation — from session-end\nloaded from DB]
+    CAN_CHECK -- BANK_EMPTY, canonical_question non-empty --> CAN_Q[use canonical_question\n✅ canonical — legacy\nloaded from DB]
+    CAN_CHECK -- BOTH EMPTY --> GEN_Q[generate_question\n🤖 generated — live\nfrom description + task context]
 
     CC_Q  --> DISPLAY
     CAN_Q --> DISPLAY
@@ -71,9 +72,12 @@ flowchart TD
 
 | Label shown | How generated | API call at quiz time? |
 |---|---|---|
-| `(canonical)` | At backfill — uses full diff + commit + README | No — read from DB |
+| `(bank)` | At session-end or backfill — 4 Q+A+clue triples per node | No — read from DB, rotated by least-asked |
+| `(canonical)` | Legacy single canonical question (pre-bank era) | No — read from DB |
 | `(generated)` | Live — uses topic description + task context | Yes |
 | Cross-concept | Live — uses edge description + both node descriptions | Yes |
+
+Priority order: bank → canonical → generated (bank preferred when present)
 
 ---
 
@@ -96,6 +100,21 @@ After 3 attempts without `understood = true`, Rocky gives the full explanation.
 
 ---
 
+## Voice input (web UI only — rocky view)
+
+The quiz answer box in `rocky view` has a 🎤 push-to-talk button. While held:
+1. Web Audio API captures mic at 16kHz mono
+2. PCM is resampled + encoded to WAV in JavaScript
+3. WAV bytes are POSTed to `/api/transcribe`
+4. Server spawns `whisper-cli` subprocess, returns transcript
+5. Transcript is inserted into the answer textarea
+
+Requires `[voice] provider = "whisper-cpp"` in config and `whisper-cli` installed
+(run `scripts/install-whisper.sh`). Browser STT (`provider = "browser"`) also works
+but requires `browser_consent = true` in config.
+
+---
+
 ## 📝 Annotation space
 
 > Add your notes here. Questions to consider:
@@ -105,3 +124,4 @@ After 3 attempts without `understood = true`, Rocky gives the full explanation.
 > - Should clue usage affect the final score passed to `add_or_update`?
 > - Should there be a `[k]` mark-as-known shortcut distinct from `[e]` too easy?
 > - Is MAX_QUESTIONS = 3 right, or should it be configurable?
+> - Should bank items be shuffled randomly rather than least-asked order?

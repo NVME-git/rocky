@@ -112,6 +112,57 @@ Rationale:
 
 ---
 
+## Rocky IQ
+
+Rocky IQ is the inverse-atrophy score displayed in the Dashboard. It answers:
+**"What fraction of your recently-learned knowledge are you still retaining?"**
+
+```
+atrophy_score = weighted_avg( max(0, 0.7 - R(node)) / 0.7 )
+                weighted by recency: w = max(0, 1 - days_since_created / 60)
+
+Rocky IQ = round( (1 - atrophy_score) × 100 )
+```
+
+- Nodes older than 60 days contribute zero weight (60-day sliding window)
+- Only non-domain nodes are included
+- A score of 100 = all recent topics fully retained (R ≥ 0.7)
+- A score below 70 = significant atrophy — Rocky IQ shown in red in the Dashboard
+
+```mermaid
+flowchart LR
+    subgraph WINDOW["60-day recency window"]
+        direction LR
+        NEW["created < 60 days ago\nw = 1 - (days/60)\n0 < w ≤ 1"]
+        OLD["created ≥ 60 days ago\nw = 0\nexcluded"]
+    end
+
+    NEW -->|weighted decay gap| ATROPHY["atrophy_score\n0.0 → 1.0"]
+    ATROPHY --> IQ["Rocky IQ\n= (1 - atrophy) × 100\n0 → 100"]
+
+    IQ -->|"≥ 80"| GREEN["green — strong retention"]
+    IQ -->|"70–79"| YELLOW["yellow — some decay"]
+    IQ -->|"< 70"| RED["red — review needed"]
+```
+
+---
+
+## Domain health breakdown
+
+The Dashboard also shows per-domain health bars using `domain_health_breakdown()`:
+
+| Field | How computed |
+|---|---|
+| `avg_recall` | mean R across all nodes in the domain |
+| `known` | count with R ≥ 0.9 |
+| `fading` | count with 0.7 ≤ R < 0.9 |
+| `gap` | count with R < 0.7 |
+
+Domains are sorted ascending by `avg_recall` (worst domains first) to draw attention
+to the weakest areas.
+
+---
+
 ## 📝 Annotation space
 
 > Add your notes here. Questions to consider:
@@ -121,3 +172,5 @@ Rationale:
 >   (e.g. `score × 0.7` instead of `score × 0.9` if clue was used)
 > - Should difficulty decay differently for co_authored topics?
 > - Is there a case for storing the full retrievability curve, not just current stability?
+> - Is the 60-day half-window for Rocky IQ the right recency cutoff?
+> - Should Rocky IQ be factored across domains separately and then averaged?

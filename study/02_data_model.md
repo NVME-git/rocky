@@ -16,10 +16,11 @@ erDiagram
         string last_encountered "date last seen in any context"
         int review_count "total quiz sessions"
         string created_at "commit date (backfill) or today"
-        string canonical_question "pre-generated at backfill (or empty)"
+        string canonical_question "primary Q (from backfill or session-end)"
         string canonical_answer "ideal answer for evaluator reference"
         string canonical_clue "short hint shown on [c]"
         string repo "parsed from git remote URL"
+        string question_bank "JSON array of QuestionBankItem (up to 4)"
     }
 
     CONTEXTS {
@@ -85,6 +86,39 @@ ALTER TABLE nodes ADD COLUMN canonical_clue TEXT NOT NULL DEFAULT '';
 ALTER TABLE nodes ADD COLUMN repo TEXT NOT NULL DEFAULT '';
 ALTER TABLE edges ADD COLUMN last_fired_session INTEGER;
 ```
+
+---
+
+## question_bank column (JSON, already shipped)
+
+`question_bank` is a TEXT column storing a JSON array of `QuestionBankItem` objects.
+Generated at `session-end` time (or manually via `rocky backfill --fill-question-bank`).
+The quiz picks the least-recently-asked entry from the bank before falling back to
+live generation.
+
+```rust
+// src/node.rs
+pub struct QuestionBankItem {
+    pub question: String,
+    pub answer:   String,
+    pub clue:     String,
+    pub asked:    u32,   // how many times this exact question was chosen
+}
+```
+
+Up to 4 items per node. When all 4 have been asked equally, asked counts are reset
+(rotation restarts from the beginning).
+
+---
+
+## Config paths (as of feat/rich-context-enrichment)
+
+| File | Default path | Env override |
+|---|---|---|
+| Config file | `~/.config/rocky/config.toml` | `XDG_CONFIG_HOME` |
+| Graph DB | `~/.rocky/graph.db` | `ROCKY_HOME` |
+| Models dir | `~/.rocky/models/` | `ROCKY_HOME` |
+| Legacy config | `~/.rocky/.rocky.toml` | auto-migrated on first load |
 
 ---
 
