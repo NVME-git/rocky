@@ -439,7 +439,9 @@ By default, Rocky runs a maximum of 3 quizzes per day via automatic triggers (gi
 const kRichContext = r'''
 # Rich-Context Pipeline (alpha)
 
-This is the flow that ships in the alpha branch. It replaces the older "extract topics from a single commit at commit time" path with a richer, **session-aware** pipeline:
+This is the flow that ships in the alpha branch. It replaces the older "extract topics from a single commit at commit time" path with a richer, **session-aware** pipeline — and pairs it with a fully-redesigned `rocky view` web UI built around a **Rocky IQ** score that goes up as you keep recent material sharp.
+
+![Dashboard](screenshots/rocky-dashboard.png)
 
 | Stage | What happens | Where |
 |---|---|---|
@@ -488,6 +490,28 @@ rocky inspect "<topic>"               # full detail: contexts, source commits,
                                       # canonical Q&A, question bank, asked counts
 rocky explore --show                  # print the stored project context
 ```
+
+Or open the **web view** with `rocky view` — five tabs share the same data so you can switch between high-level overview and a focused review queue without leaving the page.
+
+### Knowledge Map
+A force-directed graph of every topic in your PKG, colour-coded by domain. Above ~50 topics it auto-collapses into a project + domain overview to stay readable; click a project bubble to drill into its topics. The **Planning mode** toggle dims topics you already know well and highlights unlearned topics adjacent to them — turns the graph into a "what's next" surface.
+
+![Knowledge Map](screenshots/rocky-map.png)
+
+### Review Queue
+A sortable, filterable table of every topic. Sort by recall, recency, review count, or alphabetical. Filter to *due* or *critical*. Click any row to start a quiz on that topic, or hit "Quiz top 5" to start a session against the lowest-recall items in the current view.
+
+![Review Queue](screenshots/rocky-queue.png)
+
+### Sessions
+Every topic Rocky has ever generated, grouped by the day it was added. Encounter counts (×N badges) show where layer-1 dedup hit — the same topic surfacing across multiple commits.
+
+![Sessions](screenshots/rocky-sessions.png)
+
+### Projects
+Per-repository health, cross-project flow chord diagram, and a domain-mix donut. The **knowledge timeline** below toggles between *by project* and *by domain* so you can see whether your auth/database/frontend work is balanced over time.
+
+![Projects](screenshots/rocky-projects.png)
 
 ## Layer-1 deduplication
 
