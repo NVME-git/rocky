@@ -25,10 +25,16 @@ pub struct GeneratedEdge {
 #[derive(Debug, Deserialize, Clone)]
 pub struct TopicInfo {
     pub topic: String,
+    /// Local LLMs sometimes omit `kind`. Default to "concept" rather than panic-parsing.
+    #[serde(default = "default_kind")]
     pub kind: String,
+    #[serde(default)]
     pub domain: String,
+    #[serde(default)]
     pub description: String,
 }
+
+fn default_kind() -> String { "concept".into() }
 
 #[derive(Debug, Deserialize)]
 pub struct EvalResult {

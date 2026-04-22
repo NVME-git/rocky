@@ -43,6 +43,7 @@ pub fn run(db: &Db, cfg: &Config) -> Result<()> {
         let app = Router::new()
             .route("/", get(serve_app))
             .route("/api/data", get(get_data))
+            .route("/api/sessions", get(get_sessions))
             .route("/api/quiz/start", post(quiz_start))
             .route("/api/quiz/assess", post(quiz_assess))
             .route("/api/quiz/evaluate", post(quiz_evaluate))
@@ -106,6 +107,17 @@ async fn get_data(
     let db = state.db.clone();
     let cfg = state.config.clone();
     let result = tokio::task::spawn_blocking(move || build_data_json(&db, &cfg))
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(result))
+}
+
+async fn get_sessions(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, StatusCode> {
+    let db = state.db.clone();
+    let result = tokio::task::spawn_blocking(move || build_sessions_json(&db))
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -532,6 +544,11 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
         }
     }
 
+    let atrophy = atrophy_score(&topic_nodes);
+    let domain_health = domain_health_breakdown(&topic_nodes);
+    let due_for_review = due_for_review_list(&topic_nodes, 8);
+    let recently_added = recently_added_list(&topic_nodes, 8);
+
     Ok(json!({
         "userName": user_name,
         "domains": ["Language","Database","Auth","API","Frontend","DevOps","Architecture","Performance","Security","Testing","Tooling","Data","Other"],
@@ -541,5 +558,112 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
         "nodes": nodes_json,
         "edges": edges_json,
         "summaries": repo_summaries,
+        // Dashboard tab
+        "atrophyScore": atrophy,
+        "domainHealth": domain_health,
+        "dueForReview": due_for_review,
+        "recentlyAdded": recently_added,
     }))
+}
+
+/// AI Atrophy Score (0..1, higher = more atrophy among recent material).
+///
+/// For each non-domain node:
+///   weight = max(0, 1 - days_since_created / 60)   — recent material counts more
+///   decay  = max(0, 0.7 - retrievability)          — only nodes below 70% recall
+///   contribution = weight * decay
+///
+/// score = (sum contribution) / (sum weight)  normalized into 0..1 by /0.7.
+/// Returns 0.0 when there are no recent topics — nothing to atrophy yet.
+fn atrophy_score(nodes: &[&crate::node::Node]) -> f64 {
+    let today = chrono::Local::now().date_naive();
+    let mut total_weight = 0.0_f64;
+    let mut total_contrib = 0.0_f64;
+    for n in nodes {
+        let days = (today - n.created_at).num_days() as f64;
+        let weight = (1.0_f64 - (days / 60.0_f64)).max(0.0);
+        if weight == 0.0 { continue; }
+        let r = fsrs::retrievability(n.stability, n.last_reviewed);
+        let decay = (0.7_f64 - r).max(0.0);
+        total_weight += weight;
+        total_contrib += weight * decay;
+    }
+    if total_weight == 0.0 {
+        return 0.0;
+    }
+    ((total_contrib / total_weight) / 0.7).clamp(0.0, 1.0)
+}
+
+fn domain_health_breakdown(nodes: &[&crate::node::Node]) -> Vec<Value> {
+    use std::collections::HashMap;
+    #[derive(Default)] struct Bucket { sum_r: f64, n: u32, known: u32, fading: u32, gap: u32 }
+    let mut by_domain: HashMap<String, Bucket> = HashMap::new();
+    for n in nodes {
+        let d = if n.domain.is_empty() { "Other" } else { n.domain.as_str() };
+        let r = fsrs::retrievability(n.stability, n.last_reviewed);
+        let cls = fsrs::classify(r);
+        let b = by_domain.entry(d.to_string()).or_default();
+        b.sum_r += r; b.n += 1;
+        match cls { "known" => b.known += 1, "stale" => b.fading += 1, _ => b.gap += 1 }
+    }
+    let mut out: Vec<Value> = by_domain.into_iter()
+        .map(|(d, b)| json!({
+            "domain": d,
+            "count": b.n,
+            "avg_recall": if b.n > 0 { b.sum_r / b.n as f64 } else { 0.0 },
+            "known": b.known, "fading": b.fading, "gap": b.gap,
+        }))
+        .collect();
+    out.sort_by(|a, b| {
+        let ar = a["avg_recall"].as_f64().unwrap_or(0.0);
+        let br = b["avg_recall"].as_f64().unwrap_or(0.0);
+        ar.partial_cmp(&br).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out
+}
+
+fn due_for_review_list(nodes: &[&crate::node::Node], limit: usize) -> Vec<Value> {
+    let mut scored: Vec<(f64, &crate::node::Node)> = nodes.iter()
+        .map(|n| (fsrs::retrievability(n.stability, n.last_reviewed), *n))
+        .collect();
+    scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored.into_iter().take(limit).map(|(r, n)| json!({
+        "id": n.id, "topic": n.topic, "domain": n.domain,
+        "retrievability": r,
+        "last_reviewed": n.last_reviewed.to_string(),
+    })).collect()
+}
+
+fn recently_added_list(nodes: &[&crate::node::Node], limit: usize) -> Vec<Value> {
+    let mut by_date: Vec<&&crate::node::Node> = nodes.iter().collect();
+    by_date.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    by_date.into_iter().take(limit).map(|n| json!({
+        "id": n.id, "topic": n.topic, "domain": n.domain,
+        "created_at": n.created_at.to_string(),
+        "kind": n.kind.as_str(),
+    })).collect()
+}
+
+fn build_sessions_json(db: &Db) -> Result<Value> {
+    use std::collections::BTreeMap;
+    let nodes = db.all_nodes()?;
+    let mut by_day: BTreeMap<chrono::NaiveDate, Vec<&crate::node::Node>> = BTreeMap::new();
+    for n in nodes.iter().filter(|n| !n.kind.is_domain()) {
+        by_day.entry(n.created_at).or_default().push(n);
+    }
+    let entries: Vec<Value> = by_day.into_iter().rev().map(|(date, ns)| {
+        let topics: Vec<Value> = ns.iter().map(|n| json!({
+            "id": n.id, "topic": n.topic, "domain": n.domain,
+            "kind": n.kind.as_str(),
+            "encounter_count": n.encounter_count,
+            "source_commits": n.source_commits,
+            "repo": if n.repo.is_empty() { "Other" } else { &n.repo },
+        })).collect();
+        json!({
+            "date": date.to_string(),
+            "count": ns.len(),
+            "topics": topics,
+        })
+    }).collect();
+    Ok(json!({ "sessions": entries }))
 }
