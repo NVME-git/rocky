@@ -10,6 +10,7 @@ mod session;
 mod sync;
 mod teacher;
 mod transcript;
+mod voice;
 
 use std::io::{self, Read as _, Write as _};
 

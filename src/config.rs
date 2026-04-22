@@ -46,6 +46,7 @@ struct TomlFile {
     sync: Option<SyncSection>,
     edges: Option<EdgesSection>,
     privacy: Option<PrivacySection>,
+    voice: Option<VoiceSection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,6 +54,23 @@ struct PrivacySection {
     /// When true, refuse to send code/diffs to non-local LLM providers.
     /// Forces ollama. Errors clearly if provider="claude" is configured.
     strict: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VoiceSection {
+    /// "whisper-cpp" (default), "whisper-rs" (requires --features voice), "browser", "off"
+    provider: Option<String>,
+    /// Path to the GGML model file, e.g. ~/.rocky/models/whisper-base.en.bin
+    model: Option<String>,
+    /// Name or absolute path of the whisper-cpp binary. Defaults to "whisper-cli" on PATH.
+    binary: Option<String>,
+    /// Milliseconds of silence that ends an utterance in CLI hands-free mode.
+    silence_ms: Option<u32>,
+    /// "browser" (web speechSynthesis), "system" (say/espeak-ng), "off"
+    tts: Option<String>,
+    /// Whether the user has acknowledged that provider="browser" sends audio to a cloud STT.
+    /// Set automatically by the web UI on first click of the mic button.
+    browser_consent: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +141,30 @@ pub struct Config {
     pub edge_reuse: EdgeReuse,
     /// When true: refuse to send code to remote LLMs. Local-only mode.
     pub privacy_strict: bool,
+    pub voice: VoiceConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoiceConfig {
+    pub provider: String,         // "whisper-cpp" | "whisper-rs" | "browser" | "off"
+    pub model: String,            // path to ggml model
+    pub binary: String,           // whisper-cpp binary name or path
+    pub silence_ms: u32,          // CLI VAD silence threshold
+    pub tts: String,              // "browser" | "system" | "off"
+    pub browser_consent: bool,    // explicit opt-in for cloud STT
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            provider: "off".into(),
+            model: "~/.rocky/models/whisper-base.en.bin".into(),
+            binary: "whisper-cli".into(),
+            silence_ms: 700,
+            tts: "browser".into(),
+            browser_consent: false,
+        }
+    }
 }
 
 impl Default for Config {
@@ -150,6 +192,7 @@ impl Default for Config {
                 branch: "main".into(),
             },
             privacy_strict: false,
+            voice: VoiceConfig::default(),
         }
     }
 }
@@ -255,6 +298,18 @@ impl Config {
         if let Some(p) = file.privacy {
             if let Some(v) = p.strict { self.privacy_strict = v; }
         }
+        if let Some(v) = file.voice {
+            if let Some(x) = v.provider { self.voice.provider = x; }
+            if let Some(x) = v.model {
+                let expanded = x.replacen("~/", &format!("{}/", dirs::home_dir()
+                    .unwrap_or_default().display()), 1);
+                self.voice.model = expanded;
+            }
+            if let Some(x) = v.binary { self.voice.binary = x; }
+            if let Some(x) = v.silence_ms { self.voice.silence_ms = x; }
+            if let Some(x) = v.tts { self.voice.tts = x; }
+            if let Some(x) = v.browser_consent { self.voice.browser_consent = x; }
+        }
     }
 
     pub fn show(&self) {
@@ -288,6 +343,17 @@ impl Config {
                 "(diffs are sent to the configured llm provider)"
             }.dimmed()
         );
+        println!("\n  [voice]");
+        println!("    provider         = {}", self.voice.provider);
+        if self.voice.provider != "off" {
+            println!("    model            = {}", self.voice.model);
+            println!("    binary           = {}", self.voice.binary);
+            println!("    silence_ms       = {}", self.voice.silence_ms);
+            println!("    tts              = {}", self.voice.tts);
+            if self.voice.provider == "browser" {
+                println!("    browser_consent  = {}", self.voice.browser_consent);
+            }
+        }
         println!("\n  [ui]");
         println!("    personality      = {}", self.personality);
         println!("\n  [sync]");

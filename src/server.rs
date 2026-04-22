@@ -47,6 +47,7 @@ pub fn run(db: &Db, cfg: &Config) -> Result<()> {
             .route("/api/quiz/start", post(quiz_start))
             .route("/api/quiz/assess", post(quiz_assess))
             .route("/api/quiz/evaluate", post(quiz_evaluate))
+            .route("/api/transcribe", post(transcribe))
             .layer(CorsLayer::permissive())
             .with_state(state);
 
@@ -122,6 +123,40 @@ async fn get_sessions(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(result))
+}
+
+/// POST /api/transcribe — multipart audio in (WAV/Opus), JSON {transcript} out.
+/// Stubbed for v0.2 build. Returns:
+///   - 503 + body when voice.provider = "off" (not configured)
+///   - 501 + body when configured but Stt::transcribe is not yet implemented
+///   - 400 when client should handle it (browser provider)
+/// The web UI uses these status codes to decide whether to fall back to client-
+/// side speech recognition or surface an install prompt.
+async fn transcribe(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let cfg = &state.config;
+    if cfg.voice.provider == "off" {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "voice is disabled. Set [voice] provider in ~/.config/rocky/config.toml \
+             (recommended: \"whisper-cpp\" — see scripts/install-whisper.sh)".into(),
+        ));
+    }
+    if cfg.voice.provider == "browser" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "browser STT runs client-side; do not POST audio to /api/transcribe".into(),
+        ));
+    }
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        format!(
+            "voice provider {:?} is configured but transcription is not yet wired in this build. \
+             See docs/decisions/0006-voice-architecture.md.",
+            cfg.voice.provider
+        ),
+    ))
 }
 
 // ── quiz endpoints ───────────────────────────────────────────────────────────
