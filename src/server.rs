@@ -18,6 +18,7 @@ use crate::config::Config;
 use crate::db::Db;
 use crate::fsrs;
 use crate::teacher::Teacher;
+use crate::voice;
 
 // ── state ────────────────────────────────────────────────────────────────────
 
@@ -125,17 +126,23 @@ async fn get_sessions(
     Ok(Json(result))
 }
 
-/// POST /api/transcribe — multipart audio in (WAV/Opus), JSON {transcript} out.
-/// Stubbed for v0.2 build. Returns:
-///   - 503 + body when voice.provider = "off" (not configured)
-///   - 501 + body when configured but Stt::transcribe is not yet implemented
-///   - 400 when client should handle it (browser provider)
-/// The web UI uses these status codes to decide whether to fall back to client-
-/// side speech recognition or surface an install prompt.
+/// POST /api/transcribe — raw audio bytes in (WAV PCM 16 kHz mono preferred),
+/// JSON {transcript: "..."} out. Status codes the web UI knows about:
+///   - 200 OK         — transcript in the response body
+///   - 400 Bad Request — provider is "browser" (client should run Web Speech)
+///   - 413 Payload Too Large — > 25 MB audio
+///   - 422 Unprocessable Entity — empty audio buffer
+///   - 500 Internal Server Error — STT failed (model error, whisper crash, etc)
+///   - 502 Bad Gateway — whisper binary spawn error (typically not installed)
+///   - 503 Service Unavailable — voice.provider = "off"
+const MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024; // 25 MB hard cap
+
 async fn transcribe(
     State(state): State<Arc<AppState>>,
+    body: axum::body::Bytes,
 ) -> Result<Json<Value>, (StatusCode, String)> {
     let cfg = &state.config;
+
     if cfg.voice.provider == "off" {
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
@@ -149,14 +156,39 @@ async fn transcribe(
             "browser STT runs client-side; do not POST audio to /api/transcribe".into(),
         ));
     }
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        format!(
-            "voice provider {:?} is configured but transcription is not yet wired in this build. \
-             See docs/decisions/0006-voice-architecture.md.",
-            cfg.voice.provider
-        ),
-    ))
+    if body.is_empty() {
+        return Err((StatusCode::UNPROCESSABLE_ENTITY, "empty audio body".into()));
+    }
+    if body.len() > MAX_AUDIO_BYTES {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("audio is {} bytes, max is {} ({} MB)",
+                body.len(), MAX_AUDIO_BYTES, MAX_AUDIO_BYTES / (1024*1024)),
+        ));
+    }
+
+    let stt = voice::make_stt(cfg)
+        .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "voice provider produced no STT".into()))?;
+
+    // Whisper subprocess can take seconds — push it off the async runtime.
+    let bytes = body.to_vec();
+    let transcript = tokio::task::spawn_blocking(move || stt.transcribe(&bytes))
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "transcription task panicked".into()))?
+        .map_err(|e| {
+            let msg = e.to_string();
+            // Distinguish "binary not installed" from generic STT failures so the
+            // web UI can surface the install-script link.
+            let code = if msg.contains("not found in PATH") || msg.contains("model not found") {
+                StatusCode::BAD_GATEWAY
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            (code, msg)
+        })?;
+
+    Ok(Json(json!({ "transcript": transcript })))
 }
 
 // ── quiz endpoints ───────────────────────────────────────────────────────────

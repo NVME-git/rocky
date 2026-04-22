@@ -214,6 +214,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #llm-section.visible{display:flex}
 .qm-textarea{width:100%;background:#1e2340;border:1px solid #3d4468;border-radius:6px;color:#e2e8f0;font-size:13px;padding:10px;resize:vertical;min-height:80px;outline:none;font-family:inherit}
 .qm-textarea:focus{border-color:#7c9ef3}
+.qm-answer-row{display:flex;align-items:stretch;gap:8px}
+.qm-answer-row .qm-textarea{flex:1}
+.qm-mic-btn{flex-shrink:0;width:44px;background:#1e2340;border:1px solid #3d4468;border-radius:6px;cursor:pointer;font-size:18px;color:#8892a4;transition:all .12s;-webkit-user-select:none;user-select:none;display:flex;align-items:center;justify-content:center}
+.qm-mic-btn:hover{border-color:#7c9ef3;color:#e2e8f0}
+.qm-mic-btn:disabled{opacity:.4;cursor:not-allowed}
+.qm-mic-btn.recording{background:#3a1e1e;border-color:#e74c3c;color:#e74c3c;animation:mic-pulse 1s infinite}
+.qm-mic-btn.transcribing{background:#1e2a40;border-color:#7c9ef3;color:#7c9ef3}
+@keyframes mic-pulse{0%,100%{opacity:1}50%{opacity:.55}}
+.qm-mic-hint{font-size:11px;color:#6b7594;min-height:14px;font-style:italic}
+.qm-mic-hint.error{color:#e74c3c;font-style:normal}
+.qm-mic-hint a{color:#7c9ef3;text-decoration:underline}
 .qm-submit-btn{align-self:flex-end;padding:7px 18px;border-radius:6px;border:none;background:#2a3260;color:#7c9ef3;font-weight:600;cursor:pointer;font-size:13px}
 .qm-submit-btn:hover{background:#344080}
 .qm-submit-btn:disabled{opacity:.5;cursor:default}
@@ -404,7 +415,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <button class="qm-assess-btn" data-score="1.0" onclick="selfAssess(1.0)"><span class="score-label">★</span>Cold recall</button>
       </div>
       <div id="llm-section">
-        <textarea class="qm-textarea" id="llm-answer" placeholder="Write your answer…"></textarea>
+        <div class="qm-answer-row">
+          <textarea class="qm-textarea" id="llm-answer" placeholder="Write your answer… or hold the mic to speak"></textarea>
+          <button type="button" class="qm-mic-btn" id="mic-btn"
+                  title="Hold to record · release to transcribe"
+                  onmousedown="startMic(event)" onmouseup="stopMic(event)"
+                  onmouseleave="stopMic(event)"
+                  ontouchstart="startMic(event)" ontouchend="stopMic(event)">
+            <span class="mic-icon">🎤</span>
+          </button>
+        </div>
+        <div class="qm-mic-hint" id="mic-hint"></div>
         <button class="qm-submit-btn" id="llm-submit" onclick="submitLLM()">Submit</button>
         <div class="qm-feedback" id="llm-feedback" style="display:none"></div>
         <div class="qm-followup" id="llm-followup" style="display:none"></div>
@@ -1665,6 +1686,185 @@ function applyPlanningStyle() {
       g.alpha = 0.55;         // others: half-dimmed
     }
   }
+}
+
+// ══════════════════════════════════════════════════════════
+// VOICE: push-to-hold mic → /api/transcribe (whisper-cpp)
+// ══════════════════════════════════════════════════════════
+//
+// Backend contract (from voice/server.rs):
+//   POST /api/transcribe with raw WAV bytes (PCM 16 kHz mono).
+//   200 → { transcript: "..." }
+//   400 → browser provider configured — fall back to Web Speech API
+//   422 → empty audio
+//   502 → whisper-cli not installed (surface install hint)
+//   503 → voice.provider = "off"
+//
+// Capture flow:
+//   1. mousedown → request mic, AudioContext at 16 kHz, ScriptProcessor captures
+//      Float32 chunks into a buffer until release.
+//   2. mouseup → encode buffer as a 16-bit PCM WAV blob, POST to /api/transcribe.
+//   3. Insert transcript at the textarea cursor.
+let micState = { stream: null, ctx: null, source: null, processor: null, buffers: [], sampleRate: 16000 };
+
+async function startMic(ev) {
+  if (ev) ev.preventDefault();
+  const btn = document.getElementById('mic-btn');
+  const hint = document.getElementById('mic-hint');
+  if (btn.classList.contains('recording') || btn.classList.contains('transcribing')) return;
+
+  hint.classList.remove('error');
+  hint.textContent = '';
+  try {
+    micState.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
+    });
+  } catch (e) {
+    hint.classList.add('error');
+    hint.textContent = 'Mic blocked — grant microphone permission and try again.';
+    return;
+  }
+
+  // 16 kHz context — many browsers won't honour the constraint exactly, so
+  // we'll resample on the fly during WAV encoding.
+  micState.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  micState.sampleRate = micState.ctx.sampleRate;
+  micState.source = micState.ctx.createMediaStreamSource(micState.stream);
+  micState.processor = micState.ctx.createScriptProcessor(4096, 1, 1);
+  micState.buffers = [];
+  micState.processor.onaudioprocess = (e) => {
+    micState.buffers.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+  micState.source.connect(micState.processor);
+  micState.processor.connect(micState.ctx.destination);
+
+  btn.classList.add('recording');
+  hint.textContent = 'Listening… release to transcribe';
+}
+
+async function stopMic(ev) {
+  if (ev) ev.preventDefault();
+  const btn = document.getElementById('mic-btn');
+  const hint = document.getElementById('mic-hint');
+  if (!btn.classList.contains('recording')) return;
+  btn.classList.remove('recording');
+  btn.classList.add('transcribing');
+  hint.textContent = 'Transcribing…';
+
+  // Tear down the audio graph but keep the captured buffers.
+  try { micState.processor.disconnect(); } catch {}
+  try { micState.source.disconnect(); } catch {}
+  try { micState.stream.getTracks().forEach(t => t.stop()); } catch {}
+  try { await micState.ctx.close(); } catch {}
+
+  const wav = encodeWAV(micState.buffers, micState.sampleRate, 16000);
+  micState.buffers = [];
+
+  if (wav.byteLength <= 44) {
+    btn.classList.remove('transcribing');
+    hint.classList.add('error');
+    hint.textContent = 'Nothing recorded — hold the button while speaking.';
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'audio/wav' },
+      body: wav,
+    });
+    if (!r.ok) {
+      const body = await r.text();
+      hint.classList.add('error');
+      if (r.status === 502) {
+        hint.innerHTML = 'whisper-cli not installed. Run <code>scripts/install-whisper.sh</code> from the repo to set it up.';
+      } else if (r.status === 503) {
+        hint.innerHTML = 'Voice is disabled in your config. See <a href="https://github.com/NVME-git/rocky/blob/main/docs/decisions/0006-voice-architecture.md" target="_blank" rel="noopener">setup docs</a>.';
+      } else {
+        hint.textContent = `Transcribe failed (${r.status}): ${body.slice(0, 160)}`;
+      }
+      return;
+    }
+    const data = await r.json();
+    insertAtCursor(document.getElementById('llm-answer'), data.transcript || '');
+    hint.textContent = '';
+  } catch (e) {
+    hint.classList.add('error');
+    hint.textContent = 'Network error — is `rocky view` still running?';
+  } finally {
+    btn.classList.remove('transcribing');
+  }
+}
+
+function insertAtCursor(textarea, text) {
+  if (!text) return;
+  const start = textarea.selectionStart || textarea.value.length;
+  const end = textarea.selectionEnd || textarea.value.length;
+  const before = textarea.value.slice(0, start);
+  const after = textarea.value.slice(end);
+  const sep = before && !before.endsWith(' ') && !before.endsWith('\n') ? ' ' : '';
+  textarea.value = before + sep + text + after;
+  const caret = (before + sep + text).length;
+  textarea.setSelectionRange(caret, caret);
+  textarea.focus();
+}
+
+/// Encode an array of Float32 chunks as a single mono 16-bit PCM WAV.
+/// Resamples from `srcRate` → `dstRate` with naive linear interpolation —
+/// good enough for speech.
+function encodeWAV(chunks, srcRate, dstRate) {
+  // Concatenate
+  let totalSamples = 0;
+  for (const c of chunks) totalSamples += c.length;
+  const merged = new Float32Array(totalSamples);
+  let offset = 0;
+  for (const c of chunks) { merged.set(c, offset); offset += c.length; }
+
+  // Resample
+  const resampled = (srcRate === dstRate) ? merged : resampleLinear(merged, srcRate, dstRate);
+
+  // 44-byte WAV header + 16-bit samples
+  const numSamples = resampled.length;
+  const byteLength = 44 + numSamples * 2;
+  const buf = new ArrayBuffer(byteLength);
+  const view = new DataView(buf);
+  const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+
+  writeStr(0, 'RIFF');
+  view.setUint32(4, byteLength - 8, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);            // chunk size
+  view.setUint16(20, 1, true);             // PCM
+  view.setUint16(22, 1, true);             // mono
+  view.setUint32(24, dstRate, true);
+  view.setUint32(28, dstRate * 2, true);   // byte rate (mono * 16-bit)
+  view.setUint16(32, 2, true);             // block align
+  view.setUint16(34, 16, true);            // bits per sample
+  writeStr(36, 'data');
+  view.setUint32(40, numSamples * 2, true);
+
+  let p = 44;
+  for (let i = 0; i < numSamples; i++) {
+    const s = Math.max(-1, Math.min(1, resampled[i]));
+    view.setInt16(p, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    p += 2;
+  }
+  return buf;
+}
+
+function resampleLinear(input, srcRate, dstRate) {
+  const ratio = srcRate / dstRate;
+  const outLen = Math.floor(input.length / ratio);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const srcIdx = i * ratio;
+    const lo = Math.floor(srcIdx);
+    const hi = Math.min(lo + 1, input.length - 1);
+    const frac = srcIdx - lo;
+    out[i] = input[lo] * (1 - frac) + input[hi] * frac;
+  }
+  return out;
 }
 
 // ══════════════════════════════════════════════════════════

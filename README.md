@@ -854,6 +854,45 @@ Add content to your knowledge graph while browsing. Capture YouTube videos, arti
 
 ---
 
+## Voice (alpha — push-to-talk)
+
+Rocky's web UI has a 🎤 button next to the answer textarea. Hold it, speak your answer, release — the transcript fills the textarea. Backend is local (`whisper.cpp` subprocess) by default; nothing leaves the machine.
+
+**One-line setup** (macOS or Linux, x86_64 or arm64):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NVME-git/rocky/main/scripts/install-whisper.sh | sh
+```
+
+This:
+- Detects your platform
+- Installs `whisper-cli` (via `brew` on macOS, building from source on Linux — needs `cmake` + a C++ compiler)
+- Pulls `ggml-base.en.bin` (~142 MB) into `~/.rocky/models/`
+- Adds a `[voice]` block to `~/.config/rocky/config.toml`
+
+**What gets added to your config:**
+
+```toml
+[voice]
+provider   = "whisper-cpp"           # local subprocess; honours privacy.strict
+model      = "~/.rocky/models/ggml-base.en.bin"
+binary     = "whisper-cli"
+silence_ms = 700                     # CLI hands-free pause threshold (planned)
+tts        = "browser"               # web UI uses speechSynthesis
+```
+
+**Disabling voice:** set `provider = "off"` and the mic button stops working immediately (no need to rebuild).
+
+**Browser STT (opt-in, lower friction)** — uses the Web Speech API instead of `whisper.cpp`. **Sends audio to a cloud STT** (Google for Chrome, Apple for Safari) so it is **forbidden when `privacy.strict = true`**. To enable:
+
+```toml
+[voice]
+provider        = "browser"
+browser_consent = true
+```
+
+**Background:** see [`docs/decisions/0006-voice-architecture.md`](docs/decisions/0006-voice-architecture.md) for the rationale (push-to-talk only, no wake-word, browser opt-in with consent gate, etc).
+
 ## Architecture decisions
 
 The major design choices behind the rich-context pipeline, the Rocky IQ score, the UI redesign, privacy mode, and the planned voice integration are recorded as ADRs in [`docs/decisions/`](docs/decisions/). Each ADR is one Nygard-style file: context, decision, consequences. Read those if you want to know *why* a thing is the way it is — the README documents *what*.
