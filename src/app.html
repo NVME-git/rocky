@@ -8,17 +8,96 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.3/pixi.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;height:100vh;display:flex;flex-direction:row;overflow:hidden}
 
-/* ── topbar ── */
-#topbar{display:flex;align-items:center;gap:12px;padding:8px 16px;background:#1a1d27;border-bottom:1px solid #2d3148;flex-shrink:0;height:44px}
-#topbar .logo{font-weight:700;font-size:15px;color:#7c9ef3;letter-spacing:.5px;margin-right:8px}
+/* ── sidebar ── */
+#sidebar{width:200px;flex-shrink:0;background:#070b14;border-right:1px solid #1e2340;display:flex;flex-direction:column;padding:14px 0}
+#sidebar .logo{padding:0 18px 18px;font-weight:700;font-size:16px;color:#F59E0B;letter-spacing:.5px}
+#sidebar .nav{display:flex;flex-direction:column;gap:2px;padding:0 8px}
+.nav-btn{display:flex;align-items:center;gap:10px;background:none;border:none;color:#8892a4;cursor:pointer;font-size:13px;padding:9px 12px;border-radius:6px;text-align:left;transition:all .12s;font-family:inherit}
+.nav-btn:hover{color:#e2e8f0;background:#0f1629}
+.nav-btn.active{color:#F59E0B;background:#1e2340;font-weight:600}
+.nav-btn .nav-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
+#sidebar .spacer{flex:1}
+#sidebar .stats{padding:14px 18px 4px;font-size:10px;color:#555e7a;display:flex;flex-direction:column;gap:3px;border-top:1px solid #1e2340}
+#sidebar .stats span{white-space:nowrap}
+#sidebar .stats b{color:#8892a4}
+#main-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+#loading-bar{position:absolute;top:0;left:0;width:0;height:2px;background:#F59E0B;transition:width .3s;z-index:100}
 .tab-btn{background:none;border:none;color:#8892a4;cursor:pointer;font-size:13px;padding:4px 12px;border-radius:5px;transition:all .15s}
 .tab-btn:hover{color:#e2e8f0;background:#232740}
 .tab-btn.active{color:#7c9ef3;background:#1e2340;font-weight:600}
-#topbar .stats{margin-left:auto;font-size:11px;color:#555e7a;display:flex;gap:16px}
-#topbar .stats span{white-space:nowrap}
-#loading-bar{position:absolute;top:44px;left:0;width:0;height:2px;background:#7c9ef3;transition:width .3s;z-index:100}
+
+/* ── dashboard tab ── */
+#tab-dashboard{overflow-y:auto;padding:24px}
+.atrophy-banner{background:linear-gradient(135deg,#1a1d27,#0f1629);border:1px solid #2d3148;border-radius:10px;padding:18px 24px;margin-bottom:18px;display:flex;align-items:center;gap:18px}
+.atrophy-banner .label{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#555e7a;margin-bottom:6px}
+.atrophy-banner .score-value{font-size:30px;font-weight:700;color:#F59E0B;line-height:1}
+.atrophy-banner .score-meta{font-size:11px;color:#6b7594;margin-top:4px}
+.atrophy-banner .score-bar{flex:1;height:10px;border-radius:5px;background:#1e2340;overflow:hidden;position:relative}
+.atrophy-banner .score-fill{height:100%;background:linear-gradient(90deg,#1d9e75,#e6a817 50%,#e74c3c);border-radius:5px;transition:width .5s}
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.dash-card{background:#1a1d27;border:1px solid #2d3148;border-radius:10px;padding:16px;min-height:200px}
+.dash-card .dc-h{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#555e7a;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+.dash-card .dc-h .dc-pill{font-size:10px;background:#1e2340;color:#8892a4;padding:2px 7px;border-radius:8px;text-transform:none;letter-spacing:0}
+.dash-list{display:flex;flex-direction:column;gap:6px}
+.dash-list .dl-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:6px;cursor:pointer;transition:background .12s}
+.dash-list .dl-row:hover{background:#232740}
+.dash-list .dl-topic{flex:1;font-size:12px;color:#c4cde0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-list .dl-domain{font-size:10px;color:#6b7594;flex-shrink:0}
+.dash-list .dl-recall{font-size:11px;font-variant-numeric:tabular-nums;color:#8892a4;flex-shrink:0;width:42px;text-align:right}
+.dash-list .dl-recall.bad{color:#e74c3c}
+.dash-list .dl-recall.warn{color:#e6a817}
+.dash-list .dl-recall.ok{color:#1d9e75}
+.domain-bars{display:flex;flex-direction:column;gap:8px}
+.domain-bar{display:flex;align-items:center;gap:10px;font-size:11px}
+.domain-bar .db-name{width:100px;color:#c4cde0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.domain-bar .db-track{flex:1;height:6px;background:#1e2340;border-radius:3px;overflow:hidden}
+.domain-bar .db-fill{height:100%;border-radius:3px;transition:width .4s}
+.domain-bar .db-pct{width:40px;text-align:right;color:#8892a4;font-variant-numeric:tabular-nums}
+.empty-msg{font-size:12px;color:#555e7a;text-align:center;padding:30px 0;font-style:italic}
+
+/* ── queue tab ── */
+#tab-queue{overflow-y:auto;padding:24px}
+.queue-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.queue-toolbar select{background:#1a1d27;border:1px solid #2d3148;border-radius:6px;color:#c4cde0;padding:6px 10px;font-size:12px;font-family:inherit;outline:none;cursor:pointer}
+.queue-toolbar select:focus{border-color:#7c9ef3}
+.queue-toolbar .qt-count{font-size:12px;color:#8892a4;margin-left:auto}
+.queue-toolbar button{padding:7px 14px;border-radius:6px;border:1px solid #3d4468;background:#2a3260;color:#7c9ef3;font-weight:600;font-size:12px;cursor:pointer}
+.queue-toolbar button:hover{background:#344080}
+.queue-table{background:#1a1d27;border:1px solid #2d3148;border-radius:8px;overflow:hidden}
+.queue-row{display:grid;grid-template-columns:32px 1fr 110px 70px 90px 90px;gap:12px;align-items:center;padding:9px 14px;border-bottom:1px solid #1e2340;font-size:12px;cursor:pointer;transition:background .12s}
+.queue-row:last-child{border-bottom:none}
+.queue-row:hover{background:#232740}
+.queue-row.header{background:#0f1629;font-weight:600;color:#555e7a;text-transform:uppercase;font-size:10px;letter-spacing:.6px;cursor:default}
+.queue-row.header:hover{background:#0f1629}
+.queue-row .qr-topic{color:#c4cde0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queue-row .qr-domain{color:#8892a4}
+.queue-row .qr-recall{font-variant-numeric:tabular-nums;text-align:right}
+.queue-row .qr-recall.bad{color:#e74c3c}
+.queue-row .qr-recall.warn{color:#e6a817}
+.queue-row .qr-recall.ok{color:#1d9e75}
+.queue-row .qr-trend{text-align:center;color:#6b7594}
+.queue-row .qr-last{color:#6b7594;font-size:11px;text-align:right}
+
+/* ── sessions tab ── */
+#tab-sessions{overflow-y:auto;padding:24px}
+.session-day{margin-bottom:18px}
+.session-date{font-size:13px;font-weight:600;color:#c4cde0;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+.session-date .sd-count{font-size:10px;color:#8892a4;background:#1e2340;padding:2px 8px;border-radius:8px}
+.session-topics{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.session-chip{background:#1a1d27;border:1px solid #2d3148;border-radius:7px;padding:8px 11px;font-size:12px;cursor:pointer;transition:border-color .12s}
+.session-chip:hover{border-color:#7c9ef3}
+.session-chip .sc-topic{color:#c4cde0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;margin-bottom:3px}
+.session-chip .sc-meta{font-size:10px;color:#6b7594;display:flex;gap:8px}
+.session-chip .sc-meta .sc-domain{color:#8892a4}
+.session-chip .sc-meta .sc-encounters{color:#F59E0B}
+
+/* ── planning-mode toggle on graph ── */
+#planning-toggle{display:flex;align-items:center;gap:6px;font-size:11px;color:#8892a4;background:#1a1d27;padding:5px 10px;border-radius:6px;border:1px solid #2d3148;cursor:pointer;user-select:none}
+#planning-toggle:hover{border-color:#7c9ef3}
+#planning-toggle.active{background:#1e2340;border-color:#9b59b6;color:#c39bd3}
+#planning-toggle input{accent-color:#9b59b6;cursor:pointer}
 
 /* ── tab content ── */
 .tab-content{display:none;flex:1;overflow:hidden}
@@ -52,7 +131,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #timeline-svg{min-height:200px}
 
 /* ── graph tab ── */
-#tab-graph{flex-direction:row;overflow:hidden;position:relative}
+#tab-map{flex-direction:row;overflow:hidden;position:relative}
 #graph-controls{position:absolute;top:10px;left:10px;z-index:20;display:flex;flex-direction:column;gap:6px;pointer-events:none}
 #graph-controls>*{pointer-events:all}
 #search-box{background:#1a1d27;border:1px solid #2d3148;border-radius:6px;padding:6px 10px;color:#e2e8f0;font-size:12px;width:200px;outline:none}
@@ -164,20 +243,58 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </head>
 <body>
 
-<div id="topbar">
-  <span class="logo">◈ Rocky</span>
-  <button class="tab-btn active" onclick="switchTab('projects')">Projects</button>
-  <button class="tab-btn" onclick="switchTab('graph')">Graph</button>
+<div id="sidebar">
+  <div class="logo">◈ Rocky</div>
+  <div class="nav">
+    <button class="nav-btn active" data-tab="dashboard" onclick="switchTab('dashboard')"><span class="nav-icon">⊞</span>Dashboard</button>
+    <button class="nav-btn" data-tab="map" onclick="switchTab('map')"><span class="nav-icon">◉</span>Knowledge Map</button>
+    <button class="nav-btn" data-tab="queue" onclick="switchTab('queue')"><span class="nav-icon">⊟</span>Review Queue</button>
+    <button class="nav-btn" data-tab="sessions" onclick="switchTab('sessions')"><span class="nav-icon">⊡</span>Sessions</button>
+    <button class="nav-btn" data-tab="projects" onclick="switchTab('projects')"><span class="nav-icon">▣</span>Projects</button>
+  </div>
+  <div class="spacer"></div>
   <div class="stats" id="top-stats">
-    <span id="stat-topics">— topics</span>
-    <span id="stat-projects">— projects</span>
-    <span id="stat-edges">— edges</span>
+    <span id="stat-topics"><b>—</b> topics</span>
+    <span id="stat-projects"><b>—</b> projects</span>
+    <span id="stat-edges"><b>—</b> edges</span>
   </div>
 </div>
+
+<div id="main-pane">
 <div id="loading-bar"></div>
 
+<!-- DASHBOARD TAB -->
+<div id="tab-dashboard" class="tab-content active">
+  <div class="atrophy-banner">
+    <div>
+      <div class="label">AI Atrophy Score</div>
+      <div class="score-value" id="atrophy-value">—</div>
+      <div class="score-meta" id="atrophy-meta">recent material that is decaying</div>
+    </div>
+    <div class="score-bar"><div class="score-fill" id="atrophy-fill" style="width:0"></div></div>
+  </div>
+  <div class="dash-grid">
+    <div class="dash-card">
+      <div class="dc-h"><span>Due for review</span><span class="dc-pill" id="due-pill">—</span></div>
+      <div class="dash-list" id="due-list"></div>
+    </div>
+    <div class="dash-card">
+      <div class="dc-h"><span>Domain health</span><span class="dc-pill" id="dh-pill">—</span></div>
+      <div class="domain-bars" id="domain-bars"></div>
+    </div>
+    <div class="dash-card">
+      <div class="dc-h"><span>Recently added</span><span class="dc-pill" id="recent-pill">—</span></div>
+      <div class="dash-list" id="recent-list"></div>
+    </div>
+    <div class="dash-card">
+      <div class="dc-h"><span>Projects</span><span class="dc-pill" id="dash-projects-pill">—</span></div>
+      <div class="dash-list" id="dash-projects-list"></div>
+    </div>
+  </div>
+</div>
+
 <!-- PROJECTS TAB -->
-<div id="tab-projects" class="tab-content active">
+<div id="tab-projects" class="tab-content">
   <p class="section-title" style="padding:16px 16px 0">Projects</p>
   <div class="cards-grid" id="cards-grid"></div>
   <div class="viz-row" id="viz-row">
@@ -192,8 +309,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<!-- GRAPH TAB -->
-<div id="tab-graph" class="tab-content">
+<!-- REVIEW QUEUE TAB -->
+<div id="tab-queue" class="tab-content">
+  <div class="queue-toolbar">
+    <label style="font-size:11px;color:#555e7a">Sort by</label>
+    <select id="queue-sort" onchange="renderQueue()">
+      <option value="recall">Lowest recall first</option>
+      <option value="recent">Most recently added</option>
+      <option value="reviews">Fewest reviews</option>
+      <option value="alpha">Alphabetical</option>
+    </select>
+    <label style="font-size:11px;color:#555e7a">Filter</label>
+    <select id="queue-filter" onchange="renderQueue()">
+      <option value="all">All topics</option>
+      <option value="due">Due (recall &lt; 70%)</option>
+      <option value="critical">Critical (recall &lt; 40%)</option>
+    </select>
+    <span class="qt-count" id="queue-count">— topics</span>
+    <button onclick="quizFromQueue()">Quiz top 5</button>
+  </div>
+  <div class="queue-table" id="queue-table"></div>
+</div>
+
+<!-- SESSIONS TAB -->
+<div id="tab-sessions" class="tab-content">
+  <div id="sessions-body"></div>
+</div>
+
+<!-- KNOWLEDGE MAP TAB (graph) -->
+<div id="tab-map" class="tab-content">
   <canvas id="pixi-canvas"></canvas>
   <div id="graph-controls">
     <input id="search-box" type="text" placeholder="Search topics…" oninput="onSearch()">
@@ -203,6 +347,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <span>Spread</span>
       <input type="range" id="spread-slider" min="30" max="300" value="100" oninput="onSpreadChange()">
     </div>
+    <label id="planning-toggle" title="Grey out nodes you know well; highlight unlearned topics adjacent to them.">
+      <input type="checkbox" id="planning-mode" onchange="togglePlanningMode()">
+      <span>Planning mode</span>
+    </label>
   </div>
   <div id="taxonomy-panel">
     <button class="panel-close" onclick="closeTaxPanel()">×</button>
@@ -219,6 +367,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="mb-clear-btn" onclick="clearSelection()">Clear</button>
   </div>
 </div>
+</div><!-- /#main-pane -->
 
 <!-- QUIZ OVERLAY -->
 <div id="quiz-overlay">
@@ -277,7 +426,7 @@ async function loadData() {
     const r = await fetch('/api/data');
     DATA = await r.json();
     setProgress(80);
-    renderProjects();
+    renderDashboard();
     updateStats();
     setProgress(100);
     setTimeout(() => setProgress(0), 400);
@@ -289,7 +438,9 @@ async function loadData() {
 async function refreshData() {
   const r = await fetch('/api/data');
   DATA = await r.json();
-  renderProjects();
+  if (currentTab === 'dashboard') renderDashboard();
+  else if (currentTab === 'projects') renderProjects();
+  else if (currentTab === 'queue') renderQueue();
   updateStats();
   if (graphInitialized) rebuildGraph();
 }
@@ -303,26 +454,38 @@ function updateStats() {
   const topics = DATA.nodes.filter(n=>n.kind!=='domain'&&n.kind!=='user').length;
   const projs = Object.keys(DATA.projects||{}).length;
   const edges = DATA.edges.length;
-  document.getElementById('stat-topics').textContent = topics+' topics';
-  document.getElementById('stat-projects').textContent = projs+' projects';
-  document.getElementById('stat-edges').textContent = edges+' edges';
+  document.getElementById('stat-topics').innerHTML = `<b>${topics}</b> topics`;
+  document.getElementById('stat-projects').innerHTML = `<b>${projs}</b> projects`;
+  document.getElementById('stat-edges').innerHTML = `<b>${edges}</b> edges`;
 }
 
 // ══════════════════════════════════════════════════════════
 // TAB SWITCHING
 // ══════════════════════════════════════════════════════════
-let currentTab = 'projects';
+let currentTab = 'dashboard';
 function switchTab(name) {
   if (currentTab === name) return;
   currentTab = name;
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.textContent.toLowerCase()===name));
-  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
-  if (name==='graph' && !graphInitialized) {
-    setTimeout(initGraph, 50);
-  } else if (name==='graph' && pendingProjectFilter) {
-    applyProjectFilter(pendingProjectFilter);
-    pendingProjectFilter = null;
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  const target = document.getElementById('tab-' + name);
+  if (target) target.classList.add('active');
+
+  if (name === 'map') {
+    if (!graphInitialized) {
+      setTimeout(initGraph, 50);
+    } else if (pendingProjectFilter) {
+      applyProjectFilter(pendingProjectFilter);
+      pendingProjectFilter = null;
+    }
+  } else if (name === 'queue') {
+    renderQueue();
+  } else if (name === 'sessions') {
+    loadSessions();
+  } else if (name === 'dashboard') {
+    renderDashboard();
+  } else if (name === 'projects') {
+    renderProjects();
   }
 }
 
@@ -374,10 +537,10 @@ function renderProjects() {
 function drillIntoProject(repo) {
   if (graphInitialized) {
     applyProjectFilter(repo);
-    switchTab('graph');
+    switchTab('map');
   } else {
     pendingProjectFilter = repo;
-    switchTab('graph');
+    switchTab('map');
   }
 }
 
@@ -1091,6 +1254,258 @@ async function closeQuiz() {
 document.getElementById('quiz-overlay').addEventListener('click', e => {
   if (e.target===document.getElementById('quiz-overlay')) closeQuiz();
 });
+
+// ══════════════════════════════════════════════════════════
+// DASHBOARD TAB
+// ══════════════════════════════════════════════════════════
+function renderDashboard() {
+  if (!DATA) return;
+
+  // Atrophy score
+  const a = Number(DATA.atrophyScore || 0);
+  const pct = Math.round(a * 100);
+  document.getElementById('atrophy-value').textContent = pct + '%';
+  document.getElementById('atrophy-fill').style.width = Math.max(2, pct) + '%';
+  const meta = pct < 20 ? 'fresh — recent topics are mostly retained'
+             : pct < 50 ? 'some recent material is fading — schedule a review'
+             : 'recent material is decaying fast — quiz now to recover';
+  document.getElementById('atrophy-meta').textContent = meta;
+
+  // Due for review
+  const dueList = document.getElementById('due-list');
+  const due = DATA.dueForReview || [];
+  document.getElementById('due-pill').textContent = due.length;
+  dueList.innerHTML = due.length ? '' : '<div class="empty-msg">Nothing due yet.</div>';
+  for (const t of due) {
+    const r = Math.round((t.retrievability || 0) * 100);
+    const cls = r < 40 ? 'bad' : r < 70 ? 'warn' : 'ok';
+    const row = document.createElement('div');
+    row.className = 'dl-row';
+    row.onclick = () => quizOne(t.id, t.topic);
+    row.innerHTML = `<span class="dl-topic" title="${escapeHtml(t.topic)}">${escapeHtml(t.topic)}</span>
+      <span class="dl-domain">${escapeHtml(t.domain || 'Other')}</span>
+      <span class="dl-recall ${cls}">${r}%</span>`;
+    dueList.appendChild(row);
+  }
+
+  // Domain health
+  const dh = DATA.domainHealth || [];
+  document.getElementById('dh-pill').textContent = dh.length;
+  const dhEl = document.getElementById('domain-bars');
+  dhEl.innerHTML = dh.length ? '' : '<div class="empty-msg">No domain data yet.</div>';
+  for (const d of dh.slice(0, 8)) {
+    const r = Math.round((d.avg_recall || 0) * 100);
+    const colour = DOMAIN_COLORS[d.domain] || '#607d8b';
+    const row = document.createElement('div');
+    row.className = 'domain-bar';
+    row.innerHTML = `<span class="db-name" title="${escapeHtml(d.domain)} · ${d.count} topics">${escapeHtml(d.domain)}</span>
+      <div class="db-track"><div class="db-fill" style="width:${r}%;background:${colour}"></div></div>
+      <span class="db-pct">${r}%</span>`;
+    dhEl.appendChild(row);
+  }
+
+  // Recently added
+  const ra = DATA.recentlyAdded || [];
+  document.getElementById('recent-pill').textContent = ra.length;
+  const raEl = document.getElementById('recent-list');
+  raEl.innerHTML = ra.length ? '' : '<div class="empty-msg">No new topics yet.</div>';
+  for (const t of ra) {
+    const row = document.createElement('div');
+    row.className = 'dl-row';
+    row.onclick = () => quizOne(t.id, t.topic);
+    row.innerHTML = `<span class="dl-topic" title="${escapeHtml(t.topic)}">${escapeHtml(t.topic)}</span>
+      <span class="dl-domain">${escapeHtml(t.domain || 'Other')}</span>
+      <span class="dl-recall">${escapeHtml(t.created_at)}</span>`;
+    raEl.appendChild(row);
+  }
+
+  // Projects mini-list (clickable into Projects tab)
+  const projects = Object.entries(DATA.projects || {})
+    .sort((a, b) => b[1].topicCount - a[1].topicCount)
+    .slice(0, 6);
+  document.getElementById('dash-projects-pill').textContent = Object.keys(DATA.projects || {}).length;
+  const dpl = document.getElementById('dash-projects-list');
+  dpl.innerHTML = projects.length ? '' : '<div class="empty-msg">Run rocky explore in a project.</div>';
+  for (const [repo, info] of projects) {
+    const tot = info.health.known + info.health.fading + info.health.gap || 1;
+    const knownPct = Math.round(info.health.known / tot * 100);
+    const cls = knownPct >= 70 ? 'ok' : knownPct >= 40 ? 'warn' : 'bad';
+    const row = document.createElement('div');
+    row.className = 'dl-row';
+    row.onclick = () => { drillIntoProject(repo); };
+    row.innerHTML = `<span class="dl-topic" title="${escapeHtml(repo)}">${escapeHtml(repo)}</span>
+      <span class="dl-domain">${info.topicCount} topics</span>
+      <span class="dl-recall ${cls}">${knownPct}%</span>`;
+    dpl.appendChild(row);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+function quizOne(nodeId, topic) {
+  // Reuse the existing single-topic quiz path: select the node and run quizSelected.
+  selectedSet = new Set([nodeId]);
+  if (graphInitialized && nodeGfx[nodeId]) {
+    // Visual update on graph if it's been built
+    updateMultiBar();
+  }
+  startQuizNodes([nodeId]);
+}
+
+// ══════════════════════════════════════════════════════════
+// REVIEW QUEUE TAB
+// ══════════════════════════════════════════════════════════
+function renderQueue() {
+  if (!DATA) return;
+  const sortBy = document.getElementById('queue-sort').value;
+  const filter = document.getElementById('queue-filter').value;
+
+  let nodes = DATA.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
+  if (filter === 'due')      nodes = nodes.filter(n => n.retrievability < 0.7);
+  if (filter === 'critical') nodes = nodes.filter(n => n.retrievability < 0.4);
+
+  if (sortBy === 'recall')      nodes.sort((a, b) => a.retrievability - b.retrievability);
+  else if (sortBy === 'recent') nodes.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  else if (sortBy === 'reviews')nodes.sort((a, b) => (a.review_count || 0) - (b.review_count || 0));
+  else if (sortBy === 'alpha')  nodes.sort((a, b) => a.topic.localeCompare(b.topic));
+
+  document.getElementById('queue-count').textContent = nodes.length + ' topics';
+
+  const table = document.getElementById('queue-table');
+  table.innerHTML = '';
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'queue-row header';
+  hdr.innerHTML = `<span></span><span>Topic</span><span>Domain</span><span>Recall</span><span>Reviews</span><span>Last reviewed</span>`;
+  table.appendChild(hdr);
+
+  for (const n of nodes.slice(0, 200)) {
+    const r = Math.round((n.retrievability || 0) * 100);
+    const cls = r < 40 ? 'bad' : r < 70 ? 'warn' : 'ok';
+    const trend = n.classification === 'gap' ? '↓↓' : n.classification === 'stale' ? '↓' : '·';
+    const row = document.createElement('div');
+    row.className = 'queue-row';
+    row.onclick = () => quizOne(n.id, n.topic);
+    row.innerHTML = `
+      <span class="qr-trend">${trend}</span>
+      <span class="qr-topic">${escapeHtml(n.topic)}</span>
+      <span class="qr-domain">${escapeHtml(n.domain || 'Other')}</span>
+      <span class="qr-recall ${cls}">${r}%</span>
+      <span class="qr-domain" style="text-align:right">${n.review_count || 0}</span>
+      <span class="qr-last">${escapeHtml(n.last_reviewed || '—')}</span>`;
+    table.appendChild(row);
+  }
+}
+
+function quizFromQueue() {
+  if (!DATA) return;
+  const sortBy = document.getElementById('queue-sort').value;
+  const filter = document.getElementById('queue-filter').value;
+  let nodes = DATA.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
+  if (filter === 'due')      nodes = nodes.filter(n => n.retrievability < 0.7);
+  if (filter === 'critical') nodes = nodes.filter(n => n.retrievability < 0.4);
+  if (sortBy === 'recall')   nodes.sort((a, b) => a.retrievability - b.retrievability);
+  const ids = nodes.slice(0, 5).map(n => n.id);
+  if (ids.length) startQuizNodes(ids);
+}
+
+// ══════════════════════════════════════════════════════════
+// SESSIONS TAB
+// ══════════════════════════════════════════════════════════
+let SESSIONS = null;
+async function loadSessions() {
+  if (SESSIONS) { renderSessions(); return; }
+  try {
+    const r = await fetch('/api/sessions');
+    const d = await r.json();
+    SESSIONS = d.sessions || [];
+    renderSessions();
+  } catch (e) { console.error('Failed to load sessions:', e); }
+}
+
+function renderSessions() {
+  const body = document.getElementById('sessions-body');
+  body.innerHTML = '';
+  if (!SESSIONS || SESSIONS.length === 0) {
+    body.innerHTML = '<div class="empty-msg">No sessions yet — make a commit, then run rocky session-end.</div>';
+    return;
+  }
+  for (const day of SESSIONS) {
+    const wrap = document.createElement('div');
+    wrap.className = 'session-day';
+    const date = document.createElement('div');
+    date.className = 'session-date';
+    date.innerHTML = `${escapeHtml(formatDate(day.date))} <span class="sd-count">${day.count} topic${day.count===1?'':'s'}</span>`;
+    wrap.appendChild(date);
+    const grid = document.createElement('div');
+    grid.className = 'session-topics';
+    for (const t of day.topics || []) {
+      const chip = document.createElement('div');
+      chip.className = 'session-chip';
+      chip.onclick = () => quizOne(t.id, t.topic);
+      const enc = (t.encounter_count && t.encounter_count > 1) ? `<span class="sc-encounters">×${t.encounter_count}</span>` : '';
+      chip.innerHTML = `<div class="sc-topic" title="${escapeHtml(t.topic)}">${escapeHtml(t.topic)}</div>
+        <div class="sc-meta"><span class="sc-domain">${escapeHtml(t.domain || 'Other')}</span><span>${escapeHtml(t.repo || '')}</span>${enc}</div>`;
+      grid.appendChild(chip);
+    }
+    wrap.appendChild(grid);
+    body.appendChild(wrap);
+  }
+}
+
+function formatDate(iso) {
+  // YYYY-MM-DD → "Mon DD, YYYY"
+  const d = new Date(iso + 'T00:00:00');
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// ══════════════════════════════════════════════════════════
+// PLANNING MODE (graph)
+// ══════════════════════════════════════════════════════════
+let planningMode = false;
+function togglePlanningMode() {
+  planningMode = document.getElementById('planning-mode').checked;
+  document.getElementById('planning-toggle').classList.toggle('active', planningMode);
+  if (graphInitialized) applyPlanningStyle();
+}
+
+/// In planning mode: nodes you "know well" (retrievability >= 0.8) are dimmed,
+/// and nodes adjacent to known nodes that are themselves not-yet-reviewed
+/// (review_count == 0) are highlighted as "what's next".
+function applyPlanningStyle() {
+  if (!graphInitialized || !nodeGfx) return;
+  const nodeById = Object.fromEntries((allNodes || []).map(n => [n.id, n]));
+  const knownIds = new Set();
+  for (const n of allNodes) {
+    if (n.kind !== 'domain' && (n.retrievability || 0) >= 0.8) knownIds.add(n.id);
+  }
+  // Adjacent unlearned: connected to a known node, review_count = 0
+  const adjacent = new Set();
+  for (const e of allEdges) {
+    if (knownIds.has(e.source) && nodeById[e.target] && (nodeById[e.target].review_count || 0) === 0) {
+      adjacent.add(e.target);
+    }
+    if (knownIds.has(e.target) && nodeById[e.source] && (nodeById[e.source].review_count || 0) === 0) {
+      adjacent.add(e.source);
+    }
+  }
+  for (const id in nodeGfx) {
+    const g = nodeGfx[id];
+    if (!g) continue;
+    if (!planningMode) {
+      g.alpha = 1.0;
+    } else if (adjacent.has(id)) {
+      g.alpha = 1.0;          // candidate next topics: full opacity
+    } else if (knownIds.has(id)) {
+      g.alpha = 0.18;         // known: heavily dimmed
+    } else {
+      g.alpha = 0.55;         // others: half-dimmed
+    }
+  }
+}
 
 // ══════════════════════════════════════════════════════════
 // BOOT
