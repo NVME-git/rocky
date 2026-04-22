@@ -9,6 +9,8 @@ mod server;
 mod session;
 mod sync;
 mod teacher;
+mod transcript;
+mod voice;
 
 use std::io::{self, Read as _, Write as _};
 
@@ -49,7 +51,11 @@ enum Cmd {
     Stats,
     /// List all topics in your PKG
     #[command(alias = "ls")]
-    List,
+    List {
+        /// Filter by creation date: today, yesterday, week, month, or a number of days (e.g. 7)
+        #[arg(long)]
+        since: Option<String>,
+    },
     /// Install a hook (git post-commit by default)
     Install {
         #[command(subcommand)]
@@ -60,6 +66,12 @@ enum Cmd {
         #[command(subcommand)]
         target: Option<HookTarget>,
     },
+    /// Show all stored context for a topic: description, source commits, contexts, question bank
+    #[command(alias = "show")]
+    Inspect {
+        /// Topic name (partial match)
+        topic: String,
+    },
     /// Show active configuration
     Config,
     /// On-demand quiz — general review, or search for specific topics
@@ -69,6 +81,10 @@ enum Cmd {
         /// Look back N hours for prompt context (default: 24)
         #[arg(long, default_value = "24")]
         hours: u32,
+        /// Voice mode: reads questions aloud (TTS) and transcribes mic input for answers.
+        /// Requires [voice] provider = "whisper-cpp" in config and arecord (Linux) or rec/sox (macOS).
+        #[arg(long)]
+        voice: bool,
     },
     /// Analyze a git diff and quiz on topics found in the code changes
     Diff {
@@ -133,6 +149,46 @@ enum Cmd {
         /// Retroactively generate missing clues for nodes that already have canonical Q&A
         #[arg(long)]
         fill_clues: bool,
+        /// Retroactively generate question_bank for nodes that don't have one yet
+        #[arg(long)]
+        fill_question_bank: bool,
+    },
+    /// Build a project context summary from CLAUDE.md, README, docs, and recent commits.
+    /// Used as grounding context for question generation. Run once when adding Rocky to a project.
+    Explore {
+        /// Re-summarise even if a recent context exists
+        #[arg(long)]
+        force: bool,
+        /// Suppress output (used by Stop hook auto-refresh)
+        #[arg(long)]
+        quiet: bool,
+        /// Print the stored project context for the current dir without regenerating
+        #[arg(long)]
+        show: bool,
+    },
+    /// Process queued commits + Claude Code session transcript at session end.
+    /// Called by the Claude Code Stop hook. Generates rich nodes + question bank.
+    SessionEnd {
+        /// Look back N hours for transcript activity (default: 6)
+        #[arg(long, default_value = "6")]
+        hours: u32,
+        /// Suppress output
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// Silently queue the latest commit's diff for later batch processing.
+    /// Intended for the git post-commit hook in Claude-aware queue mode.
+    /// No LLM call. Stop hook (`rocky session-end`) does the enrichment.
+    PostCommit,
+    /// Find and interactively merge near-duplicate topics in your PKG.
+    /// Scans all topics for word-overlap candidates, then lets you decide which to keep.
+    Dedupe {
+        /// Preview candidates without making any changes.
+        #[arg(long)]
+        dry_run: bool,
+        /// Pre-filter candidates using the LLM before showing them to you (slower but more precise).
+        #[arg(long)]
+        auto: bool,
     },
 }
 
@@ -144,6 +200,10 @@ enum HookTarget {
     Claude,
     /// Enable prompt logging for this project without the git hook
     Prompt,
+    /// Claude Code Stop hook — runs `rocky session-end` when a session closes
+    Stop,
+    /// Full Claude-aware install: prompt logging + Stop hook + queue-mode git hook
+    ClaudeAll,
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -207,6 +267,33 @@ fn run() -> Result<()> {
                         println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
+                HookTarget::Stop => {
+                    let (ok, msg) = install_claude_stop_hook()?;
+                    let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "✗".truecolor(226, 75, 74) };
+                    println!("  {glyph} {msg}");
+                    if ok {
+                        println!("  {}", "Rocky will batch-process commits + transcript when each Claude Code session ends.".dimmed());
+                    }
+                }
+                HookTarget::ClaudeAll => {
+                    p.banner();
+                    println!("  {}", "Installing full Claude-aware integration:".dimmed());
+
+                    let (ok1, msg1) = install_claude_hook()?;
+                    println!("    {} {msg1}", if ok1 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
+
+                    let (ok2, msg2) = install_claude_stop_hook()?;
+                    println!("    {} {msg2}", if ok2 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
+
+                    let (ok3, msg3) = install_git_hook_queue_mode()?;
+                    println!("    {} {msg3}", if ok3 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
+
+                    let (ok4, msg4) = local_log::install_prompt_marker()?;
+                    println!("    {} {msg4}", if ok4 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
+
+                    println!();
+                    println!("  {}", "Next: run  rocky explore  to build the project context summary.".dimmed());
+                }
             }
         }
         Some(Cmd::Uninstall { target }) => {
@@ -235,25 +322,67 @@ fn run() -> Result<()> {
                         println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
+                HookTarget::Stop => {
+                    let (ok, msg) = uninstall_claude_stop_hook()?;
+                    let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "✗".truecolor(226, 75, 74) };
+                    println!("  {glyph} {msg}");
+                }
+                HookTarget::ClaudeAll => {
+                    let _ = uninstall_claude_hook()?;
+                    let _ = uninstall_claude_stop_hook()?;
+                    let _ = uninstall_git_hook()?;
+                    let _ = local_log::uninstall_prompt_marker()?;
+                    println!("  {} Claude integration removed.", "✓".truecolor(29, 158, 117));
+                }
             }
         }
         Some(Cmd::Config) => cfg.show(),
-        Some(Cmd::Quiz { topic, hours }) => {
+        Some(Cmd::Quiz { topic, hours, voice }) => {
             let teacher = make_teacher(&cfg)?;
+            let cli_voice: Option<voice::CliVoice> = if voice {
+                match voice::make_stt(&cfg)? {
+                    Some(stt) => {
+                        if !voice::recorder_available() {
+                            eprintln!(
+                                "  {} No recorder found — install arecord (Linux: sudo apt install alsa-utils) \
+                                 or rec (macOS: brew install sox).",
+                                "!".truecolor(239, 159, 39)
+                            );
+                            None
+                        } else {
+                            Some(voice::CliVoice::new(stt))
+                        }
+                    }
+                    None => {
+                        eprintln!(
+                            "  {} Voice is off — set [voice] provider = \"whisper-cpp\" in ~/.config/rocky/config.toml.",
+                            "!".truecolor(239, 159, 39)
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
             let session = Session::new(
                 Db::open(&cfg.db_path, &cfg.pkg_dir)?,
                 cfg.daily_budget,
                 cfg.min_gap_minutes,
             );
             if let Some(query) = topic {
-                run_quiz_topic(&db, &teacher, &session, &p, &query, &cfg.edge_reuse)?;
+                run_quiz_topic(&db, &teacher, &session, &p, &query, &cfg.edge_reuse, cli_voice.as_ref())?;
             } else {
-                run_quiz(&db, &teacher, &session, &p, hours, &cfg.edge_reuse)?;
+                run_quiz(&db, &teacher, &session, &p, hours, &cfg.edge_reuse, cli_voice.as_ref())?;
             }
             auto_sync(&db, &cfg);
         }
+        Some(Cmd::Dedupe { dry_run, auto }) => {
+            let teacher = make_teacher(&cfg)?;
+            run_dedupe(&db, &teacher, dry_run, auto)?;
+        }
+        Some(Cmd::Inspect { topic }) => inspect_topic(&db, &topic)?,
         Some(Cmd::Stats) => show_stats(&db, &cfg, &p)?,
-        Some(Cmd::List) => list_topics(&db)?,
+        Some(Cmd::List { since }) => list_topics(&db, since.as_deref())?,
         Some(Cmd::Delete { query, since, before }) => {
             delete_topics(&db, &cfg.pkg_dir, query.as_deref(), since.as_deref(), before.as_deref())?;
         }
@@ -289,8 +418,21 @@ fn run() -> Result<()> {
         Some(Cmd::View) => {
             server::run(&db, &cfg)?;
         }
-        Some(Cmd::Backfill { all_authors, limit, fill_clues }) => {
-            run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit, fill_clues)?;
+        Some(Cmd::Backfill { all_authors, limit, fill_clues, fill_question_bank }) => {
+            run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit, fill_clues, fill_question_bank)?;
+        }
+        Some(Cmd::Explore { force, quiet, show }) => {
+            if show {
+                show_project_context(&db)?;
+            } else {
+                run_explore(&db, &make_teacher(&cfg)?, force, quiet)?;
+            }
+        }
+        Some(Cmd::SessionEnd { hours, quiet }) => {
+            run_session_end(&db, &make_teacher(&cfg)?, &cfg, hours, quiet)?;
+        }
+        Some(Cmd::PostCommit) => {
+            run_post_commit(&db)?;
         }
         None => {
             if let Some(msg) = cli.after {
@@ -323,6 +465,13 @@ fn run() -> Result<()> {
 }
 
 fn make_teacher(cfg: &Config) -> Result<Teacher> {
+    if cfg.privacy_strict && cfg.llm_provider != "ollama" {
+        anyhow::bail!(
+            "privacy.strict = true forbids non-local LLM providers, but provider = \"{}\".\n  \
+             Either switch to Ollama in your config, or disable privacy.strict.",
+            cfg.llm_provider
+        );
+    }
     if cfg.llm_provider == "ollama" {
         Ok(Teacher::ollama(cfg.ollama_base_url.clone(), cfg.llm_model.clone()))
     } else {
@@ -341,6 +490,8 @@ fn show_stats(db: &Db, cfg: &Config, p: &personality::Personality) -> Result<()>
     println!("  {}", format!("Known:         {known}").truecolor(29, 158, 117));
     println!("  {}", format!("Fading:        {stale}").truecolor(239, 159, 39));
     println!("  {}", format!("Gaps/weak:     {gaps}").truecolor(226, 75, 74));
+
+    nudge_if_context_stale(db);
 
     let session = Session::new(
         Db::open(&cfg.db_path, &cfg.pkg_dir)?,
@@ -379,11 +530,34 @@ fn show_stats(db: &Db, cfg: &Config, p: &personality::Personality) -> Result<()>
     Ok(())
 }
 
-fn list_topics(db: &Db) -> Result<()> {
+fn parse_since_days(since: &str) -> Option<i64> {
+    match since.trim().to_lowercase().as_str() {
+        "today"     => Some(0),
+        "yesterday" => Some(1),
+        "week"      => Some(7),
+        "month"     => Some(30),
+        other => other.strip_suffix('d').unwrap_or(other).parse::<i64>().ok(),
+    }
+}
+
+fn list_topics(db: &Db, since: Option<&str>) -> Result<()> {
     print_header();
-    let nodes: Vec<_> = db.all_nodes()?.into_iter().filter(|n| !n.kind.is_domain()).collect();
+    let cutoff: Option<chrono::NaiveDate> = since.and_then(|s| parse_since_days(s)).map(|days| {
+        chrono::Local::now().date_naive() - chrono::Duration::days(days)
+    });
+
+    let nodes: Vec<_> = db.all_nodes()?
+        .into_iter()
+        .filter(|n| !n.kind.is_domain())
+        .filter(|n| cutoff.map_or(true, |c| n.created_at >= c))
+        .collect();
+
     if nodes.is_empty() {
-        println!("\n  PKG is empty. Run a task to populate it.");
+        if let Some(s) = since {
+            println!("\n  No topics added matching --since {s}.");
+        } else {
+            println!("\n  PKG is empty. Run a task to populate it.");
+        }
         return Ok(());
     }
 
@@ -438,6 +612,79 @@ fn list_topics(db: &Db) -> Result<()> {
     Ok(())
 }
 
+fn inspect_topic(db: &Db, query: &str) -> Result<()> {
+    let nodes = db.all_nodes()?;
+    let q = query.to_lowercase();
+    let matches: Vec<_> = nodes.iter().filter(|n| n.topic.to_lowercase().contains(&q)).collect();
+
+    if matches.is_empty() {
+        println!("\n  No topic matching '{query}'.");
+        return Ok(());
+    }
+    if matches.len() > 1 {
+        println!("\n  Multiple matches — be more specific:");
+        for n in &matches {
+            println!("    · {}", n.topic);
+        }
+        return Ok(());
+    }
+
+    let n = matches[0];
+    let div = "─".repeat(60);
+
+    println!("\n  {}", div.dimmed());
+    println!("  {} {}", "◆".truecolor(29, 158, 117), n.topic.bold());
+    println!("  {}", div.dimmed());
+
+    println!("\n  {:<18} {}", "Kind:".dimmed(), n.kind.as_str());
+    println!("  {:<18} {}", "Domain:".dimmed(), if n.domain.is_empty() { "—" } else { &n.domain });
+    println!("  {:<18} {}", "Created:".dimmed(), n.created_at);
+    println!("  {:<18} {}", "Last reviewed:".dimmed(), n.last_reviewed);
+    println!("  {:<18} {}", "Reviews:".dimmed(), n.review_count);
+    println!("  {:<18} {:.2}", "Difficulty:".dimmed(), n.difficulty);
+    println!("  {:<18} {:.1}d", "Stability:".dimmed(), n.stability);
+    println!("  {:<18} {}", "Encounters:".dimmed(), n.encounter_count);
+
+    println!("\n  {}", "Description:".dimmed());
+    println!("  {}", n.description);
+
+    if !n.source_commits.is_empty() {
+        println!("\n  {}", "Source commits:".dimmed());
+        for sha in &n.source_commits {
+            println!("    · {}", sha);
+        }
+    }
+
+    if !n.contexts.is_empty() {
+        println!("\n  {}", "Creation contexts:".dimmed());
+        for ctx in &n.contexts {
+            println!("    · {}", ctx);
+        }
+    }
+
+    if !n.canonical_question.is_empty() {
+        println!("\n  {}", "Canonical Q&A:".dimmed());
+        println!("  Q: {}", n.canonical_question);
+        println!("  A: {}", n.canonical_answer);
+        if !n.canonical_clue.is_empty() {
+            println!("  Clue: {}", n.canonical_clue.dimmed());
+        }
+    }
+
+    if !n.question_bank.is_empty() {
+        println!("\n  {} ({} questions)", "Question bank:".dimmed(), n.question_bank.len());
+        for (i, q) in n.question_bank.iter().enumerate() {
+            println!("\n  {}. {} {}", i + 1, q.question, format!("[asked {}×]", q.asked_count).dimmed());
+            println!("     A: {}", q.answer);
+            println!("     Clue: {}", q.clue.dimmed());
+        }
+    }
+
+    println!("\n  {}", div.dimmed());
+    println!();
+    Ok(())
+}
+
 // Smaller diff limit for backfill — keeps LLM requests fast and avoids timeouts
 const MAX_BACKFILL_DIFF_CHARS: usize = 6_000;
 // Pause between commits to avoid overwhelming a local Ollama instance
@@ -445,8 +692,63 @@ const BACKFILL_COMMIT_DELAY_MS: u64 = 1_000;
 // Pause between edge-generation calls after all nodes are added
 const BACKFILL_EDGE_DELAY_MS: u64 = 800;
 
-fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, limit: Option<usize>, fill_clues: bool) -> Result<()> {
+fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, limit: Option<usize>, fill_clues: bool, fill_question_bank: bool) -> Result<()> {
     use std::process::Command;
+
+    // ── Fill-question-bank mode: retroactively generate question banks ─────────
+    if fill_question_bank {
+        let missing = db.nodes_missing_question_bank()?;
+        if missing.is_empty() {
+            println!("  {} All nodes already have a question bank.", "✓".truecolor(29, 158, 117));
+            return Ok(());
+        }
+
+        // Try to ground bank generation in the project context for the current dir.
+        let project_path = std::env::current_dir()
+            .ok()
+            .and_then(|p| p.canonicalize().ok())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let project_summary = if project_path.is_empty() {
+            String::new()
+        } else {
+            db.get_project_context(&project_path)
+                .ok()
+                .flatten()
+                .map(|c| c.summary)
+                .unwrap_or_default()
+        };
+
+        println!("  Generating question banks for {} node(s)...\n", missing.len());
+        let mut filled = 0usize;
+        for node in &missing {
+            print!("    {} {}... ", "·".dimmed(), node.topic);
+            io::stdout().flush()?;
+            // Synthesise a "diff excerpt" from any creation contexts we have on
+            // record. Better than nothing for legacy nodes; richer for nodes
+            // created via session-end (which stored a real commit message).
+            let diff_excerpt = node.contexts.join("\n");
+            match teacher.generate_question_bank(
+                &node.topic,
+                &node.description,
+                &project_summary,
+                "",            // no transcript context for backfill
+                &diff_excerpt,
+            ) {
+                Ok(bank) if !bank.is_empty() => {
+                    db.set_question_bank(&node.topic, &bank).ok();
+                    filled += 1;
+                    println!("{}", format!("done ({} qs)", bank.len()).truecolor(29, 158, 117));
+                }
+                Ok(_) => println!("{}", "empty".truecolor(239, 159, 39)),
+                Err(e) => println!("{}", format!("failed ({e})").truecolor(231, 130, 132)),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        println!("\n  {} {}/{} question banks generated.",
+            "✓".truecolor(29, 158, 117), filled, missing.len());
+        return Ok(());
+    }
 
     // ── Fill-clues mode: retroactively generate clues for existing canonical nodes ──
     if fill_clues {
@@ -974,7 +1276,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse, &repo, commit_dt)?;
+                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse, &repo, commit_dt, None)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -1030,6 +1332,7 @@ fn run_socratic_loop(
     edge_reuse: &config::EdgeReuse,
     repo: &str,
     node_date: Option<chrono::NaiveDate>,
+    cli_voice: Option<&voice::CliVoice>,
 ) -> Result<(bool, bool)> {
     let topic = &topic_info.topic;
     println!("\n{} New topic — {topic}", "Rocky:".truecolor(6, 182, 212).bold());
@@ -1103,8 +1406,20 @@ fn run_socratic_loop(
                 }
             }
         }
-        // Use pre-generated canonical question if available, otherwise generate live
+        // Prefer the question_bank (rotates through least-asked), fall back to
+        // canonical_question, then generate live.
         if let Ok(Some(ref n)) = db.get_node(topic) {
+            if !n.question_bank.is_empty() {
+                if let Some((idx, q)) = pick_least_asked(&n.question_bank) {
+                    let mut bank = n.question_bank.clone();
+                    bank[idx].asked_count = bank[idx].asked_count.saturating_add(1);
+                    db.set_question_bank(topic, &bank).ok();
+                    // Sync canonical_qa to the chosen question so answer/clue lookups below
+                    // pick up the correct triple without further changes.
+                    db.set_canonical_qa(topic, &q.question, &q.answer, &q.clue).ok();
+                    break 'q q.question.clone();
+                }
+            }
             if !n.canonical_question.is_empty() {
                 break 'q n.canonical_question.clone();
             }
@@ -1138,23 +1453,29 @@ fn run_socratic_loop(
         } else {
             " (generated)".dimmed().to_string()
         };
+
+        // Speak question aloud in voice mode (plain text, no ANSI)
+        if let Some(v) = cli_voice {
+            v.speak(&question);
+        }
+
         println!("{}{} {display_q}", format!("Q{questions_asked}.").bold(), source_label);
-        println!(
-            "{}",
-            "   [e] too easy  [s] simpler  [h] harder  [c] clue  [?] explain it  [i] not relevant  or type your answer:".dimmed()
-        );
+
+        let hint_line = if cli_voice.is_some() {
+            "   [e] too easy  [s] simpler  [h] harder  [c] clue  [?] explain it  [i] not relevant  or type / [Enter] to record:"
+        } else {
+            "   [e] too easy  [s] simpler  [h] harder  [c] clue  [?] explain it  [i] not relevant  or type your answer:"
+        };
+        println!("{}", hint_line.dimmed());
         print!("   > ");
         io::stdout().flush()?;
 
-        let mut line = String::new();
-        match io::stdin().read_line(&mut line) {
-            Err(_) | Ok(0) => {
-                println!("\n   Skipped.");
-                break;
-            }
-            Ok(_) => {}
+        let answer: String = read_answer_cli(cli_voice)?;
+        if answer.starts_with('\x00') {
+            // EOF / error sentinel
+            println!("\n   Skipped.");
+            break;
         }
-        let answer = line.trim();
 
         // Skip / quit — queue for later without touching PKG
         if answer.is_empty() {
@@ -1257,11 +1578,11 @@ fn run_socratic_loop(
 
         // Normal answer — evaluate it
         last_question = question.clone();
-        last_answer = answer.to_string();
+        last_answer = answer.clone();
 
         println!("{}", "   Evaluating...".dimmed());
         let result = teacher.evaluate_answer(
-            topic, &question, answer, &topic_info.description,
+            topic, &question, &answer, &topic_info.description,
             canonical_answer.as_deref(),
         )?;
         total_score += result.score;
@@ -1278,7 +1599,7 @@ fn run_socratic_loop(
                 task,
                 node_date, repo, node_date,
             )?;
-            db.add_review(&Db::node_id_static(topic), &question, answer, &result.feedback, result.score).ok();
+            db.add_review(&Db::node_id_static(topic), &question, &answer, &result.feedback, result.score).ok();
             if let Some(msg) = p.correct() { println!("   {msg}"); }
             else { println!("{}", "   Added to your PKG.".truecolor(29, 158, 117)); }
             print_milestone(db, p, topic);
@@ -1327,7 +1648,7 @@ fn run_socratic_loop(
     Ok((true, true))
 }
 
-fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, query: &str, edge_reuse: &config::EdgeReuse) -> Result<()> {
+fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, query: &str, edge_reuse: &config::EdgeReuse, cli_voice: Option<&voice::CliVoice>) -> Result<()> {
     print_header();
     p.print_rocky(false);
 
@@ -1406,7 +1727,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
             description: node.description.clone(),
         };
         let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
-        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
+        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
         if completed {
             session.record_quiz()?;
         }
@@ -1423,7 +1744,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
     Ok(())
 }
 
-fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, hours: u32, edge_reuse: &config::EdgeReuse) -> Result<()> {
+fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, hours: u32, edge_reuse: &config::EdgeReuse, cli_voice: Option<&voice::CliVoice>) -> Result<()> {
     print_header();
     p.print_rocky(false);
 
@@ -1503,7 +1824,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 domain: String::new(),
                 description: description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
             if completed {
                 session.record_quiz()?;
                 // Remove from queue now that it has been properly reviewed
@@ -1550,7 +1871,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             domain: node.domain.clone(),
                 description: node.description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -1569,7 +1890,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             .collect();
 
         for topic_info in new_from_prompts {
-            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse, "", None)?;
+            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -1860,7 +2181,7 @@ fn run_diff(
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse, "", None)?;
+                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse, "", None, None)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -2174,6 +2495,183 @@ fn uninstall_claude_hook() -> Result<(bool, String)> {
     Ok((true, "Claude Code hook removed".into()))
 }
 
+// ── Stop hook (Claude Code session-end) ──────────────────────────────────────
+
+const STOP_HOOK_MATCHER_TAG: &str = "rocky session-end";
+
+fn install_claude_stop_hook() -> Result<(bool, String)> {
+    let path = claude_settings_path()
+        .ok_or_else(|| anyhow::anyhow!("could not locate home directory"))?;
+
+    let mut settings: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path)?;
+        serde_json::from_str(&text).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let hooks = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings.json is not a JSON object"))?
+        .entry("hooks")
+        .or_insert(serde_json::json!({}));
+
+    let stop = hooks
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("hooks is not a JSON object"))?
+        .entry("Stop")
+        .or_insert(serde_json::json!([]));
+
+    let arr = stop
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("Stop is not an array"))?;
+
+    let rocky_bin = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "rocky".to_string());
+    let cmd = format!("{rocky_bin} session-end --quiet");
+
+    let already = arr.iter().any(|v| {
+        v.get("hooks")
+            .and_then(|h| h.as_array())
+            .map(|hs| hs.iter().any(|h| {
+                h.get("command").and_then(|c| c.as_str())
+                    .map(|c| c.contains(STOP_HOOK_MATCHER_TAG))
+                    .unwrap_or(false)
+            }))
+            .unwrap_or(false)
+    });
+    if already {
+        return Ok((false, "Claude Code Stop hook already installed".into()));
+    }
+
+    arr.push(serde_json::json!({
+        "hooks": [{"command": cmd, "type": "command"}]
+    }));
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&settings)?)?;
+    Ok((true, format!("Claude Code Stop hook installed in {}", path.display())))
+}
+
+fn uninstall_claude_stop_hook() -> Result<(bool, String)> {
+    let path = claude_settings_path()
+        .ok_or_else(|| anyhow::anyhow!("could not locate home directory"))?;
+    if !path.exists() {
+        return Ok((false, "~/.claude/settings.json not found".into()));
+    }
+
+    let text = std::fs::read_to_string(&path)?;
+    let mut settings: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or(serde_json::json!({}));
+
+    let removed = if let Some(arr) = settings
+        .get_mut("hooks")
+        .and_then(|h| h.get_mut("Stop"))
+        .and_then(|v| v.as_array_mut())
+    {
+        let before = arr.len();
+        arr.retain(|v| {
+            let is_rocky = v.get("hooks")
+                .and_then(|h| h.as_array())
+                .map(|hs| hs.iter().any(|h| {
+                    h.get("command").and_then(|c| c.as_str())
+                        .map(|c| c.contains(STOP_HOOK_MATCHER_TAG))
+                        .unwrap_or(false)
+                }))
+                .unwrap_or(false);
+            !is_rocky
+        });
+        arr.len() < before
+    } else {
+        false
+    };
+
+    if !removed {
+        return Ok((false, "Claude Code Stop hook not found".into()));
+    }
+
+    std::fs::write(&path, serde_json::to_string_pretty(&settings)?)?;
+    Ok((true, "Claude Code Stop hook removed".into()))
+}
+
+/// Like install_git_hook but uses queue-mode (`rocky post-commit`) so commits
+/// stay fast and the Stop hook handles enrichment in one batch at session end.
+fn install_git_hook_queue_mode() -> Result<(bool, String)> {
+    let hook_path = std::path::Path::new(".git/hooks/post-commit");
+    if !std::path::Path::new(".git").exists() {
+        return Ok((false, "not a git repository".into()));
+    }
+    if hook_path.exists() {
+        let existing = std::fs::read_to_string(hook_path)?;
+        if existing.contains("rocky post-commit") {
+            return Ok((false, "queue-mode git hook already installed".into()));
+        }
+        // Replace any prior `rocky diff` invocation with `rocky post-commit`
+        if existing.contains("rocky diff") {
+            let updated = existing.replace("rocky diff", "rocky post-commit");
+            std::fs::write(hook_path, updated)?;
+            local_log::ensure_gitignored()?;
+            return Ok((true, "git hook switched to queue mode".into()));
+        }
+        let appended = format!("{existing}\nrocky post-commit\n");
+        std::fs::write(hook_path, appended)?;
+    } else {
+        std::fs::write(hook_path, "#!/bin/sh\nrocky post-commit\n")?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(hook_path, std::fs::Permissions::from_mode(0o755))?;
+        }
+    }
+    local_log::ensure_gitignored()?;
+    Ok((true, "git hook installed in queue mode".into()))
+}
+
+// ── post-commit queue command ────────────────────────────────────────────────
+
+fn run_post_commit(db: &Db) -> Result<()> {
+    let project_path = std::env::current_dir()?
+        .canonicalize()?
+        .to_string_lossy()
+        .to_string();
+
+    let sha = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    let commit_msg = std::process::Command::new("git")
+        .args(["log", "-1", "--pretty=%B"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    let diff = std::process::Command::new("git")
+        .args(["show", "--stat", "--patch", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    if sha.is_empty() || diff.is_empty() {
+        return Ok(());
+    }
+
+    db.queue_pending_diff(&project_path, &sha, &commit_msg, &diff)?;
+    db.bump_commits_since_explore(&project_path).ok();
+    Ok(())
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /// Check if adding this topic crossed a milestone and print Rocky's reaction.
@@ -2451,4 +2949,736 @@ fn is_hotfix(msg: &str) -> bool {
         || lower.starts_with("bugfix")
         || lower.starts_with("patch")
         || lower.starts_with("[hotfix]")
+}
+
+/// Pick the bank entry that has been asked the fewest times.
+/// Returns the index and a reference for borrowing convenience.
+fn pick_least_asked(
+    bank: &[crate::node::QuestionBankItem],
+) -> Option<(usize, &crate::node::QuestionBankItem)> {
+    bank.iter()
+        .enumerate()
+        .min_by_key(|(_, q)| q.asked_count)
+        .map(|(i, q)| (i, q))
+}
+
+// ── Voice CLI helper ──────────────────────────────────────────────────────────
+
+/// Read an answer from stdin. In voice mode, an empty line triggers mic recording.
+/// Returns the answer text, or a string starting with `\x00` to signal EOF/skip.
+fn read_answer_cli(cli_voice: Option<&voice::CliVoice>) -> Result<String> {
+    let mut line = String::new();
+    match io::stdin().read_line(&mut line) {
+        Err(_) | Ok(0) => return Ok("\x00eof".into()),
+        Ok(_) => {}
+    }
+    let input = line.trim().to_string();
+
+    // In voice mode, empty Enter → record mic until Enter pressed again
+    if input.is_empty() {
+        if let Some(v) = cli_voice {
+            println!("{}", "   🎤 Recording... press Enter to stop.".truecolor(6, 182, 212));
+            match v.record_and_transcribe() {
+                Ok(transcript) if !transcript.is_empty() => {
+                    println!("{}", format!("   Heard: \"{}\"", transcript).truecolor(167, 139, 250));
+                    println!("{}", "   Press Enter to submit, or type to override:".dimmed());
+                    print!("   > ");
+                    io::stdout().flush()?;
+                    let mut confirm = String::new();
+                    io::stdin().read_line(&mut confirm)?;
+                    let override_text = confirm.trim().to_string();
+                    return Ok(if override_text.is_empty() { transcript } else { override_text });
+                }
+                Ok(_) => {
+                    println!("{}", "   (Nothing heard — treating as skip)".dimmed());
+                    return Ok(String::new());
+                }
+                Err(e) => {
+                    println!("{}", format!("   Recording failed: {e} — type your answer instead:").truecolor(226, 75, 74));
+                    print!("   > ");
+                    io::stdout().flush()?;
+                    let mut fallback = String::new();
+                    io::stdin().read_line(&mut fallback)?;
+                    return Ok(fallback.trim().to_string());
+                }
+            }
+        }
+    }
+
+    Ok(input)
+}
+
+// ── rocky dedupe ──────────────────────────────────────────────────────────────
+
+/// Word-set Jaccard similarity for two topic name strings.
+fn topic_jaccard(a: &str, b: &str) -> f64 {
+    let words = |s: &str| -> std::collections::HashSet<String> {
+        s.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.len() >= 3)
+            .map(|w| w.to_lowercase())
+            .collect()
+    };
+    let sa = words(a);
+    let sb = words(b);
+    if sa.is_empty() || sb.is_empty() {
+        return 0.0;
+    }
+    let intersection = sa.intersection(&sb).count();
+    let union = sa.union(&sb).count();
+    intersection as f64 / union as f64
+}
+
+fn is_candidate_pair(a: &str, b: &str) -> bool {
+    if topic_jaccard(a, b) >= 0.5 {
+        return true;
+    }
+    // Substring: one name fully contained in the other
+    let an = a.to_lowercase();
+    let bn = b.to_lowercase();
+    an.contains(bn.as_str()) || bn.contains(an.as_str())
+}
+
+/// Merge two question banks, deduplicating by question text, capped at 8 items.
+fn merge_question_banks(
+    primary: &[crate::node::QuestionBankItem],
+    secondary: &[crate::node::QuestionBankItem],
+) -> Vec<crate::node::QuestionBankItem> {
+    let mut result = primary.to_vec();
+    let existing: std::collections::HashSet<String> =
+        result.iter().map(|q| q.question.clone()).collect();
+    for item in secondary {
+        if !existing.contains(&item.question) && result.len() < 8 {
+            result.push(item.clone());
+        }
+    }
+    result
+}
+
+fn run_dedupe(db: &Db, teacher: &Teacher, dry_run: bool, auto: bool) -> Result<()> {
+    print_header();
+    if dry_run {
+        println!("  {} Dry-run mode — no changes will be written.\n", "~".truecolor(239, 159, 39));
+    }
+    println!("  {}", "Scanning PKG for duplicate topics...".dimmed());
+
+    let all_nodes: Vec<_> = db.all_nodes()?.into_iter().filter(|n| !n.kind.is_domain()).collect();
+    if all_nodes.len() < 2 {
+        println!("  {} Not enough topics to scan.", "✗".truecolor(226, 75, 74));
+        return Ok(());
+    }
+
+    // Build candidate pairs via word-overlap heuristic
+    let mut candidates: Vec<(usize, usize)> = Vec::new();
+    for i in 0..all_nodes.len() {
+        for j in (i + 1)..all_nodes.len() {
+            if is_candidate_pair(&all_nodes[i].topic, &all_nodes[j].topic) {
+                candidates.push((i, j));
+            }
+        }
+    }
+
+    if candidates.is_empty() {
+        println!("  {} No near-duplicate candidates found.", "✓".truecolor(29, 158, 117));
+        return Ok(());
+    }
+
+    println!(
+        "  {} candidate pair{} found.\n",
+        candidates.len(),
+        if candidates.len() == 1 { "" } else { "s" }
+    );
+
+    let mut merged_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut merge_count = 0usize;
+
+    for (i, j) in &candidates {
+        let a = &all_nodes[*i];
+        let b = &all_nodes[*j];
+
+        if merged_ids.contains(&a.id) || merged_ids.contains(&b.id) {
+            continue;
+        }
+
+        // Optional LLM pre-filter
+        if auto {
+            match teacher.is_duplicate_pair(&a.topic, &a.description, &b.topic, &b.description) {
+                Ok(false) => continue,
+                Err(e) => {
+                    eprintln!("  {} LLM check failed for pair ({}, {}): {e}", "!".truecolor(239, 159, 39), a.topic, b.topic);
+                }
+                Ok(true) => {}
+            }
+        }
+
+        println!(
+            "  ┌─ A: {} {}",
+            a.topic.truecolor(6, 182, 212).bold(),
+            format!("({})", a.domain).dimmed()
+        );
+        println!("  │     {}", a.description.dimmed());
+        println!("  │");
+        println!(
+            "  └─ B: {} {}",
+            b.topic.truecolor(239, 159, 39).bold(),
+            format!("({})", b.domain).dimmed()
+        );
+        println!("        {}", b.description.dimmed());
+        println!();
+        println!(
+            "  {}",
+            "[a] merge → A   [b] merge → B   [m] merge → best name (LLM)   [s] skip   [q] quit".dimmed()
+        );
+        print!("  > ");
+        io::stdout().flush()?;
+
+        let mut line = String::new();
+        match io::stdin().read_line(&mut line) {
+            Err(_) | Ok(0) => break,
+            Ok(_) => {}
+        }
+
+        match line.trim().to_lowercase().as_str() {
+            "a" => {
+                if !dry_run {
+                    let merged_bank = merge_question_banks(&a.question_bank, &b.question_bank);
+                    db.merge_nodes(&a.id, &b.id)?;
+                    if !merged_bank.is_empty() {
+                        db.set_question_bank(&a.topic, &merged_bank).ok();
+                    }
+                }
+                println!(
+                    "  {} Merged into A: \"{}\"\n",
+                    "✓".truecolor(29, 158, 117),
+                    a.topic
+                );
+                merged_ids.insert(b.id.clone());
+                merge_count += 1;
+            }
+            "b" => {
+                if !dry_run {
+                    let merged_bank = merge_question_banks(&b.question_bank, &a.question_bank);
+                    db.merge_nodes(&b.id, &a.id)?;
+                    if !merged_bank.is_empty() {
+                        db.set_question_bank(&b.topic, &merged_bank).ok();
+                    }
+                }
+                println!(
+                    "  {} Merged into B: \"{}\"\n",
+                    "✓".truecolor(29, 158, 117),
+                    b.topic
+                );
+                merged_ids.insert(a.id.clone());
+                merge_count += 1;
+            }
+            "m" => {
+                // LLM picks the best canonical name + description; user can override
+                println!("{}", "  Asking LLM for best canonical name...".dimmed());
+                let (suggested_name, suggested_desc) = match teacher.suggest_merge_name(
+                    &a.topic, &a.description, &b.topic, &b.description,
+                ) {
+                    Ok(pair) => pair,
+                    Err(e) => {
+                        println!("  {} LLM failed: {e} — falling back to A.", "!".truecolor(239, 159, 39));
+                        (a.topic.clone(), a.description.clone())
+                    }
+                };
+
+                println!(
+                    "  {} \"{}\"",
+                    "LLM suggests:".truecolor(167, 139, 250).bold(),
+                    suggested_name.truecolor(167, 139, 250)
+                );
+                println!("            {}", suggested_desc.dimmed());
+                println!("{}", "  Press Enter to accept, or type a custom name:".dimmed());
+                print!("  > ");
+                io::stdout().flush()?;
+
+                let mut name_line = String::new();
+                io::stdin().read_line(&mut name_line)?;
+                let final_name = {
+                    let typed = name_line.trim();
+                    if typed.is_empty() { suggested_name.clone() } else { typed.to_string() }
+                };
+                let final_desc = if final_name == suggested_name {
+                    suggested_desc.clone()
+                } else {
+                    // User typed their own name — keep the LLM description unless it mentions
+                    // either original topic name (would be misleading)
+                    suggested_desc.clone()
+                };
+
+                if !dry_run {
+                    let merged_bank = merge_question_banks(&a.question_bank, &b.question_bank);
+                    // Merge B into A, then rename A to the chosen name
+                    db.merge_nodes(&a.id, &b.id)?;
+                    db.update_topic_name(&a.id, &final_name, &final_desc)?;
+                    if !merged_bank.is_empty() {
+                        db.set_question_bank(&final_name, &merged_bank).ok();
+                    }
+                }
+                println!(
+                    "  {} Merged into: \"{}\"\n",
+                    "✓".truecolor(29, 158, 117),
+                    final_name
+                );
+                merged_ids.insert(b.id.clone());
+                merge_count += 1;
+            }
+            "q" => {
+                println!("  Quitting.");
+                break;
+            }
+            _ => {
+                println!("  Skipped.\n");
+            }
+        }
+    }
+
+    println!(
+        "  {} topic{} merged{}.",
+        merge_count,
+        if merge_count == 1 { "" } else { "s" },
+        if dry_run { " (dry-run — nothing written)" } else { "" }
+    );
+    Ok(())
+}
+
+/// If the project context is missing or stale, print a one-line nudge.
+/// Stale = > 20 commits since explore OR > 14 days since last_explored_at.
+fn nudge_if_context_stale(db: &Db) {
+    let project_path = match std::env::current_dir().and_then(|p| p.canonicalize()) {
+        Ok(p) => p.to_string_lossy().to_string(),
+        Err(_) => return,
+    };
+    let ctx = match db.get_project_context(&project_path) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            println!(
+                "\n  {} {}",
+                "·".dimmed(),
+                "No project context yet — run  rocky explore  to ground future questions in real architecture.".dimmed()
+            );
+            return;
+        }
+        Err(_) => return,
+    };
+
+    let stale_by_commits = ctx.commits_since_explore > 20;
+    let stale_by_age = chrono::NaiveDateTime::parse_from_str(&ctx.last_explored_at, "%Y-%m-%d %H:%M:%S%.f")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(&ctx.last_explored_at, "%Y-%m-%d %H:%M:%S"))
+        .map(|d| (chrono::Local::now().naive_local() - d).num_days() > 14)
+        .unwrap_or(false);
+
+    if stale_by_commits || stale_by_age {
+        let reason = if stale_by_commits {
+            format!("{} commits since last explore", ctx.commits_since_explore)
+        } else {
+            "context is over 14 days old".into()
+        };
+        println!(
+            "\n  {} Project context is stale ({}). Run  rocky explore  to refresh.",
+            "!".truecolor(239, 159, 39),
+            reason
+        );
+    }
+}
+
+// ── rocky explore ─────────────────────────────────────────────────────────────
+
+const EXPLORE_DOC_FILES: &[&str] = &[
+    "CLAUDE.md",
+    "README.md",
+    "README",
+    "readme.md",
+    "ARCHITECTURE.md",
+    "architecture.md",
+    "DESIGN.md",
+];
+
+const EXPLORE_DOC_DIRS: &[&str] = &[
+    "docs/decisions",
+    "docs/architecture",
+    "docs/adr",
+    "docs",
+    "architecture",
+];
+
+const MAX_EXPLORE_FILE_BYTES: u64 = 64 * 1024;
+const MAX_EXPLORE_DOCS: usize = 12;
+
+fn show_project_context(db: &Db) -> Result<()> {
+    let project_path = std::env::current_dir()?
+        .canonicalize()?
+        .to_string_lossy()
+        .to_string();
+    print_header();
+    println!("  Project: {}\n", project_path.dimmed());
+
+    let ctx = match db.get_project_context(&project_path)? {
+        Some(c) => c,
+        None => {
+            println!("  No project context stored. Run  rocky explore  to generate one.\n");
+            return Ok(());
+        }
+    };
+
+    let div = "─".repeat(60);
+    println!("  {}", div.dimmed());
+    println!("  {:<22} {}", "Last explored:".dimmed(), ctx.last_explored_at);
+    println!("  {:<22} {}", "Commits since:".dimmed(), ctx.commits_since_explore);
+    if !ctx.sources.is_empty() {
+        println!("  {:<22}", "Sources:".dimmed());
+        for s in &ctx.sources {
+            println!("    · {s}");
+        }
+    }
+    println!("  {}", div.dimmed());
+    println!("\n{}\n", ctx.summary);
+    println!("  {}", div.dimmed());
+    println!("  {}", "Re-run with  rocky explore --force  to regenerate.".dimmed());
+    println!();
+    Ok(())
+}
+
+fn run_explore(db: &Db, teacher: &Teacher, force: bool, quiet: bool) -> Result<()> {
+    let project_path = std::env::current_dir()?
+        .canonicalize()?
+        .to_string_lossy()
+        .to_string();
+    let project_name = std::path::Path::new(&project_path)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "project".into());
+
+    if !quiet {
+        print_header();
+        println!("  Exploring {}...\n", project_path.dimmed());
+    }
+
+    if !force {
+        if let Ok(Some(existing)) = db.get_project_context(&project_path) {
+            let stale = existing.commits_since_explore > 20;
+            if !stale {
+                if !quiet {
+                    println!("  {} Project context already up to date ({} commits since last explore).",
+                        "·".dimmed(), existing.commits_since_explore);
+                    println!("  {}", "Use --force to refresh anyway.".dimmed());
+                }
+                return Ok(());
+            }
+        }
+    }
+
+    let docs = collect_project_docs(&std::path::PathBuf::from(&project_path))?;
+    if docs.is_empty() && !quiet {
+        println!("  {} No documentation files found. Project context will be sparse.", "!".truecolor(239, 159, 39));
+    }
+
+    if !quiet && !docs.is_empty() {
+        println!("  {} Reading {} documentation file(s):", "·".dimmed(), docs.len());
+        for (path, _) in &docs {
+            println!("    · {path}");
+        }
+        println!();
+    }
+
+    let commits = recent_commit_messages(30);
+    if !quiet {
+        println!("  {} Scanned {} recent commit(s).", "·".dimmed(), commits.len());
+        println!("  {} Synthesising project context...", "·".dimmed());
+    }
+
+    let summary = teacher.summarize_project_docs(&project_name, &docs, &commits)
+        .context("project context summarisation failed")?;
+
+    let sources: Vec<String> = docs.iter().map(|(p, _)| p.clone()).collect();
+    db.upsert_project_context(&project_path, &summary, &sources)?;
+
+    if !quiet {
+        println!("  {} Project context saved.\n", "✓".truecolor(29, 158, 117));
+        println!("  {}", "Future quiz questions will be grounded in this summary.".dimmed());
+        println!("  {}", "Re-run  rocky explore --force  whenever the project's shape changes.".dimmed());
+    }
+    Ok(())
+}
+
+/// Collect known documentation files from the project, capped to MAX_EXPLORE_DOCS.
+fn collect_project_docs(project_root: &std::path::Path) -> Result<Vec<(String, String)>> {
+    let mut found: Vec<(String, String)> = Vec::new();
+    let mut seen: std::collections::HashSet<std::path::PathBuf> = std::collections::HashSet::new();
+
+    // Top-level marker files
+    for name in EXPLORE_DOC_FILES {
+        let path = project_root.join(name);
+        if let Ok(canonical) = path.canonicalize() {
+            if seen.insert(canonical.clone()) {
+                if let Some(content) = read_capped(&path) {
+                    found.push((name.to_string(), content));
+                    if found.len() >= MAX_EXPLORE_DOCS {
+                        return Ok(found);
+                    }
+                }
+            }
+        }
+    }
+
+    // Walk a few known doc directories (one level deep)
+    for dir in EXPLORE_DOC_DIRS {
+        let dir_path = project_root.join(dir);
+        if !dir_path.is_dir() {
+            continue;
+        }
+        let entries = match std::fs::read_dir(&dir_path) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let mut paths: Vec<std::path::PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("");
+                p.is_file() && (ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("txt") || name.starts_with("ADR"))
+            })
+            .collect();
+        paths.sort();
+        for path in paths {
+            if let Ok(canonical) = path.canonicalize() {
+                if !seen.insert(canonical) {
+                    continue;
+                }
+            }
+            if let Some(content) = read_capped(&path) {
+                let display = path.strip_prefix(project_root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .to_string();
+                found.push((display, content));
+                if found.len() >= MAX_EXPLORE_DOCS {
+                    return Ok(found);
+                }
+            }
+        }
+    }
+
+    Ok(found)
+}
+
+fn read_capped(path: &std::path::Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > MAX_EXPLORE_FILE_BYTES {
+        // Read only the first portion to keep prompt size bounded
+        let mut f = std::fs::File::open(path).ok()?;
+        let mut buf = vec![0u8; MAX_EXPLORE_FILE_BYTES as usize];
+        let n = std::io::Read::read(&mut f, &mut buf).ok()?;
+        buf.truncate(n);
+        // Drop trailing partial UTF-8 sequence
+        while !buf.is_empty() && std::str::from_utf8(&buf).is_err() {
+            buf.pop();
+        }
+        return String::from_utf8(buf).ok();
+    }
+    std::fs::read_to_string(path).ok()
+}
+
+fn recent_commit_messages(limit: usize) -> Vec<String> {
+    let output = std::process::Command::new("git")
+        .args(["log", &format!("-{limit}"), "--pretty=format:%s"])
+        .output()
+        .ok();
+    match output {
+        Some(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|s| s.to_string())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+// ── rocky session-end ─────────────────────────────────────────────────────────
+
+/// Cap commits processed per Stop-hook invocation so we never block the user's
+/// terminal for minutes while they're trying to exit Claude Code. Anything over
+/// the cap stays queued and gets picked up by the next session-end (or
+/// `rocky session-end` invoked manually).
+const MAX_COMMITS_PER_SESSION_END: usize = 5;
+
+fn run_session_end(
+    db: &Db,
+    teacher: &Teacher,
+    cfg: &Config,
+    hours: u32,
+    quiet: bool,
+) -> Result<()> {
+    let project_path = std::env::current_dir()?
+        .canonicalize()?
+        .to_string_lossy()
+        .to_string();
+
+    // 1. Drain queued diffs (cap to keep terminal-exit latency bounded)
+    let mut pending = db.drain_pending_diffs(&project_path)?;
+    if pending.is_empty() {
+        if !quiet {
+            println!("  {} No pending commits to process.", "·".dimmed());
+        }
+        return Ok(());
+    }
+
+    let deferred: Vec<crate::db::PendingDiff> = if pending.len() > MAX_COMMITS_PER_SESSION_END {
+        pending.split_off(MAX_COMMITS_PER_SESSION_END)
+    } else {
+        Vec::new()
+    };
+
+    if !quiet {
+        print_header();
+        println!("  Processing {} commit(s) from this session...\n", pending.len());
+        if !deferred.is_empty() {
+            println!(
+                "  {} {} additional commit(s) deferred to the next session-end.",
+                "·".dimmed(),
+                deferred.len()
+            );
+        }
+    }
+
+    // 2. Load project context (may be empty)
+    let project_ctx = db.get_project_context(&project_path)?
+        .map(|c| c.summary)
+        .unwrap_or_default();
+
+    // 3. Read session transcript
+    let transcript = transcript::read_recent(
+        &std::path::PathBuf::from(&project_path),
+        hours,
+    ).unwrap_or_default();
+    let transcript_block = transcript.to_prompt_block();
+
+    if !quiet && !transcript.is_empty() {
+        println!("  {} Loaded transcript: {} prompts, {} agent messages, {} files read",
+            "·".dimmed(),
+            transcript.user_prompts.len(),
+            transcript.assistant_messages.len(),
+            transcript.files_read.len(),
+        );
+    }
+
+    // 4. Build existing topic list (for Layer 1 dedup)
+    let existing: Vec<(String, String)> = db.all_nodes()?
+        .into_iter()
+        .filter(|n| !n.kind.is_domain())
+        .map(|n| (n.topic, n.domain))
+        .collect();
+
+    let repo = detect_repo_name();
+    let mut new_topics = 0u32;
+    let mut deduped = 0u32;
+
+    // 5. Process each pending diff
+    for pd in &pending {
+        if !quiet {
+            println!("\n  {} {}", "▸".truecolor(124, 158, 243), pd.commit_msg.lines().next().unwrap_or(""));
+        }
+
+        let topics = match teacher.extract_topics_with_dedup(
+            &pd.commit_msg,
+            &pd.diff,
+            &existing,
+            &project_ctx,
+        ) {
+            Ok(t) => t,
+            Err(e) => {
+                if !quiet {
+                    eprintln!("    {} extract failed: {e}", "!".truecolor(226, 75, 74));
+                }
+                continue;
+            }
+        };
+
+        for t in topics {
+            let topic_id = Db::node_id_static(&t.topic);
+            let exists = db.get_node_by_id(&topic_id)?.is_some();
+
+            if exists {
+                // Layer 1 dedup hit — record encounter, no node creation
+                db.record_topic_encounter(&t.topic, &pd.commit_sha).ok();
+                deduped += 1;
+                if !quiet {
+                    println!("    {} {} (existing — encounter +1)", "◇".dimmed(), t.topic.dimmed());
+                }
+                continue;
+            }
+
+            // New topic: insert node with rich data
+            db.add_or_update(
+                &t.topic,
+                0.5,
+                &Kind::from_str(&t.kind),
+                &t.domain,
+                &t.description,
+                &pd.commit_msg,
+                None,
+                &repo,
+                None,
+            )?;
+
+            // Generate question bank using ALL the rich context
+            match teacher.generate_question_bank(
+                &t.topic,
+                &t.description,
+                &project_ctx,
+                &transcript_block,
+                &pd.diff,
+            ) {
+                Ok(bank) if !bank.is_empty() => {
+                    db.set_question_bank(&t.topic, &bank).ok();
+                    // Mirror the first question into the canonical_question slot
+                    // so the existing quiz flow has something to grab without changes.
+                    if let Some(first) = bank.first() {
+                        db.set_canonical_qa(&t.topic, &first.question, &first.answer, &first.clue).ok();
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    if !quiet {
+                        eprintln!("    {} question bank failed for {}: {e}", "!".truecolor(239, 159, 39), t.topic);
+                    }
+                }
+            }
+
+            // Bump source_commits with this commit SHA
+            db.record_topic_encounter(&t.topic, &pd.commit_sha).ok();
+            new_topics += 1;
+
+            if !quiet {
+                println!("    {} {}", "+".truecolor(29, 158, 117), t.topic);
+            }
+        }
+    }
+
+    // Re-queue anything we deferred so it isn't lost — the next session-end will
+    // pick it up. Done after the main loop in case any of those calls fail; we
+    // never want to silently drop a commit's diff.
+    for d in &deferred {
+        db.queue_pending_diff(&project_path, &d.commit_sha, &d.commit_msg, &d.diff).ok();
+    }
+
+    if !quiet {
+        println!();
+        println!(
+            "  {} {new_topics} new topic(s), {deduped} encounter update(s).",
+            "Done.".truecolor(29, 158, 117).bold()
+        );
+        if !deferred.is_empty() {
+            println!(
+                "  {} {} commit(s) re-queued for the next session-end.",
+                "·".dimmed(),
+                deferred.len()
+            );
+        }
+        println!("  {}", "Run  rocky quiz  to review the new material.".dimmed());
+    }
+
+    auto_sync(db, cfg);
+    Ok(())
 }

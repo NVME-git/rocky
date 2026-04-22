@@ -968,6 +968,184 @@ def diagram_classification():
     save("06_source_classification.excalidraw", el)
 
 
+# ── 07: Rich-Context Pipeline ─────────────────────────────────────────────────
+def diagram_rich_context_pipeline():
+    el = []
+    e, _ = txt(40, 20, "07 · Rich-Context Pipeline — explore → post-commit → session-end",
+               color="#f59e0b", size=18)
+    el += e
+    e, _ = txt(40, 52, "src/main.rs · src/transcript.rs", color="#475569", size=11)
+    el += e
+
+    stages = (
+        "STAGE 1 — rocky explore  (run once per project)\n"
+        "─────────────────────────────────────────────────────────\n"
+        "• Reads git log, README, Cargo.toml / package.json\n"
+        "• Stores project_context summary in DB\n"
+        "• Seeds domain taxonomy skeleton\n"
+        "• Extracts initial topics from history\n"
+        "• rocky explore --show  →  print stored context\n"
+        "• rocky explore --force →  re-run even if context exists"
+    )
+    e, _ = box(40, 80, 540, 180, stages, "#0c4a6e", "#06b6d4", fg="#e0f2fe", size=12)
+    el += e
+
+    queue = (
+        "STAGE 2 — rocky post-commit  (git hook, per commit)\n"
+        "─────────────────────────────────────────────────────────\n"
+        "• No LLM call — takes <5 ms\n"
+        "• Appends HEAD SHA to .rocky commit queue\n"
+        "• Multiple commits accumulate between sessions\n"
+        "• Hook installed by: rocky hook install --mode queue"
+    )
+    e, _ = box(40, 280, 540, 140, queue, "#1c1917", "#a8a29e", fg="#e2e8f0", size=12)
+    el += e
+
+    session = (
+        "STAGE 3 — rocky session-end  (Claude Code Stop hook)\n"
+        "─────────────────────────────────────────────────────────\n"
+        "1. Drain commit queue → git diff each SHA\n"
+        "2. Read last N hours of transcript\n"
+        "   (~/.claude/projects/<repo>/*.jsonl)\n"
+        "3. One LLM call: diffs + transcript → topics\n"
+        "4. Layer-1 dedup: inject existing topic list\n"
+        "5. Generate 4-question bank per new topic\n"
+        "6. Store nodes + contexts + edges in PKG\n"
+        "Hook: rocky hook install --stop"
+    )
+    e, _ = box(40, 440, 540, 220, session, "#064e3b", "#10b981", fg="#d1fae5", size=12)
+    el += e
+
+    e, _ = note(620, 80, 420, 580,
+                "📝 ANNOTATION — open questions:\n\n"
+                "• Should session-end be idempotent for the same commit SHA?\n"
+                "  (currently it processes each SHA once and deletes)\n\n"
+                "• How to handle transcript > LLM context window?\n"
+                "  Current: truncate to most recent tokens\n\n"
+                "• Should rocky explore auto-refresh after N days?\n\n"
+                "• Should layer-1 dedup use cosine similarity instead of\n"
+                "  prompt injection? (more reliable but needs embeddings)\n\n"
+                "• Should there be a rocky session-end --dry-run mode?")
+    el += e
+
+    save("07_rich_context_pipeline.excalidraw", el)
+
+
+# ── 08: Rocky IQ & UI ─────────────────────────────────────────────────────────
+def diagram_rocky_iq_ui():
+    el = []
+    e, _ = txt(40, 20, "08 · Rocky IQ & Web UI — Dashboard, Map, Queue, Sessions, Projects",
+               color="#f59e0b", size=18)
+    el += e
+    e, _ = txt(40, 52, "src/server.rs · src/app.html", color="#475569", size=11)
+    el += e
+
+    iq = (
+        "Rocky IQ  =  round((1 - atrophy_score) × 100)\n"
+        "─────────────────────────────────────────────────────────\n"
+        "For each node created in the last 60 days:\n"
+        "  w     = max(0, 1 - days_since_created / 60)\n"
+        "  R     = retrievability(stability, last_reviewed)\n"
+        "  decay = max(0, 0.7 - R) / 0.7\n"
+        "atrophy = Σ(w × decay) / Σ(w)\n\n"
+        "≥ 80 → green (strong)  |  70–79 → yellow  |  < 70 → red"
+    )
+    e, _ = box(40, 80, 560, 180, iq, "#064e3b", "#10b981", fg="#d1fae5", size=12)
+    el += e
+
+    tabs = (
+        "5-TAB SIDEBAR LAYOUT  (rocky view → localhost)\n"
+        "─────────────────────────────────────────────────────────\n"
+        "#dashboard  →  Rocky IQ banner · due-for-review · domain health bars\n"
+        "               recently added nodes · projects mini-list\n\n"
+        "#map        →  PixiJS WebGL force-directed graph\n"
+        "               nodes coloured by R · planning mode toggle\n\n"
+        "#queue      →  sortable table (recall/recent/reviews/alpha)\n"
+        "               filter: all/due/critical · 'Quiz top 5' button\n\n"
+        "#sessions   →  timeline grouped by created_at date\n"
+        "               encounter_count ×N badges\n\n"
+        "#projects   →  chord diagram · domain-mix donut · knowledge timeline"
+    )
+    e, _ = box(40, 280, 560, 280, tabs, "#0f172a", "#334155", fg="#cbd5e1", size=12)
+    el += e
+
+    e, _ = note(640, 80, 400, 480,
+                "📝 ANNOTATION — open questions:\n\n"
+                "• Should Rocky IQ be per-project or global?\n\n"
+                "• Is 60-day recency window the right cutoff?\n"
+                "  (older topics don't affect IQ score)\n\n"
+                "• Should Dashboard show a review streak counter?\n\n"
+                "• Should Review Queue support bulk-quiz\n"
+                "  (select multiple topics, run as one session)?\n\n"
+                "• Should the Knowledge Map have a search/filter bar?\n\n"
+                "• Should Projects tab show per-project Rocky IQ?")
+    el += e
+
+    save("08_rocky_iq_and_ui.excalidraw", el)
+
+
+# ── 09: Voice Architecture ────────────────────────────────────────────────────
+def diagram_voice():
+    el = []
+    e, _ = txt(40, 20, "09 · Voice Architecture — Push-to-Talk + whisper.cpp Backend",
+               color="#f59e0b", size=18)
+    el += e
+    e, _ = txt(40, 52, "src/voice.rs · src/server.rs /api/transcribe · scripts/install-whisper.sh",
+               color="#475569", size=11)
+    el += e
+
+    tiers = (
+        "THREE PROVIDER TIERS\n"
+        "─────────────────────────────────────────────────────────\n"
+        "Tier 1  provider = 'off'  (default)\n"
+        "  Mic button hidden. No audio ever captured.\n\n"
+        "Tier 2  provider = 'whisper-cpp'  (recommended)\n"
+        "  Runs whisper-cli subprocess locally.\n"
+        "  Model: ggml-base.en.bin (~142 MB in ~/.rocky/models/)\n"
+        "  No network call at transcription time.\n"
+        "  Works with privacy.strict = true.\n\n"
+        "Tier 3  provider = 'browser'  (convenience)\n"
+        "  Uses browser Web Speech API (sends audio to Google/OS).\n"
+        "  Requires browser_consent = true in config.\n"
+        "  Blocked when privacy.strict = true."
+    )
+    e, _ = box(40, 80, 540, 260, tiers, "#0f172a", "#475569", fg="#cbd5e1", size=12)
+    el += e
+
+    flow = (
+        "PUSH-TO-TALK FLOW (web UI)\n"
+        "─────────────────────────────────────────────────────────\n"
+        "1. User holds 🎤 button (mousedown)\n"
+        "2. getUserMedia → Web Audio ScriptProcessor captures PCM\n"
+        "3. User releases button (mouseup)\n"
+        "4. Browser: resampleLinear(pcm, srcRate, 16000)\n"
+        "            encodeWAV(samples) → ArrayBuffer\n"
+        "5. POST /api/transcribe  Content-Type: audio/wav\n"
+        "6. Server: spawn_blocking → whisper-cli tempfile\n"
+        "7. Server: read .txt output → { 'text': '...' }\n"
+        "8. Browser: insert transcript into answer textarea"
+    )
+    e, _ = box(40, 360, 540, 240, flow, "#0c4a6e", "#06b6d4", fg="#e0f2fe", size=12)
+    el += e
+
+    e, _ = note(620, 80, 420, 520,
+                "📝 ANNOTATION — open questions:\n\n"
+                "• Should there be a rocky voice test command\n"
+                "  to verify end-to-end setup?\n\n"
+                "• Should whisper model be configurable?\n"
+                "  tiny vs base vs small (speed vs accuracy)\n\n"
+                "• Should browser TTS be wired up for reading\n"
+                "  questions aloud? (tts = 'browser' config key)\n\n"
+                "• Push-to-hold vs push-to-toggle — which is better\n"
+                "  UX for long answers?\n\n"
+                "• Should the mic button show a live waveform?\n\n"
+                "• CLI hands-free mode (rocky quiz --voice):\n"
+                "  needs cpal + webrtc-vad — deferred from v0.2")
+    el += e
+
+    save("09_voice_architecture.excalidraw", el)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("Generating Rocky study diagrams...\n")
@@ -978,5 +1156,8 @@ if __name__ == "__main__":
     diagram_discovery()
     diagram_fsrs()
     diagram_classification()
+    diagram_rich_context_pipeline()
+    diagram_rocky_iq_ui()
+    diagram_voice()
     print(f"\nDone. Open any .excalidraw file in VS Code (Excalidraw extension)")
     print(f"or drag onto https://excalidraw.com")

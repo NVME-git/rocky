@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # 06 · Source Classification — AI-Authored vs Own Code
 
 **Source files:** `src/db.rs` · `src/main.rs` — `run_diff()`, `run_backfill()`

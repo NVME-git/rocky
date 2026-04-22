@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # 01 · Topic Lifecycle — State Machine
 
 **Source files:** `src/main.rs` · `src/db.rs` · `src/fsrs.rs`
@@ -24,7 +33,7 @@ stateDiagram-v2
         DELETED : DELETED\nrocky delete
     }
 
-    UNDISCOVERED --> QUEUED        : rocky diff / backfill\nrocky quiz (from logs)\nrocky "task"
+    UNDISCOVERED --> QUEUED        : rocky diff / backfill\nrocky quiz (from logs)\nrocky "task"\nrocky explore\nrocky session-end\n(transcript topics)
     QUEUED --> GAP                 : Q&A, score < 0.65
     QUEUED --> KNOWN               : 'e' too easy (score = 0.75)
     QUEUED --> IGNORED             : 'i' ignore
@@ -49,9 +58,9 @@ stateDiagram-v2
 
 | State | Retrievability | What Rocky does |
 |---|---|---|
-| UNDISCOVERED | — | Never appeared in any diff, prompt, or task |
-| QUEUED | — | Seen, stored in `.rocky`, awaiting first Q&A |
-| GAP | R < 0.7 | Full Socratic Q&A — cross-concept or canonical or live |
+| UNDISCOVERED | — | Never appeared in any diff, prompt, task, explore, or transcript |
+| QUEUED | — | Seen, stored in `.rocky` commit queue, awaiting session-end enrichment |
+| GAP | R < 0.7 | Full Socratic Q&A — cross-concept or canonical (bank) or live generated |
 | FADING | 0.7–0.9 | 2–3 sentence reminder, small stability bump |
 | KNOWN | R ≥ 0.9 | Mark encountered silently, no quiz |
 | EXPLAINED | — | Transient: user typed `?`, got explanation, low confidence |
@@ -76,6 +85,29 @@ A topic with `S = 10` (reviewed several times) stays KNOWN for ~11 days.
 
 ---
 
+## Rich-context pipeline: how QUEUED works now
+
+As of the `feat/rich-context-enrichment` branch, the git post-commit hook no longer
+calls `rocky diff` directly. Instead it calls `rocky post-commit`, which just appends
+the commit SHA to the `.rocky` queue (no LLM call). When the Claude Code session ends,
+the Stop hook fires `rocky session-end`, which:
+
+1. Drains the commit queue — runs `git diff` on each SHA and extracts topics
+2. Reads the last N hours of Claude Code transcript (JSONL from `~/.claude/projects/`)
+3. Sends commits + transcript together to the LLM in one batch → richer topic extraction
+4. Layer-1 dedup: passes existing topic names into the extraction prompt to prevent duplicates
+
+```
+git commit
+  → rocky post-commit   (queue SHA only, no LLM)
+  → ...more commits...
+claude code session ends
+  → rocky session-end   (drain queue + read transcript → one LLM call)
+    → topics extracted, Q&A banks generated, nodes added to PKG
+```
+
+---
+
 ## 📝 Annotation space
 
 > Add your notes here. Questions to consider:
@@ -84,3 +116,4 @@ A topic with `S = 10` (reviewed several times) stays KNOWN for ~11 days.
 > - Should `task_prompt` topics enter QUEUED or go straight to Q&A?
 > - Should the IGNORED state be permanent, or should it expire after N days?
 > - What should happen when a KNOWN topic appears in a new diff?
+> - Should there be a PENDING state distinct from QUEUED for commit-queue items?

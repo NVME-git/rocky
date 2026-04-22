@@ -202,12 +202,14 @@ Or create a `.env` file in your project directory.
 ```bash
 ollama pull qwen2.5-coder:7b
 ```
-3. Create `~/.rocky/.rocky.toml`:
+3. Create `~/.config/rocky/config.toml`:
 ```toml
 [llm]
 provider = "ollama"
-model = "qwen2.5-coder:7b"
+model = "qwen2.5-coder:7b"   # or "llama3.1:8b" for general-purpose
 ```
+
+> Coming from a Rocky version that wrote `~/.rocky/.rocky.toml`? It auto-migrates on first run.
 
 See the **Configuration** page for model recommendations by GPU VRAM.
 
@@ -432,6 +434,115 @@ Rocky searches your PKG and queued topics for anything matching "redis", shows y
 Rocky uses a memory model similar to Anki (spaced repetition). Topics you know well decay slowly. Topics you barely know decay fast. Over time, Rocky surfaces the right things at the right moments without spamming you.
 
 By default, Rocky runs a maximum of 3 quizzes per day via automatic triggers (git hook, Claude Code hook), with a 2-hour gap between them. Manual `rocky quiz` calls always run — no limits.
+''';
+
+const kRichContext = r'''
+# Rich-Context Pipeline (alpha)
+
+This is the flow that ships in the alpha branch. It replaces the older "extract topics from a single commit at commit time" path with a richer, **session-aware** pipeline — and pairs it with a fully-redesigned `rocky view` web UI built around a **Rocky IQ** score that goes up as you keep recent material sharp.
+
+![Dashboard](screenshots/rocky-dashboard.png)
+
+| Stage | What happens | Where |
+|---|---|---|
+| `rocky explore` | Reads CLAUDE.md / README / docs / recent commits and synthesises a **project context** summary | Run once per project (and after major shape changes) |
+| `rocky post-commit` | Silently appends the latest commit's diff to a queue. **No LLM call.** | Wired to the git post-commit hook |
+| `rocky session-end` | Drains the queue, reads the Claude Code session transcript, and produces **rich nodes with a question bank** (4 implication-grounded Q+A+clue triples per topic). Honours layer-1 dedup so existing topic names get reused instead of fragmented. | Wired to the Claude Code Stop hook |
+
+The motivation: a single commit message like *"feat: rotate refresh tokens"* is too thin a context to generate good questions from. By batching at session end, Rocky has the project summary, the actual diffs, **and** the agent's reasoning trail to ground questions in.
+
+## Try it on a throwaway repo
+
+The repo ships a tutorial / smoke-test script that walks the whole flow without touching your real PKG:
+
+```bash
+$ ollama serve &                     # in another terminal
+$ scripts/tutorial.sh --noninteractive
+```
+
+It creates `~/.rocky-tutorial/`, isolates Rocky to it via the `ROCKY_HOME` env var, makes a fake auth-service repo, and walks every step end-to-end. A typical run finishes with output like:
+
+```
+▶ 6a. Inspect the first topic in detail
+
+  ◆ JWT
+  Encounters: 2
+
+  Description: JSON Web Tokens (JWTs) are used for stateless authentication
+  sessions, ensuring that token revocation can only be performed on refresh.
+
+  Question bank: (4 questions)
+
+  1. What happens if a user tries to access the service using an expired
+     refresh token after rotating it?
+  2. What are the implications of not rotating refresh tokens on every use?
+  3. How does this JWT-based authentication system interact with Redis?
+  4. What would change if Redis were not available for storing refresh tokens?
+```
+
+Notice the question style: every question forces reasoning about **trade-offs and consequences**, never recall of a definition. That's the rich-context pipeline doing its job.
+
+## Inspecting what was generated
+
+```bash
+rocky list --since today              # what was added in the last 24h
+rocky inspect "<topic>"               # full detail: contexts, source commits,
+                                      # canonical Q&A, question bank, asked counts
+rocky explore --show                  # print the stored project context
+```
+
+Or open the **web view** with `rocky view` — five tabs share the same data so you can switch between high-level overview and a focused review queue without leaving the page.
+
+### Knowledge Map
+A force-directed graph of every topic in your PKG, colour-coded by domain. Above ~50 topics it auto-collapses into a project + domain overview to stay readable; click a project bubble to drill into its topics. The **Planning mode** toggle dims topics you already know well and highlights unlearned topics adjacent to them — turns the graph into a "what's next" surface.
+
+![Knowledge Map](screenshots/rocky-map.png)
+
+### Review Queue
+A sortable, filterable table of every topic. Sort by recall, recency, review count, or alphabetical. Filter to *due* or *critical*. Click any row to start a quiz on that topic, or hit "Quiz top 5" to start a session against the lowest-recall items in the current view.
+
+![Review Queue](screenshots/rocky-queue.png)
+
+### Sessions
+Every topic Rocky has ever generated, grouped by the day it was added. Encounter counts (×N badges) show where layer-1 dedup hit — the same topic surfacing across multiple commits.
+
+![Sessions](screenshots/rocky-sessions.png)
+
+### Projects
+Per-repository health, cross-project flow chord diagram, and a domain-mix donut. The **knowledge timeline** below toggles between *by project* and *by domain* so you can see whether your auth/database/frontend work is balanced over time.
+
+![Projects](screenshots/rocky-projects.png)
+
+## Layer-1 deduplication
+
+When the LLM extracts topics, Rocky passes the existing topic list as part of the prompt and asks for **exact** name reuse when a new finding is semantically equivalent. The third commit in the tutorial demonstrates this:
+
+```
+▸ refactor: surface is_rotated helper for refresh token reuse checks
+  ◇ Token Rotation (existing — encounter +1)
+
+Done. 0 new topic(s), 1 encounter update(s).
+```
+
+The existing **Token Rotation** node's `encounter_count` ticks up by 1 instead of a near-duplicate "Refresh Token Reuse Check" being created next to it. Layer-2 (LLM-assisted merge of long-tail near-duplicates) is on the roadmap.
+
+## Backfilling legacy nodes
+
+If you have nodes from before the question bank existed:
+
+```bash
+rocky backfill --fill-question-bank   # generates 4-Q banks for nodes missing them
+rocky backfill --fill-clues           # fills missing canonical clues
+```
+
+## Privacy mode
+
+```toml
+[privacy]
+strict = true
+```
+
+With `privacy.strict = true`, Rocky refuses any non-local LLM provider — diffs and code never leave the machine, even if you accidentally configure Claude. The CLI errors with a clear message instead of sending data.
 ''';
 
 const kCommands = r'''
@@ -961,7 +1072,7 @@ const kConfiguration = r'''
 
 Rocky looks for config files in two places, applied in this order (later overrides earlier):
 
-1. `~/.rocky/.rocky.toml` — your global settings, applies everywhere
+1. `~/.config/rocky/config.toml` — your global settings, applies everywhere
 2. `./.rocky.toml` — project-level override, only applies in that folder
 
 If neither exists, Rocky uses sensible defaults.
@@ -1093,7 +1204,7 @@ Only one of `remind_push_sessions` or `remind_push_days` should be non-zero.
 ```bash
 # 1. Enable sync in your config
 echo '[sync]
-enabled = true' >> ~/.rocky/.rocky.toml
+enabled = true' >> ~/.config/rocky/config.toml
 
 # 2. Initialise the git repo (optionally set a remote at the same time)
 rocky sync --init https://github.com/you/rocky-pkg.git
@@ -1155,11 +1266,13 @@ rocky uninstall claude
 
 | Path | What it is |
 |---|---|
+| `~/.config/rocky/config.toml` | Your global config |
 | `~/.rocky/graph.db` | Your PKG — all topics, recall scores, review history |
-| `~/.rocky/.rocky.toml` | Your global config |
 | `~/.rocky/pkg/` | Markdown notes + `pkg.json` backup |
 | `~/.rocky/pkg/pkg.json` | Full PKG export for backup and cross-machine restore |
+| `~/.rocky/summaries/` | Cached project context summaries (`rocky explore`) |
 | `./.rocky` | Per-project prompt log (only in hooked projects) |
+| `$ROCKY_HOME` | If set, overrides the `~/.rocky/` data dir entirely (useful for testing) |
 
 `graph.db` is never tracked by git. Everything in `pkg/` is tracked when sync is enabled.
 ''';
@@ -1342,7 +1455,7 @@ Rocky writes your entire knowledge graph as Markdown files into a PKG directory.
 
 ### 1. Tell Rocky where your PKG directory is
 
-In `~/.rocky/.rocky.toml`:
+In `~/.config/rocky/config.toml`:
 
 ```toml
 [export]
@@ -1540,7 +1653,7 @@ Rocky can version-control your PKG using git, giving you backup, history, and cr
 ## Quick start
 
 ```bash
-# Enable in config (~/.rocky/.rocky.toml)
+# Enable in config (~/.config/rocky/config.toml)
 [sync]
 enabled = true
 
@@ -1657,7 +1770,7 @@ Rocky tracks how many sessions have passed since your last push and reminds you 
 Rocky: 5 sessions unsynced — consider `rocky sync --push` to back up, question?
 ```
 
-Configure the threshold in `~/.rocky/.rocky.toml`:
+Configure the threshold in `~/.config/rocky/config.toml`:
 
 ```toml
 [sync]
@@ -2376,6 +2489,88 @@ graphs/stage7.html|Open the full demo graph (21 topics, taskify + home-bank)
 This is your knowledge graph for one project, one week in. Each edge is a relationship Rocky inferred from the topics in your code — the ones worth understanding together, not just in isolation.
 
 After backfilling **home-bank**, four more topics appear in the Data domain: CSV parsing, transaction categorisation, Pandas DataFrame operations, and double-entry bookkeeping. They carry commit dates from October 2025 — Rocky knows exactly how long ago you last touched that code.
+''';
+
+const kArchitecture = r'''
+# Architecture decisions
+
+The major design choices behind Rocky's alpha (and the planned voice integration) are captured as **ADRs** — Architecture Decision Records, one per file, in [`docs/decisions/`](https://github.com/NVME-git/rocky/tree/main/docs/decisions) on the repo. They use the [Michael Nygard format](https://github.com/joelparkerhenderson/architecture-decision-record): context (why this even came up), decision (what we chose), consequences (good and bad).
+
+| # | Title | Status |
+|---|---|---|
+| 0001 | [Rich-context pipeline](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0001-rich-context-pipeline.md) — explore + post-commit queue + session-end | Accepted |
+| 0002 | [Layer-1 dedup + question bank with rotation](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0002-dedup-and-question-bank.md) | Accepted |
+| 0003 | [LLM resilience](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0003-llm-resilience.md) — timeouts, retries, lenient JSON parsing | Accepted |
+| 0004 | [Config layout, ROCKY_HOME, privacy.strict](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0004-config-paths-and-privacy.md) | Accepted |
+| 0005 | [Rocky IQ score + sidebar UI redesign](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0005-rocky-iq-and-ui.md) | Accepted |
+| 0006 | [Voice architecture](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0006-voice-architecture.md) — whisper.cpp default, push-to-talk only | Proposed |
+
+Read these if you want to know **why** Rocky is shaped the way it is — the rest of the docs cover **what** it does.
+
+## What constitutes a new ADR?
+
+Anything where the answer to *"why did we do it this way?"* is non-obvious six months later. New cross-cutting features get an ADR; bug fixes and refactors don't.
+
+When a decision is reversed, the new ADR **supersedes** the old one — never edit the historical file.
+''';
+
+const kVoice = r'''
+# Voice (alpha — push-to-talk)
+
+The web UI now has a 🎤 button next to the answer textarea. Hold it, speak your answer, release — the transcript drops into the textarea so you can edit before submitting. Default backend is fully local: a `whisper.cpp` subprocess Rocky shells out to. Nothing leaves the machine.
+
+## Setup — one line
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NVME-git/rocky/main/scripts/install-whisper.sh | sh
+```
+
+The installer:
+- Detects platform (`linux-x64`, `linux-arm64`, `macos-arm64`, `macos-x64`)
+- Installs `whisper-cli` — via `brew install whisper-cpp` on macOS, building from source on Linux (`cmake` + a C++ compiler required, ~2-5 min)
+- Pulls `ggml-base.en.bin` (~142 MB) into `~/.rocky/models/`
+- Adds a `[voice]` block to `~/.config/rocky/config.toml`
+
+After it finishes, restart `rocky view` and the mic button is live.
+
+## Two backends
+
+| Backend | Latency | Privacy | Setup |
+|---|---|---|---|
+| `whisper-cpp` *(default)* | ~1-2 s on CPU | ✓ fully local | install-whisper.sh |
+| `browser` *(opt-in)* | real-time | ✗ Chrome → Google, Safari → Apple | flip a config flag |
+
+Browser mode is **forbidden when `privacy.strict = true`** — Rocky won't let you accidentally exfiltrate audio. Enable it explicitly with:
+
+```toml
+[voice]
+provider        = "browser"
+browser_consent = true
+```
+
+## What ships in v0.2
+
+- Web UI mic button (push-to-hold, WAV encoded client-side at 16 kHz mono)
+- POST `/api/transcribe` endpoint that calls the configured STT provider
+- `whisper.cpp` subprocess invocation with clear errors when the binary or model is missing (the web UI surfaces an inline link to the installer)
+- One-line installer (`scripts/install-whisper.sh`)
+
+## What's planned for later
+
+- `rocky quiz --voice` — fully hands-free CLI session: Rocky speaks the question via OS TTS, captures your answer with `cpal` + `webrtc-vad` (700ms silence ends an utterance), evaluates, repeats
+- In-binary `whisper-rs` build (`cargo install --features voice`) for users who want one binary, no PATH dependency
+- Real-time streaming transcription (Pattern C in [ADR 0006](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0006-voice-architecture.md))
+
+There is **no** wake-word / always-on listening — push-to-talk is the only model. By design.
+
+## Disabling voice
+
+```toml
+[voice]
+provider = "off"
+```
+
+Mic button stops working immediately, no rebuild needed.
 ''';
 
 const kRoadmap = r'''

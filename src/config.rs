@@ -2,8 +2,8 @@
 ///
 /// Loads from (in order, later overrides earlier):
 ///   1. Built-in defaults
-///   2. ~/.rocky/.rocky.toml  (global user config)
-///   3. ./.rocky.toml         (project-level override)
+///   2. ~/.config/rocky/config.toml  (global user config)
+///   3. ./.rocky.toml                (project-level override)
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -45,6 +45,32 @@ struct TomlFile {
     ui: Option<UiSection>,
     sync: Option<SyncSection>,
     edges: Option<EdgesSection>,
+    privacy: Option<PrivacySection>,
+    voice: Option<VoiceSection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PrivacySection {
+    /// When true, refuse to send code/diffs to non-local LLM providers.
+    /// Forces ollama. Errors clearly if provider="claude" is configured.
+    strict: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VoiceSection {
+    /// "whisper-cpp" (default), "whisper-rs" (requires --features voice), "browser", "off"
+    provider: Option<String>,
+    /// Path to the GGML model file, e.g. ~/.rocky/models/whisper-base.en.bin
+    model: Option<String>,
+    /// Name or absolute path of the whisper-cpp binary. Defaults to "whisper-cli" on PATH.
+    binary: Option<String>,
+    /// Milliseconds of silence that ends an utterance in CLI hands-free mode.
+    silence_ms: Option<u32>,
+    /// "browser" (web speechSynthesis), "system" (say/espeak-ng), "off"
+    tts: Option<String>,
+    /// Whether the user has acknowledged that provider="browser" sends audio to a cloud STT.
+    /// Set automatically by the web UI on first click of the mic button.
+    browser_consent: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,6 +139,32 @@ pub struct Config {
     pub user_name: String,
     pub sync: SyncConfig,
     pub edge_reuse: EdgeReuse,
+    /// When true: refuse to send code to remote LLMs. Local-only mode.
+    pub privacy_strict: bool,
+    pub voice: VoiceConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoiceConfig {
+    pub provider: String,         // "whisper-cpp" | "whisper-rs" | "browser" | "off"
+    pub model: String,            // path to ggml model
+    pub binary: String,           // whisper-cpp binary name or path
+    pub silence_ms: u32,          // CLI VAD silence threshold
+    pub tts: String,              // "browser" | "system" | "off"
+    pub browser_consent: bool,    // explicit opt-in for cloud STT
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            provider: "off".into(),
+            model: "~/.rocky/models/whisper-base.en.bin".into(),
+            binary: "whisper-cli".into(),
+            silence_ms: 700,
+            tts: "browser".into(),
+            browser_consent: false,
+        }
+    }
 }
 
 impl Default for Config {
@@ -139,20 +191,62 @@ impl Default for Config {
                 remote: "origin".into(),
                 branch: "main".into(),
             },
+            privacy_strict: false,
+            voice: VoiceConfig::default(),
         }
     }
 }
 
+/// Data directory: $ROCKY_HOME, falling back to ~/.rocky/ (graph.db, pkg/, summaries/).
+/// Honouring ROCKY_HOME makes the tutorial / smoke-test script trivially isolatable.
 fn dirs() -> PathBuf {
+    if let Ok(custom) = std::env::var("ROCKY_HOME") {
+        if !custom.is_empty() {
+            return PathBuf::from(custom);
+        }
+    }
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".rocky")
 }
 
+/// Config directory: ~/.config/rocky/
+fn config_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".config"))
+        .join("rocky")
+}
+
+/// One-time migration: ~/.rocky/.rocky.toml → ~/.config/rocky/config.toml.
+/// Silent no-op when the new path already exists or the legacy file is absent.
+fn migrate_legacy_config_path() {
+    let new_path = config_dir().join("config.toml");
+    if new_path.exists() {
+        return;
+    }
+    let legacy = dirs().join(".rocky.toml");
+    if !legacy.exists() {
+        return;
+    }
+    if let Some(parent) = new_path.parent() {
+        if std::fs::create_dir_all(parent).is_err() {
+            return;
+        }
+    }
+    if std::fs::rename(&legacy, &new_path).is_ok() {
+        eprintln!(
+            "rocky: migrated config {} → {}",
+            legacy.display(),
+            new_path.display()
+        );
+    }
+}
+
 impl Config {
     pub fn load() -> Result<Self> {
+        migrate_legacy_config_path();
         let mut cfg = Self::default();
-        let global = dirs().join(".rocky.toml");
+        let global = config_dir().join("config.toml");
         let local = PathBuf::from(".rocky.toml");
         for path in [global, local] {
             if path.exists() {
@@ -201,6 +295,21 @@ impl Config {
             if let Some(v) = s.remote { self.sync.remote = v; }
             if let Some(v) = s.branch { self.sync.branch = v; }
         }
+        if let Some(p) = file.privacy {
+            if let Some(v) = p.strict { self.privacy_strict = v; }
+        }
+        if let Some(v) = file.voice {
+            if let Some(x) = v.provider { self.voice.provider = x; }
+            if let Some(x) = v.model {
+                let expanded = x.replacen("~/", &format!("{}/", dirs::home_dir()
+                    .unwrap_or_default().display()), 1);
+                self.voice.model = expanded;
+            }
+            if let Some(x) = v.binary { self.voice.binary = x; }
+            if let Some(x) = v.silence_ms { self.voice.silence_ms = x; }
+            if let Some(x) = v.tts { self.voice.tts = x; }
+            if let Some(x) = v.browser_consent { self.voice.browser_consent = x; }
+        }
     }
 
     pub fn show(&self) {
@@ -225,6 +334,26 @@ impl Config {
             EdgeReuse::Sessions(n) => format!("{n}s"),
         };
         println!("    reuse            = {reuse_str}");
+        println!("\n  [privacy]");
+        println!("    strict           = {}  {}",
+            self.privacy_strict,
+            if self.privacy_strict {
+                "(local-only — diffs/code never leave this machine)"
+            } else {
+                "(diffs are sent to the configured llm provider)"
+            }.dimmed()
+        );
+        println!("\n  [voice]");
+        println!("    provider         = {}", self.voice.provider);
+        if self.voice.provider != "off" {
+            println!("    model            = {}", self.voice.model);
+            println!("    binary           = {}", self.voice.binary);
+            println!("    silence_ms       = {}", self.voice.silence_ms);
+            println!("    tts              = {}", self.voice.tts);
+            if self.voice.provider == "browser" {
+                println!("    browser_consent  = {}", self.voice.browser_consent);
+            }
+        }
         println!("\n  [ui]");
         println!("    personality      = {}", self.personality);
         println!("\n  [sync]");

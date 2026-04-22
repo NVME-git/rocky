@@ -7,6 +7,14 @@ edition = "2021"
 name = "rocky"
 path = "src/main.rs"
 
+[features]
+# v0.2: enables in-binary STT/audio capture. Pulls whisper-rs, cpal, webrtc-vad.
+# Default Rocky build stays small; users wanting voice run:
+#   cargo install --git https://github.com/NVME-git/rocky --features voice
+# See docs/decisions/0006-voice-architecture.md.
+voice = []
+default = []
+
 [dev-dependencies]
 tempfile = "3"
 
@@ -25,3 +33,4 @@ dirs = "5"
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tower-http = { version = "0.6", features = ["cors"] }
+tempfile = "3"
