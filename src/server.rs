@@ -52,7 +52,11 @@ pub fn run(db: &Db, cfg: &Config) -> Result<()> {
             .layer(CorsLayer::permissive())
             .with_state(state);
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        // Allow ROCKY_BIND to override the default loopback bind. Used by the
+        // Docker image to expose the UI on the container's external interface
+        // (e.g. ROCKY_BIND=0.0.0.0:7777).
+        let bind = std::env::var("ROCKY_BIND").unwrap_or_else(|_| "127.0.0.1:0".to_string());
+        let listener = tokio::net::TcpListener::bind(&bind).await?;
         let addr = listener.local_addr()?;
 
         println!(
@@ -69,14 +73,19 @@ pub fn run(db: &Db, cfg: &Config) -> Result<()> {
             );
         }
 
-        #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open")
-            .arg(format!("http://{addr}"))
-            .spawn();
-        #[cfg(not(target_os = "macos"))]
-        let _ = std::process::Command::new("xdg-open")
-            .arg(format!("http://{addr}"))
-            .spawn();
+        // Skip auto-open when running headless (Docker, SSH, CI). The
+        // ROCKY_BIND override is the signal the user has chosen to expose
+        // the UI to something other than the local browser.
+        if std::env::var("ROCKY_BIND").is_err() {
+            #[cfg(target_os = "macos")]
+            let _ = std::process::Command::new("open")
+                .arg(format!("http://{addr}"))
+                .spawn();
+            #[cfg(not(target_os = "macos"))]
+            let _ = std::process::Command::new("xdg-open")
+                .arg(format!("http://{addr}"))
+                .spawn();
+        }
 
         axum::serve(listener, app).await?;
         Ok(())
