@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # 04 · Topic Discovery — How Topics Enter the PKG
 
 **Source files:** `src/main.rs` — `run_diff()`, `run_backfill()`, `run_session_end()`, `run_explore()`, `run_task()`

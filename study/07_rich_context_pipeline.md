@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # 07 · Rich-Context Pipeline — explore → post-commit → session-end
 
 **Source files:** `src/main.rs` — `run_explore()`, `run_post_commit()`, `run_session_end()` · `src/transcript.rs`

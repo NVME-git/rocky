@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # 05 · Memory Model — FSRS (Free Spaced Repetition Scheduler)
 
 **Source files:** `src/fsrs.rs` · `src/db.rs` — `add_or_update()`

@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # 03 · Quiz Session — Decision Tree
 
 **Source files:** `src/main.rs` — `run_quiz_topic()` ~line 1130

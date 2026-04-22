@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # 08 · Rocky IQ & Web UI — Dashboard, Map, Queue, Sessions, Projects
 
 **Source files:** `src/server.rs` · `src/app.html`

@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # Rocky — Study Diagrams
 
 Interactive Excalidraw diagrams covering all current topic lifecycle logic.

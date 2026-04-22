@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # 01 · Topic Lifecycle — State Machine
 
 **Source files:** `src/main.rs` · `src/db.rs` · `src/fsrs.rs`

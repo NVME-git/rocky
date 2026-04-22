@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # 02 · Data Model — Node struct + DB schema
 
 **Source files:** `src/node.rs` · `src/db.rs` (struct `Node`, `SCHEMA` const, `row_to_node`)

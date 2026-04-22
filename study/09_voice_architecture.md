@@ -1,3 +1,12 @@
+<style>
+body {
+    font-family: 'Roboto', sans-serif;
+}
+code, pre {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+</style>
+
 # 09 · Voice Architecture — Push-to-Talk Web UI + whisper.cpp Backend
 
 **Source files:** `src/voice.rs` · `src/server.rs` `/api/transcribe` · `src/app.html` mic button · `src/config.rs` VoiceConfig · `scripts/install-whisper.sh`
