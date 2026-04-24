@@ -65,12 +65,13 @@ export class QuizPanel {
 }
 
 interface QuizNode {
-  name: string;
-  classification: string;
+  id: string;
+  topic: string;
+  domain: string;
   retrievability: number;
-  canonical_question: string | null;
-  canonical_answer: string | null;
-  repo: string | null;
+  canonical_question?: string;
+  canonical_answer?: string;
+  repo?: string;
 }
 
 function buildQuizHtml(nodes: QuizNode[], serverUrl: string | null): string {
@@ -162,11 +163,11 @@ function showQuestion() {
   const total = NODES.length;
   document.getElementById('progress').style.width = (current/total*100)+'%';
   document.getElementById('meta').innerHTML =
-    '<span>'+(n.classification||'Topic')+'</span>' +
+    '<span>'+(n.domain||'Topic')+'</span>' +
     '<span>'+(current+1)+' / '+total+'</span>' +
     '<span>'+(Math.round(n.retrievability*100))+'% R</span>';
   document.getElementById('question').textContent =
-    n.canonical_question || ('What do you know about: ' + n.name + '?');
+    n.canonical_question || ('What do you know about: ' + n.topic + '?');
 
   const clueDiv = document.getElementById('clue');
   const clueBtn = document.getElementById('clue-btn');
@@ -199,7 +200,7 @@ async function assess(score) {
       await fetch(SERVER_URL + '/api/quiz/assess', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({node_id: n.name, score, question: n.canonical_question || ('What do you know about: ' + n.name + '?')})
+        body: JSON.stringify({node_id: n.id, score, question: n.canonical_question || ('What do you know about: ' + n.topic + '?')})
       });
     } catch(e) {
       // server not available — score recorded locally only

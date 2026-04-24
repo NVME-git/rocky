@@ -12,6 +12,9 @@ interface NodeData {
   topic: string;
   kind?: string;
   retrievability?: number;
+  /** Taxonomy domain — Language, Auth, Database, etc. */
+  domain?: string;
+  /** FSRS class: "known" | "stale" | "gap". */
   classification?: string;
   repo?: string;
   canonical_question?: string;
@@ -43,12 +46,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ── Load stored data ─────────────────────────────────────────────────────
   const stored = await chrome.storage.local.get([
     "rockyNodes", "rockyTopics", "rockyServerUrl", "lastSynced", "captureHistory", "pendingCapture",
+    "rockyIq", "rockyAtrophy",
   ]);
 
   allNodes = (stored["rockyNodes"] as NodeData[] | undefined) ?? [];
   allTopics = (stored["rockyTopics"] as string[] | undefined) ?? [];
   const serverUrl = (stored["rockyServerUrl"] as string | undefined) ?? "";
   const lastSynced = (stored["lastSynced"] as string | undefined) ?? "";
+  const iq = stored["rockyIq"] as number | undefined;
+
+  renderIq(iq);
 
   // ── Settings panel ────────────────────────────────────────────────────────
   const serverInput = document.getElementById("server-url-input") as HTMLInputElement;
@@ -74,11 +81,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const resp = await chrome.runtime.sendMessage({ type: "SYNC_TOPICS_FROM_SERVER" }) as { success: boolean; count?: number; error?: string };
     if (resp.success) {
       syncInfo.textContent = `✓ Synced ${resp.count} topics`;
-      // Reload nodes
-      const fresh = await chrome.storage.local.get(["rockyNodes", "rockyTopics"]);
+      const fresh = await chrome.storage.local.get(["rockyNodes", "rockyTopics", "rockyIq"]);
       allNodes = (fresh["rockyNodes"] as NodeData[] | undefined) ?? [];
       allTopics = (fresh["rockyTopics"] as string[] | undefined) ?? [];
       topicsInfo.textContent = `${allTopics.length} topics · ${allNodes.filter((n) => (n.retrievability ?? 0) < 0.4).length} due`;
+      renderIq(fresh["rockyIq"] as number | undefined);
     } else {
       syncInfo.textContent = `✗ ${resp.error}`;
     }
@@ -181,7 +188,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       chip.appendChild(document.createTextNode(node.topic));
       chip.title = [
         node.topic,
-        node.classification ? `Domain: ${node.classification}` : "",
+        node.domain ? `Domain: ${node.domain}` : "",
         node.repo ? `Repo: ${node.repo}` : "",
         node.retrievability !== undefined ? `Retrievability: ${Math.round(node.retrievability * 100)}%` : "",
         node.canonical_question ? `Q: ${node.canonical_question}` : "",
@@ -290,6 +297,22 @@ function renderHistory(history: CaptureRecord[]): void {
         ${h.note ? `<div style="font-size:10px;color:#6c7086;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">"${escapeHtml(h.note.slice(0, 80))}"</div>` : ""}
       </div>`;
   }).join("");
+}
+
+/** Render the Rocky IQ pill in the popup header. Hides when no IQ is known. */
+function renderIq(iq: number | undefined): void {
+  const pill = document.getElementById("iq-pill");
+  if (!pill) return; // template lacks the slot
+  if (iq === undefined || Number.isNaN(iq)) {
+    pill.textContent = "";
+    pill.style.display = "none";
+    return;
+  }
+  pill.textContent = `IQ ${iq}`;
+  pill.title = "Rocky IQ — recall over the last 60 days. Click ‘Sync’ to refresh.";
+  pill.style.display = "inline-block";
+  pill.classList.remove("iq-good", "iq-warn", "iq-bad");
+  pill.classList.add(iq >= 80 ? "iq-good" : iq >= 70 ? "iq-warn" : "iq-bad");
 }
 
 function updateServerDot(serverUrl: string): void {

@@ -6,7 +6,10 @@ View and explore your [Rocky](https://github.com/NVME-git/rocky) personal knowle
 
 | Feature | Description |
 |---------|-------------|
+| **Rocky IQ in status bar** | Shows your live IQ score (0–100) with due-count when a `rocky view` server is configured |
 | **Topics Tree** | Browse all tracked topics grouped by domain (Language, Auth, DevOps, …) with retrievability indicators |
+| **Due for Review** | Weak topics (retrievability < 0.5) grouped by repo, weakest first |
+| **Sessions** | Per-day log of topics that landed in your PKG — backed by `/api/sessions` (server required) |
 | **Summary Panel** | At-a-glance statistics — total topics, connections, average retrievability, weak/strong counts |
 | **Interactive Graph** | Force-directed knowledge graph rendered in a webview, with drag, hover tooltips, and domain colouring |
 | **Global & Local Scope** | Switch between your full PKG and only the topics linked to the current workspace repository |
@@ -14,9 +17,10 @@ View and explore your [Rocky](https://github.com/NVME-git/rocky) personal knowle
 
 ## Prerequisites
 
-- **Rocky CLI** installed and on your `PATH` (or configure the path in settings)  
+- **Rocky CLI** installed and on your `PATH` (or configure the path in settings)
   → Install with `cargo install --path .` from the Rocky repo root
-- A populated knowledge graph — run `rocky backup` at least once so the extension can read `~/.rocky/pkg/pkg.json`
+- For static views: a populated knowledge graph — run `rocky export` at least once so the extension can read `~/.rocky/pkg/pkg.json`
+- For live data (Rocky IQ, Sessions tab, retrievability that updates in real time): start `rocky view` and set `rocky.serverUrl` to its URL (e.g. `http://127.0.0.1:7777`). When set, the extension polls `/api/data` every 30 s to keep the IQ score and Sessions tab current.
 
 ## Installation
 
@@ -105,7 +109,7 @@ extensions/vscode/
                                                  ──→  GraphPanel (webview)
 ```
 
-The extension reads the JSON backup that Rocky produces with `rocky backup`. It does **not** access the SQLite database directly, keeping the dependency footprint minimal.
+The extension reads the JSON export that Rocky produces with `rocky export` (and prefers the live `/api/data` from `rocky view` when `rocky.serverUrl` is set). It does **not** access the SQLite database directly, keeping the dependency footprint minimal.
 
 ## Testing
 

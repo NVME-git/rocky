@@ -68,18 +68,18 @@ export class GraphPanel {
 
     const pkg = this.dataProvider.getPkgData();
     if (!pkg) {
-      this.panel.webview.html = `<html><body><p>No Rocky data found. Run <code>rocky backup</code> to generate pkg.json.</p></body></html>`;
+      this.panel.webview.html = `<html><body><p>No Rocky data found. Run <code>rocky export</code> to generate pkg.json, or set <code>rocky.serverUrl</code> to a running <code>rocky view</code>.</p></body></html>`;
       return;
     }
 
     let data: PkgData;
     if (scope === "local") {
       const localNodes = this.dataProvider.getLocalNodes();
-      const localNames = new Set(localNodes.map((n) => n.name));
+      const localTopics = new Set(localNodes.map((n) => n.topic));
       data = {
         nodes: localNodes,
         edges: pkg.edges.filter(
-          (e) => localNames.has(e.source) && localNames.has(e.target)
+          (e) => localTopics.has(e.source) && localTopics.has(e.target)
         ),
       };
     } else {
@@ -136,7 +136,7 @@ function buildGraphHtml(data: PkgData): string {
   };
 
   // Build legend
-  const domains = [...new Set(data.nodes.map(n => n.classification || "Other"))].sort();
+  const domains = [...new Set(data.nodes.map(n => n.domain || "Other"))].sort();
   const legendEl = document.getElementById("legend");
   legendEl.innerHTML = domains.map(d =>
     '<div><span style="background:' + (domainColors[d] || "#abb2bf") + '"></span>' + d + '</div>'
@@ -149,7 +149,7 @@ function buildGraphHtml(data: PkgData): string {
   const ns = "http://www.w3.org/2000/svg";
 
   // Create edge index for fast lookup
-  const nodeMap = new Map(data.nodes.map((n, i) => [n.name, i]));
+  const nodeMap = new Map(data.nodes.map((n, i) => [n.topic, i]));
 
   // Draw edges
   const edgeEls = data.edges.map(e => {
@@ -165,27 +165,27 @@ function buildGraphHtml(data: PkgData): string {
     const g = document.createElementNS(ns, "g");
     g.setAttribute("class", "node");
 
-    const r = 4 + Math.min(n.total_reviews, 20);
+    const r = 4 + Math.min(n.review_count, 20);
     const circle = document.createElementNS(ns, "circle");
     circle.setAttribute("r", String(r));
-    circle.setAttribute("fill", domainColors[n.classification] || "#abb2bf");
+    circle.setAttribute("fill", domainColors[n.domain] || "#abb2bf");
     circle.style.opacity = String(0.3 + n.retrievability * 0.7);
     g.appendChild(circle);
 
     const text = document.createElementNS(ns, "text");
     text.setAttribute("dx", String(r + 3));
     text.setAttribute("dy", "4");
-    text.textContent = n.name;
+    text.textContent = n.topic;
     g.appendChild(text);
 
     g.addEventListener("mouseover", (ev) => {
       tooltip.style.opacity = "1";
       tooltip.style.left = ev.pageX + 12 + "px";
       tooltip.style.top = ev.pageY - 20 + "px";
-      tooltip.innerHTML = "<strong>" + n.name + "</strong><br/>"
-        + "Domain: " + (n.classification || "Other") + "<br/>"
+      tooltip.innerHTML = "<strong>" + n.topic + "</strong><br/>"
+        + "Domain: " + (n.domain || "Other") + "<br/>"
         + "Retrievability: " + (n.retrievability * 100).toFixed(1) + "%<br/>"
-        + "Reviews: " + n.total_reviews;
+        + "Reviews: " + n.review_count;
     });
     g.addEventListener("mouseout", () => { tooltip.style.opacity = "0"; });
 

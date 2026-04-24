@@ -42,6 +42,10 @@
           "name": "All Topics"
         },
         {
+          "id": "rockySessions",
+          "name": "Sessions"
+        },
+        {
           "id": "rockySummary",
           "name": "Summary"
         }
@@ -114,7 +118,7 @@
       "view/title": [
         {
           "command": "rocky.refreshTopics",
-          "when": "view == rockyTopics || view == rockyDue || view == rockySummary",
+          "when": "view == rockyTopics || view == rockyDue || view == rockySummary || view == rockySessions",
           "group": "navigation@1"
         },
         {

@@ -17,6 +17,13 @@
     .server-dot.error { background: #f38ba8; }
     .server-label { font-size: 10px; color: #6c7086; }
 
+    /* Rocky IQ pill in header */
+    .iq-pill { display: none; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700;
+               cursor: help; }
+    .iq-good { background: #a6e3a1; color: #1e1e2e; }
+    .iq-warn { background: #f9e2af; color: #1e1e2e; }
+    .iq-bad  { background: #f38ba8; color: #1e1e2e; }
+
     /* ── tabs */
     .tabs { display: flex; border-bottom: 1px solid #313244; }
     .tab { flex: 1; padding: 8px; text-align: center; cursor: pointer; font-size: 12px;
@@ -102,6 +109,7 @@
   <div class="header">
     <h1>🪨 Rocky</h1>
     <div class="header-right">
+      <span class="iq-pill" id="iq-pill"></span>
       <div class="server-dot" id="server-dot"></div>
       <span class="server-label" id="server-label">not connected</span>
     </div>

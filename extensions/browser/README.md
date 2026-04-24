@@ -38,8 +38,8 @@ When watching a YouTube video about async/await in Rust:
 ## Prerequisites
 
 - **Chrome/Chromium** (or any Manifest V3-compatible browser)
-- A Rocky PKG with topics (run `rocky backup` to generate topic data)
-- Rocky CLI installed for future sync functionality
+- A running `rocky view` server — set its URL in the extension's Settings tab and click Sync to load topics + Rocky IQ
+- Captures are stored locally inside the extension only; Rocky's server has no resource ingest endpoint, so the History tab is your record
 
 ## Installation
 
@@ -61,18 +61,7 @@ cd extensions/browser
 
 ### Importing Topics
 
-Until the sync API is ready, you can manually export topics from Rocky:
-
-```bash
-# Export your topic names to a JSON array
-rocky ls --json | jq '[.nodes[].name]' > topics.json
-```
-
-Then paste the array into the browser extension's storage via the DevTools console:
-
-```js
-chrome.storage.local.set({ rockyTopics: ["async/await", "JWT Auth", "Docker Compose"] });
-```
+Start `rocky view`, then in the extension's **Settings** tab paste its URL and click **Sync**. The extension hits `/api/data` to pull topics, retrievability scores, and Rocky IQ.
 
 ## Configuration
 
@@ -80,9 +69,14 @@ The extension stores configuration in `chrome.storage.local`:
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `rockyTopics` | `string[]` | List of PKG topic names for the search UI |
-| `pendingResources` | `object[]` | Queue of resources waiting to be synced |
-| `pendingResource` | `object` | Most recent right-click capture |
+| `rockyServerUrl` | `string` | URL of the running `rocky view` server |
+| `rockyTopics` | `string[]` | Topic names for the search UI (set by Sync) |
+| `rockyNodes` | `object[]` | Full node payload (topic, domain, retrievability, etc.) |
+| `rockyIq` | `number` | Latest Rocky IQ (0–100) |
+| `rockyAtrophy` | `number` | Atrophy score (0..1) — IQ = (1 − atrophy) × 100 |
+| `lastSynced` | `string` | ISO timestamp of the last successful sync |
+| `captureHistory` | `object[]` | Last 50 right-click / popup captures (local only) |
+| `pendingCapture` | `object` | Most recent right-click capture awaiting popup confirmation |
 
 ## Architecture
 

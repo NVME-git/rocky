@@ -70,11 +70,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 });
 // ── resource storage ──────────────────────────────────────────────────────────
+//
+// Captures are stored *locally only*. Rocky's server has no resource ingest
+// endpoint — the PKG is built from your code, not your browsing. The history
+// view is the user's record of pages they tagged.
 async function handleAddResource(message) {
-    // Try to POST to the rocky server if configured
-    const data = await chrome.storage.local.get("rockyServerUrl");
-    const serverUrl = data["rockyServerUrl"]?.trim();
-    // Store locally for history
     const histData = await chrome.storage.local.get("captureHistory");
     const history = histData["captureHistory"] ?? [];
     history.unshift({
@@ -84,24 +84,7 @@ async function handleAddResource(message) {
         note: message.note,
         addedAt: new Date().toISOString(),
     });
-    // Keep last 50 entries
     await chrome.storage.local.set({ captureHistory: history.slice(0, 50) });
-    // If server URL is set, POST a resource note to the server
-    if (serverUrl) {
-        try {
-            const resp = await fetch(`${serverUrl}/api/resource`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(message),
-            });
-            if (resp.ok)
-                return { success: true };
-            // Server endpoint may not exist yet — fall through to local-only success
-        }
-        catch {
-            // Server not reachable — stored locally
-        }
-    }
     return { success: true };
 }
 // ── live topic sync from rocky server ────────────────────────────────────────
@@ -117,33 +100,40 @@ async function syncTopicsFromServer() {
             throw new Error(`HTTP ${resp.status}`);
         const json = await resp.json();
         const nodes = (json.nodes ?? []).filter((n) => n.kind !== "domain" && n.kind !== "user");
-        // Store full node data for richer popup display
+        const atrophy = typeof json.atrophyScore === "number" ? json.atrophyScore : 0;
+        const iq = Math.round((1 - atrophy) * 100);
         await chrome.storage.local.set({
             rockyNodes: nodes,
             rockyTopics: nodes.map((n) => n.topic),
+            rockyIq: iq,
+            rockyAtrophy: atrophy,
             lastSynced: new Date().toISOString(),
         });
-        // Update badge with due count
-        const due = nodes.filter((n) => (n.retrievability ?? 0) < 0.4).length;
-        updateBadge(due);
+        // Badge: show IQ instead of due-count — it's the more useful at-a-glance signal.
+        updateBadge(iq);
         return { success: true, count: nodes.length };
     }
     catch (e) {
         return { success: false, error: String(e) };
     }
 }
-function updateBadge(dueCount) {
-    if (dueCount > 0) {
-        chrome.action.setBadgeText({ text: String(dueCount) });
-        chrome.action.setBadgeBackgroundColor({ color: "#e74c3c" });
-    }
-    else {
+/**
+ * Badge shows Rocky IQ (0–100). Colour-coded:
+ *   ≥80 green, ≥70 amber, <70 red. Empty when nothing has been synced.
+ */
+function updateBadge(iq) {
+    if (iq === null || Number.isNaN(iq)) {
         chrome.action.setBadgeText({ text: "" });
+        return;
     }
+    chrome.action.setBadgeText({ text: String(iq) });
+    const colour = iq >= 80 ? "#2ecc71" : iq >= 70 ? "#f39c12" : "#e74c3c";
+    chrome.action.setBadgeBackgroundColor({ color: colour });
 }
-// Sync badge on startup
-chrome.storage.local.get("rockyNodes").then((data) => {
-    const nodes = data["rockyNodes"] ?? [];
-    const due = nodes.filter((n) => (n.retrievability ?? 0) < 0.4).length;
-    updateBadge(due);
+// Restore badge on service-worker startup.
+chrome.storage.local.get("rockyIq").then((data) => {
+    const iq = data["rockyIq"];
+    if (typeof iq === "number") {
+        updateBadge(iq);
+    }
 });

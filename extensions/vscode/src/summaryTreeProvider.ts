@@ -32,10 +32,10 @@ export class SummaryTreeProvider implements vscode.TreeDataProvider<SummaryItem>
     const known = nodes.filter((n) => n.retrievability >= 0.7).length;
     const stale = nodes.filter((n) => n.retrievability >= 0.4 && n.retrievability < 0.7).length;
     const gap = nodes.filter((n) => n.retrievability < 0.4).length;
-    const totalReviews = nodes.reduce((s, n) => s + n.total_reviews, 0);
-    const neverReviewed = nodes.filter((n) => n.total_reviews === 0).length;
+    const totalReviews = nodes.reduce((s, n) => s + n.review_count, 0);
+    const neverReviewed = nodes.filter((n) => n.review_count === 0).length;
 
-    const domains = [...new Set(nodes.map((n) => n.classification || "Other"))].sort();
+    const domains = [...new Set(nodes.map((n) => n.domain || "Other"))].sort();
     const repos = [...new Set(nodes.map((n) => n.repo).filter(Boolean))] as string[];
 
     // Per-repo breakdown

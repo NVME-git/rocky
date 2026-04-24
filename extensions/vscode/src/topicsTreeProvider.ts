@@ -55,22 +55,20 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
       ];
     }
 
-    // Group nodes
     const groups = new Map<string, RockyNode[]>();
     for (const node of pkg.nodes) {
       const key =
         this.groupMode === "domain"
-          ? node.classification || "Other"
+          ? node.domain || "Other"
           : node.repo || "global";
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(node);
     }
 
-    // Sort within groups
     const sortFn =
       this.sortMode === "retrievability"
         ? (a: RockyNode, b: RockyNode) => a.retrievability - b.retrievability
-        : (a: RockyNode, b: RockyNode) => a.name.localeCompare(b.name);
+        : (a: RockyNode, b: RockyNode) => a.topic.localeCompare(b.topic);
 
     const sortedKeys = [...groups.keys()].sort();
     return sortedKeys.map((groupKey) => {
@@ -79,25 +77,26 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
       const children = nodes.map((n) => {
         const pct = (n.retrievability * 100).toFixed(0);
         const icon = n.retrievability > 0.7 ? "🟢" : n.retrievability > 0.4 ? "🟡" : "🔴";
-        const subtitle = this.groupMode === "domain" ? (n.repo ?? "") : (n.classification ?? "");
+        const subtitle =
+          this.groupMode === "domain" ? (n.repo ?? "") : (n.domain || "Other");
         const item = new TopicItem(
-          `${icon} ${n.name}  (${pct}%)`,
+          `${icon} ${n.topic}  (${pct}%)`,
           vscode.TreeItemCollapsibleState.None
         );
         item.description = subtitle;
         item.tooltip = [
-          n.name,
+          n.topic,
           `Retrievability: ${pct}%`,
-          `Domain: ${n.classification || "Other"}`,
+          `Domain: ${n.domain || "Other"}`,
           `Repo: ${n.repo ?? "global"}`,
           `Difficulty: ${n.difficulty.toFixed(2)}`,
           `Stability: ${n.stability.toFixed(2)}`,
-          `Reviews: ${n.total_reviews}`,
+          `Reviews: ${n.review_count}`,
         ].join("\n");
         item.command = {
           command: "rocky.showTopicDetail",
           title: "Show Topic Detail",
-          arguments: [{ name: n.name }],
+          arguments: [{ topic: n.topic }],
         };
         item.contextValue = "rockyTopic";
         return item;

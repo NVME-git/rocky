@@ -38,7 +38,6 @@ export class DueTreeProvider implements vscode.TreeDataProvider<DueItem> {
       return [new DueItem("✅ Nothing due for review — great work!", [], "info")];
     }
 
-    // Group by repo
     const groups = new Map<string, RockyNode[]>();
     for (const n of dueNodes) {
       const key = n.repo ?? "global";
@@ -51,18 +50,18 @@ export class DueTreeProvider implements vscode.TreeDataProvider<DueItem> {
       const children: DueItem[] = nodes.map((n) => {
         const pct = (n.retrievability * 100).toFixed(0);
         const icon = n.retrievability > 0.4 ? "🟡" : "🔴";
-        const item = new DueItem(`${icon} ${n.name}  (${pct}%)`, [], "topic");
+        const item = new DueItem(`${icon} ${n.topic}  (${pct}%)`, [], "topic");
         item.tooltip = [
-          n.name,
+          n.topic,
           `Retrievability: ${pct}%`,
-          `Domain: ${n.classification || "Other"}`,
-          `Reviews: ${n.total_reviews}`,
+          `Domain: ${n.domain || "Other"}`,
+          `Reviews: ${n.review_count}`,
           n.canonical_question ? `Q: ${n.canonical_question}` : "",
         ].filter(Boolean).join("\n");
         item.command = {
           command: "rocky.showTopicDetail",
           title: "Show Topic Detail",
-          arguments: [{ name: n.name }],
+          arguments: [{ topic: n.topic }],
         };
         return item;
       });
