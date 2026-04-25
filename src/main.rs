@@ -2331,20 +2331,30 @@ fn run_logs() -> Result<()> {
 
 // ── git hooks ─────────────────────────────────────────────────────────────────
 
+fn rocky_bin_path() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.canonicalize().ok())
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "rocky".into())
+}
+
 fn install_git_hook() -> Result<(bool, String)> {
     let hook_path = std::path::Path::new(".git/hooks/post-commit");
     if !std::path::Path::new(".git").exists() {
         return Ok((false, "not a git repository".into()));
     }
+    let bin = rocky_bin_path();
+    let cmd = format!("{bin} diff");
     if hook_path.exists() {
         let existing = std::fs::read_to_string(hook_path)?;
         if existing.contains("rocky") {
             return Ok((false, "hook already installed".into()));
         }
-        let appended = format!("{existing}\nrocky diff\n");
+        let appended = format!("{existing}\n{cmd}\n");
         std::fs::write(hook_path, appended)?;
     } else {
-        std::fs::write(hook_path, "#!/bin/sh\nrocky diff\n")?;
+        std::fs::write(hook_path, format!("#!/bin/sh\n{cmd}\n"))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -2605,22 +2615,26 @@ fn install_git_hook_queue_mode() -> Result<(bool, String)> {
     if !std::path::Path::new(".git").exists() {
         return Ok((false, "not a git repository".into()));
     }
+    let bin = rocky_bin_path();
+    let cmd = format!("{bin} post-commit");
     if hook_path.exists() {
         let existing = std::fs::read_to_string(hook_path)?;
-        if existing.contains("rocky post-commit") {
+        if existing.contains("post-commit") {
             return Ok((false, "queue-mode git hook already installed".into()));
         }
-        // Replace any prior `rocky diff` invocation with `rocky post-commit`
-        if existing.contains("rocky diff") {
-            let updated = existing.replace("rocky diff", "rocky post-commit");
+        // Replace any prior `rocky diff` invocation with the full-path queue command
+        if existing.contains("rocky diff") || existing.contains(&format!("{bin} diff")) {
+            let updated = existing
+                .replace(&format!("{bin} diff"), &cmd)
+                .replace("rocky diff", &cmd);
             std::fs::write(hook_path, updated)?;
             local_log::ensure_gitignored()?;
             return Ok((true, "git hook switched to queue mode".into()));
         }
-        let appended = format!("{existing}\nrocky post-commit\n");
+        let appended = format!("{existing}\n{cmd}\n");
         std::fs::write(hook_path, appended)?;
     } else {
-        std::fs::write(hook_path, "#!/bin/sh\nrocky post-commit\n")?;
+        std::fs::write(hook_path, format!("#!/bin/sh\n{cmd}\n"))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

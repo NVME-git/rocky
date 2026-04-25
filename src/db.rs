@@ -841,19 +841,18 @@ impl Db {
     pub fn get_project_context(&self, project_path: &str) -> Result<Option<ProjectContext>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
-            "SELECT project_path, summary, sources, last_explored_at, commits_since_explore
+            "SELECT summary, sources, last_explored_at, commits_since_explore
              FROM project_context WHERE project_path = ?",
         )?;
         let mut rows = stmt.query(params![project_path])?;
         if let Some(row) = rows.next()? {
-            let sources_json: String = row.get(2)?;
+            let sources_json: String = row.get(1)?;
             let sources: Vec<String> = serde_json::from_str(&sources_json).unwrap_or_default();
             Ok(Some(ProjectContext {
-                project_path: row.get(0)?,
-                summary: row.get(1)?,
+                summary: row.get(0)?,
                 sources,
-                last_explored_at: row.get(3)?,
-                commits_since_explore: row.get(4)?,
+                last_explored_at: row.get(2)?,
+                commits_since_explore: row.get(3)?,
             }))
         } else {
             Ok(None)
@@ -936,16 +935,6 @@ impl Db {
         Ok(diffs)
     }
 
-    pub fn pending_diff_count(&self, project_path: &str) -> Result<i64> {
-        let conn = self.connect()?;
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM pending_diffs WHERE project_path = ?",
-            params![project_path],
-            |r| r.get(0),
-        )?;
-        Ok(count)
-    }
-
     // ── node enrichment ──────────────────────────────────────────────────────
 
     /// Save a question bank for a node (overwrites existing bank).
@@ -1009,7 +998,6 @@ impl Db {
 
 #[derive(Debug, Clone)]
 pub struct ProjectContext {
-    pub project_path: String,
     pub summary: String,
     pub sources: Vec<String>,
     pub last_explored_at: String,

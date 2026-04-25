@@ -150,13 +150,19 @@ impl Teacher {
             }
 
             Provider::Ollama { base_url, model, client } => {
-                let _ = max_tokens;
                 let _ = model_override;
                 let prompt = format!("System: {system}\n\nUser: {user}");
+                // num_ctx: ensure the full prompt fits (default 2048 is too small for
+                // session-end which includes project context + existing topics + diff).
+                // num_predict: honour the caller's max_tokens to bound output length.
                 let payload = json!({
                     "model": model,
                     "prompt": prompt,
-                    "stream": false
+                    "stream": false,
+                    "options": {
+                        "num_ctx": 8192,
+                        "num_predict": max_tokens
+                    }
                 });
 
                 // Local Ollama can drop connections under sustained load (e.g. while
@@ -777,8 +783,9 @@ Rules:
 
 fn strip_code_fence(s: &str) -> &str {
     let s = s.trim();
-    if s.starts_with("```") {
-        let after = &s[3..];
+    // Find the first ``` fence anywhere in the response (handles preamble text).
+    if let Some(fence_start) = s.find("```") {
+        let after = &s[fence_start + 3..];
         let after = after.strip_prefix("json").unwrap_or(after);
         let after = after.trim_start_matches('\n');
         if let Some(end) = after.rfind("```") {
@@ -786,5 +793,6 @@ fn strip_code_fence(s: &str) -> &str {
         }
         return after.trim();
     }
+    // No fence — return as-is and let the caller try to parse it.
     s
 }

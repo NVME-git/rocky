@@ -20,16 +20,16 @@ tempfile = "3"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+toml = "1"
+reqwest = { version = "0.13", features = ["blocking", "json"] }
 dotenvy = "0.15"
 chrono = "0.4"
-colored = "2"
+colored = "3"
 anyhow = "1"
-dirs = "5"
+dirs = "6"
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tower-http = { version = "0.6", features = ["cors"] }
