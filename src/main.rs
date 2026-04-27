@@ -128,6 +128,14 @@ enum Cmd {
         /// Topic name (substring match — must resolve to exactly one topic)
         topic: String,
     },
+    /// Reassign a topic's taxonomy domain. Used for cleanup passes; no LLM call.
+    SetDomain {
+        /// Topic name (exact match)
+        topic: String,
+        /// New domain — one of the 13 official: Language, Database, Auth, API,
+        /// Frontend, DevOps, Architecture, Performance, Security, Testing, Tooling, Data, Other
+        domain: String,
+    },
     /// Record a quiz outcome for a topic. Used by the rocky-quiz skill.
     Review {
         /// Topic name (substring match) or topic id
@@ -525,6 +533,15 @@ fn run() -> Result<()> {
         }
         Some(Cmd::DeleteTopic { topic }) => {
             run_delete_topic(&db, &topic)?;
+        }
+        Some(Cmd::SetDomain { topic, domain }) => {
+            let node_id = Db::node_id_static(&topic);
+            if db.get_node(&topic)?.is_none() {
+                eprintln!("topic not found: {topic}");
+                std::process::exit(2);
+            }
+            db.set_domain(&node_id, &domain)?;
+            println!("{}", serde_json::json!({ "topic": topic, "domain": domain, "ok": true }));
         }
         Some(Cmd::Review { topic, score, question, answer, feedback }) => {
             run_record_review(&db, &topic, score, question.as_deref(), answer.as_deref(), feedback.as_deref())?;
@@ -3078,11 +3095,20 @@ fn run_add_question(db: &Db, topic_query: &str, question: &str, answer: &str, cl
     if matches.is_empty() {
         anyhow::bail!("no topic matching '{topic_query}'");
     }
-    if matches.len() > 1 {
-        let names: Vec<&str> = matches.iter().map(|n| n.topic.as_str()).collect();
-        anyhow::bail!("ambiguous: {} topics match '{topic_query}': {}", names.len(), names.join(", "));
-    }
-    let n = matches[0];
+    // If substring matched multiple, prefer an EXACT (case-insensitive) topic
+    // name match — that's the natural disambiguator when one topic name is a
+    // prefix/substring of another (e.g. "CLI" vs "CLI Enhancements").
+    let n = if matches.len() > 1 {
+        let exact: Vec<&&node::Node> = matches.iter().filter(|n| n.topic.to_lowercase() == q).collect();
+        if exact.len() == 1 {
+            exact[0]
+        } else {
+            let names: Vec<&str> = matches.iter().map(|n| n.topic.as_str()).collect();
+            anyhow::bail!("ambiguous: {} topics match '{topic_query}': {}", names.len(), names.join(", "));
+        }
+    } else {
+        matches[0]
+    };
     let item = node::QuestionBankItem {
         question: question.trim().to_string(),
         answer: answer.trim().to_string(),

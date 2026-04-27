@@ -1,5 +1,6 @@
 target/
 NOTES.md
+NOTES/
 .env
 docs/book/
 docs/build/

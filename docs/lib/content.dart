@@ -523,12 +523,31 @@ rocky inspect "<topic>"               # full detail: contexts, source commits,
 rocky explore --show                  # print the stored project context
 ```
 
-Or open the **web view** with `rocky view` — five tabs share the same data so you can switch between high-level overview and a focused review queue without leaving the page.
+Or open the **web view** with `rocky view` — six tabs share the same data so you can switch between high-level overview, a focused review queue, and a cinematic timelapse of how your knowledge grew.
 
-### Knowledge Map
-A force-directed graph of every topic in your PKG, colour-coded by domain. Above ~50 topics it auto-collapses into a project + domain overview to stay readable; click a project bubble to drill into its topics. The **Planning mode** toggle dims topics you already know well and highlights unlearned topics adjacent to them — turns the graph into a "what's next" surface.
+### Knowledge Map (Wormhole)
+A 2-hop neighborhood centred on one topic. The whole PKG is never on screen at once — you see the **focus** at center, its **direct neighbors** (hop-1) in an inner ring, and **their neighbors** (hop-2) faintly in an outer ring (capped at ~28 nodes total, so memory stays bounded no matter how big your PKG grows).
+
+- **Click any hop-1 node** → the entire graph shifts so that node moves to the centre. Then nodes more than two hops away fade out and the new 2-hop ring fades in. About 1 second end-to-end.
+- **Hop-2 nodes are previews only** — colour-coded but unlabelled and not clickable for warp; clicking opens the detail panel without travelling.
+- **Edges radiate outward** from the focus with continuous dashes flowing along the line, so you always see direction. Hop-1 edges are bright; hop-2 edges are dim, pushing them visually behind the active neighborhood.
+- **Wormholes panel** (bottom-left) holds portals to elsewhere: the weakest topic globally, the most-recent topic in other domains, and the most-recent in other projects. One-click jumps to anywhere in the PKG.
+- **Spaceship 🚀 cursor** over the canvas — on brand.
+- **Planning mode** toggle dims topics you already know well and highlights unreviewed neighbors as "what's next".
+
+When you click a project card on the **Projects** tab, the map switches to a **project hub view**: project name at center, domain hubs around it, three most-recent topics per domain on the outer ring. Click a topic to warp into the wormhole at that node.
 
 ![Knowledge Map](screenshots/rocky-map.png)
+
+### Saga (cinematic timelapse)
+A play / pause / scrub view of how your knowledge grew. The explorer (your git user name) sits at the centre; new topics drift outward in their domain's angular sector as the playhead advances. Active topics (last 6 months from the playhead) are bright and named; older topics fade to dots and form glowing nebulae around their domain arm.
+
+- **Continuous warp streaks** radiate from the explorer to convey forward motion through time.
+- **Domain HUD** labels float at each arm's perimeter, fading in as that domain accumulates topics.
+- **Topic name flashes** drift outward radially when a new topic appears, then dissolve — names are ephemera, the cloud is the point.
+- **Running counters** (top-centre): current date, totals for topics / domains / projects / encounters.
+- **End-card** appears at the end with totals + a Replay button.
+- **Share dropdown** exports the current view as an SVG, a 2× PNG, or a full timelapse GIF (1080² @ 15 fps, ~8s).
 
 ### Review Queue
 A sortable, filterable table of every topic. Sort by recall, recency, review count, or alphabetical. Filter to *due* or *critical*. Click any row to start a quiz on that topic, or hit "Quiz top 5" to start a session against the lowest-recall items in the current view.
@@ -536,12 +555,12 @@ A sortable, filterable table of every topic. Sort by recall, recency, review cou
 ![Review Queue](screenshots/rocky-queue.png)
 
 ### Sessions
-Every topic Rocky has ever generated, grouped by the day it was added. Encounter counts (×N badges) show where layer-1 dedup hit — the same topic surfacing across multiple commits.
+Every topic Rocky has ever generated, grouped by the day it was added. Encounter counts (×N badges) show where the cross-project dedup hit — the same topic surfacing across multiple commits.
 
 ![Sessions](screenshots/rocky-sessions.png)
 
 ### Projects
-Per-repository health, cross-project flow chord diagram, and a domain-mix donut. The **knowledge timeline** below toggles between *by project* and *by domain* so you can see whether your auth/database/frontend work is balanced over time.
+Per-repository health, cross-project flow chord diagram, and a domain-mix donut. The **knowledge timeline** below toggles between *by project* and *by domain* so you can see whether your auth/database/frontend work is balanced over time. Clicking a project card opens the project hub in the Knowledge Map (see above).
 
 ![Projects](screenshots/rocky-projects.png)
 
@@ -1093,32 +1112,56 @@ Edge kinds: `implies`, `depends_on`, `conflicts_with`, `part_of`.
 
 ## `rocky view`
 
-Open an interactive knowledge graph in your default browser. Nodes are colored by knowledge state (known/fading/gap) and sized by stability.
+Open the web UI in your default browser. Six tabs: Dashboard, Knowledge Map, Review Queue, Sessions, Projects, Saga.
 
 ```bash
 rocky view
-# ✓ Written to ~/.rocky/view.html
-# → Opening in browser...
+# ✓ Rocky running at http://127.0.0.1:XXXXX
 ```
 
-Rocky writes the graph to `~/.rocky/view.html` and opens it automatically.
+The server runs from a single Rust binary and serves the UI on a random port. Set `ROCKY_NO_OPEN=1` to skip auto-opening the browser (useful when iterating on the UI source).
 
-**Graph** — D3.js force simulation. Drag nodes, zoom in/out, filter by domain, search topics by name. Click any node to open a detail panel showing:
+### Knowledge Map (Wormhole)
 
-- **Recall (R × M)** — the headline number plus the freshness factor (R) and your last-3 mastery (M) broken out, so you can see whether a topic is fading because of time or because of bad answers.
-- **Question Bank** — every canonical question + ideal answer + clue stored on the node, with the "asked count" so you know which ones have been used.
-- **Projects** — every repo this topic has appeared in. Click a repo name to filter the graph to that project.
+A bounded 2-hop neighborhood — never more than ~28 nodes on screen at a time, regardless of how big your PKG grows. Memory crash from a 161-topic project? Solved by construction.
+
+- **Focus node** at centre with halo + label showing domain and recall.
+- **Hop-1 ring** (inner): direct neighbors, capped at 9, sorted by edge strength. Labelled.
+- **Hop-2 ring** (outer): neighbors of neighbors, capped at 18 total / 4 per parent. Dim, unlabelled, click-to-open detail only — they're previews of what's adjacent.
+- **Edges** colour-coded by kind (`implies` blue, `depends_on` amber, `conflicts_with` red, `part_of` green). Continuous outward dash flow always reads focus → neighbor. Hop-1 edges are bright; hop-2 edges are dim.
+- **Click a hop-1 node** → graph shifts in two phases. Phase 1: every node tweens to its new position so the clicked node ends up at centre. Phase 2: now-out-of-range nodes fade out, newly-in-range nodes fade in. Total ≈ 1 s.
+- **Wormholes panel** (bottom-left): portals to **the weakest topic globally**, the **most-recent topic in each of 3 other domains**, and the **most-recent in 2 other repos**. One-click jumps anywhere in the PKG.
+- **Search** (top-left): typeahead → click a hit to warp.
+- **Back button** appears once you've warped, with a `jumped Nx` counter.
+- **Planning mode** (in the Wormholes panel): dims known topics, highlights unreviewed neighbors as "what's next".
+- **Spaceship 🚀 cursor** over the canvas.
+
+**Detail panel** (slides in from the right when you click any node):
+- **Recall (R × M)** — headline plus the freshness factor (R) and your last-3 mastery (M), so you can see whether a topic is fading from time or from bad answers.
+- **Question Bank** — every Q + A + clue stored on the node, with asked-counts.
+- **Projects** — every repo this topic has appeared in.
 - Stability, difficulty, full review history, all connected edges.
+- **Quiz me on this topic** button to launch a single-topic quiz.
 
-Click any edge to see the reason Rocky created it.
+**Project hub mode** — clicking a project card on the **Projects** tab opens this view in the Knowledge Map:
+- Project name in a halo'd hub at centre.
+- One node per domain (with topic count) on an inner ring.
+- 3 most-recent topics per domain on the outer ring.
+- Click any topic → travel-warp into the wormhole at that node.
 
-**Spread slider** — controls the repulsion force between nodes. Drag right to spread the graph out; drag left to pull clusters together. Useful when many nodes overlap after a large backfill.
+### Saga (cinematic timelapse)
 
-**Timeline scrubber** — a range slider below the controls lets you rewind your knowledge graph to any point in time. As you scrub backward, nodes dim and disappear (topics you hadn't learned yet). Scrub forward to watch them light up — your personal growth, visualised. The current node count and date are shown next to the scrubber.
+A play / pause / scrub view of how your PKG grew. The **explorer** (your `git config user.name`) sits at the centre. Each topic spawns at the edge of its domain's angular sector when the playhead crosses its `created_at`, drifts outward, and joins the cloud. Older topics fade to dots and become glowing **nebulae** at each domain's arm.
 
-**Domain panel** — a list on the left shows every active domain with a count of visible nodes. Click a domain to highlight only that cluster and its edges.
+- **Continuous warp streaks** radiate from the explorer to convey forward motion through time.
+- **Domain HUD labels** float at the perimeter of each arm, fading in as the domain accumulates topics.
+- **Topic name flashes** drift outward radially when a new topic appears, then dissolve — the cloud is the point, not the inventory.
+- **Top-centre** shows the current playhead date and live counts: topics / domains / projects / encounters.
+- **Bottom controls**: play / pause, scrub bar (1000 steps), 1× / 2× / 4× speed, project filter (single repo or all).
+- **End-card** appears when the timelapse finishes, showing total topics / domains / projects / day-span and a **Replay** button.
+- **Share dropdown** (top-right and on the end-card): export the current frame as **SVG** (vector) or **PNG** (2× retina), or render the full timelapse as a **GIF** (1080² @ 15 fps, ~8 s, ready for LinkedIn / Shorts / GIF embeds).
 
-**Repo filter** — when your PKG contains topics from more than one project, repo filter buttons appear in the controls. Click a repo to show only its topics and display the project summary at the top of the graph. Works across projects accumulated over time via `rocky backfill`.
+The Saga view is gated for the future ("earn it" by reviewing for ~30 days with ≥50 reviews — Whoop-style), but always-on during alpha.
 
 ---
 
