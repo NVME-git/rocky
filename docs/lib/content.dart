@@ -72,12 +72,15 @@ rocky quiz "redis"       # targeted — search and pick topics to drill
 
 ### During AI sessions
 
-If you use Claude Code, Rocky silently logs every prompt you send. No interruption. Run `rocky quiz` later and Rocky knows exactly what topics your AI handled for you today.
+If you use Claude Code, Rocky ships two skills that turn the agent itself into the extractor — no Ollama, no per-prompt logging in the critical path. After `rocky install claude`, the agent picks up:
+
+- `/rocky-checkpoint` — at the end of a session, the agent reads the diffs and transcript, extracts topics with question banks, and writes them straight into your PKG using the cross-project dedup list
+- `/rocky-quiz` — runs a Socratic review session inside the Claude session, using the canonical questions Rocky stored
 
 ```bash
-rocky install claude     # one-time setup
+rocky install claude     # one-time: drops both skills into ~/.claude/skills/
 # ... work normally ...
-rocky quiz               # end-of-day review
+# inside Claude: /rocky-checkpoint  (or just run `rocky quiz` from a terminal)
 ```
 
 ### Pre-commit review
@@ -92,11 +95,20 @@ rocky diff --staged
 
 ## The knowledge model
 
-Rocky tracks a **Personal Knowledge Graph (PKG)** — a local database of every topic you've encountered. Each topic has a retrievability score: a number between 0 and 1 that estimates how likely you are to recall it right now.
+Rocky tracks a **Personal Knowledge Graph (PKG)** — a local database of every topic you've encountered. Each topic has a **recall** score: a number between 0 and 1 that combines two things:
 
-Knowledge decays. A topic you understood deeply three months ago might be at 65% today. Rocky knows this, and it surfaces things before they fade below the threshold — not after.
+- **Retrievability (R)** — freshness from spaced-repetition decay. High right after a review, lower as time passes.
+- **Mastery (M)** — the mean of your last three review scores (default 0.5 if you've never been quizzed). Captures *how well you actually answered*, not just how recently.
 
-When you answer well, stability increases and the topic decays slower. When you struggle, Rocky comes back sooner. Over time, the PKG reflects your actual knowledge — not the version of yourself that existed when you first learned something.
+`recall = R × M`. Freshness alone doesn't count as knowing — if you got the wrong idea last time, retrieving it quickly today doesn't help you. Both factors have to be high before Rocky considers a topic *known*.
+
+| Bucket | recall | What Rocky does |
+|---|---|---|
+| Known | ≥ 0.6 | Stays quiet |
+| Fading | 0.3 – 0.6 | Surfaces it for review |
+| Gap | < 0.3 | Asks a question |
+
+Knowledge decays. A topic you understood deeply three months ago might be at 25% today — Rocky surfaces it before you trip over it.
 
 ---
 
@@ -129,18 +141,21 @@ Questions end with ", question?" — Rocky's way of asking. Set `personality = f
 | Term | What it means |
 |---|---|
 | **PKG** | Personal Knowledge Graph — your local database of topics |
-| **Known** | Recall is strong (90%+) — Rocky stays quiet |
-| **Fading** | Recall is slipping (70–90%) — Rocky gives a reminder |
-| **Gap** | Recall is low or topic is new — Rocky asks a question |
-| **Retrievability** | Rocky's estimate of how likely you are to remember something right now |
+| **Known** | Recall ≥ 0.6 — Rocky stays quiet |
+| **Fading** | Recall 0.3 – 0.6 — Rocky surfaces it as a review candidate (called "stale" internally) |
+| **Gap** | Recall < 0.3 — Rocky asks a question |
+| **Retrievability (R)** | Spaced-repetition freshness — decays with time since the last review |
+| **Mastery (M)** | Mean of your last three review scores (default 0.5 if never quizzed) |
+| **Recall** | `R × M` — the combined score Rocky classifies on |
 | **Stability** | How deeply embedded the topic is — higher stability means slower decay |
+| **Initial stability** | Set by topic kind when first created: Concept = 4.0, Pattern = 2.5, Implementation = 1.5 |
 | **Domain** | One of 13 taxonomy categories (Language, Auth, Database, DevOps, etc.) |
 | **Edge** | A relationship between two topics in the PKG — generated automatically by Rocky after new topics are added |
 | **Edge kind** | The type of relationship: `implies`, `depends_on`, `conflicts_with`, or `part_of` |
 | **Cross-concept question** | A question that bridges two related topics — asked when Rocky detects a relevant edge and both topics have strong recall |
-| **Repo tag** | The git project a topic originated from — parsed from the remote URL. Makes the PKG filterable by project |
-| **Canonical Q&A** | A pre-generated question and ideal answer stored in the node at creation time, using the commit diff and project README as context |
-| **Canonical clue** | A short hint stored alongside canonical Q&A — shown when you type `c` during a quiz. Generated at backfill time, or on-demand for manually-added topics |
+| **Repos** | The git projects a topic has been encountered in. Topics merge by canonical name across projects, so `repos[]` accumulates as the same idea reappears in different repos |
+| **Question bank** | Up to ~4 implication-grounded questions stored per topic at extraction time. Surfaced in the web UI, picked from at quiz time |
+| **Canonical clue** | A short hint stored alongside the question bank — shown when you type `c` during a quiz |
 ''';
 
 const kInstallation = r'''
@@ -270,15 +285,26 @@ From now on, every `git commit` will trigger `rocky diff` automatically.
 
 ---
 
-## Set up the Claude Code hook (optional)
+## Set up Claude Code (optional)
 
-If you use Claude Code, Rocky can silently log your prompts so `rocky quiz` has data to review:
+If you use Claude Code, Rocky installs two **skills** the agent invokes directly. Extraction happens inside the Claude session — no separate Ollama call, no per-prompt logging on the critical path:
 
 ```bash
-rocky install claude
+rocky install claude-all     # the full integration: skills + prompt log + git queue
+# or, more granularly:
+rocky install skills         # just the two skills, into ~/.claude/skills/
+rocky install claude         # just the prompt-logging hook
+rocky install stop           # legacy Stop-hook → Ollama path (opt-in only)
 ```
 
-This writes the hook entry to `~/.claude/settings.json` automatically. It's silent — it won't interrupt your workflow.
+`claude-all` is what most people want. It drops `rocky-checkpoint` and `rocky-quiz` into `~/.claude/skills/`, enables prompt logging so the skills can see your session transcript, and rewires the git hook so commits queue diffs (which the checkpoint skill drains) instead of running their own LLM call.
+
+From any Claude Code session you can then run:
+
+- `/rocky-checkpoint` — end-of-session: read recent diffs + transcript, extract topics with question banks, merge into the PKG (using the global dedup list so the same idea across projects becomes one node with multiple `repos[]`).
+- `/rocky-quiz` — Socratic review inside the Claude session, picking from the canonical question bank.
+
+The legacy `rocky install stop` is still there if you want auto-extraction on every Claude turn via Ollama, but it's no longer wired by `claude-all` — the per-turn latency was a real complaint.
 
 ---
 
@@ -347,14 +373,15 @@ At any question you can:
 
 - **Type your answer** and press Enter — Rocky evaluates and gives feedback
 - **Press Enter** with nothing to skip — queues the topic for later
-- **`i`** — ignore the topic (useful when Rocky picks up a hallucinated or irrelevant topic)
-- **`e`** — too easy, mark as known without a full Q&A
-- **`s`** — regenerate a simpler version of the question
-- **`h`** — regenerate a harder version with edge cases and deeper implications
-- **`c`** — show a short clue without giving away the answer
-- **`?`** — show a full explanation and mark with low confidence
+- **`s`** — simpler — regenerate the question at lower difficulty
+- **`h`** — harder — regenerate with edge cases and deeper implications
+- **`c`** — clue — short hint without giving away the answer
+- **`?`** — explain it — reveal the ideal answer and record a 0.0 score (you didn't get it)
+- **`x`** — delete the topic (Rocky confirms first — useful for hallucinated or irrelevant topics)
 
-Each question shows whether it's **(canonical)** — specific to your actual commit diff — or **(generated)** — created live from the topic description.
+There's no longer a *too easy* option (`[e]`) — it was a loophole that let you mark everything mastered without a real check. If you genuinely already know it, answer the question; the score is what teaches Rocky's mastery model.
+
+Each question shows whether it came from the **question bank** (pre-generated at extraction time from the actual diff + transcript) or was **generated live**. Bank questions are sharper because they were grounded in your real code.
 
 ---
 
@@ -376,12 +403,12 @@ rocky ls
   database indexing               implementation ████░░░░░░ 42%  1.8    0.6   1        2026-02-15
 ```
 
-- **Recall** — how likely you are to remember this right now
-- **Stab** (stability) — how deeply embedded it is; higher means slower decay
+- **Recall** — `retrievability × mastery`. Freshness multiplied by the mean of your last three review scores (default 0.5 if never quizzed)
+- **Stab** (stability) — how deeply embedded it is; higher means slower decay. Initial value depends on kind: Concept = 4.0, Pattern = 2.5, Implementation = 1.5
 - **Diff** (difficulty) — how hard you've found this historically
 - **Reviews** — how many times you've been quizzed on this
 
-Green = solid, yellow = fading, red = needs attention.
+Green = known (≥ 60%), yellow = stale (30–60%), red = gap (< 30%).
 
 ---
 
@@ -417,15 +444,17 @@ Rocky searches your PKG and queued topics for anything matching "redis", shows y
 ```
   Matching topics for "redis":
 
-  [1]  Redis TTL expiry           (gap    · 38% recall)
+  [1]  Redis TTL expiry           (gap    · 22% recall · R 89% · M 25%)
        How Redis handles key expiration and its effect on cache consistency.
-  [2]  Redis pub/sub              (fading · 74% recall)
+  [2]  Redis pub/sub              (fading · 45% recall · R 75% · M 60%)
        Event-driven messaging with Redis channels.
-  [3]  Redis cluster sharding     (known  · 91% recall)
+  [3]  Redis cluster sharding     (known  · 78% recall · R 87% · M 90%)
 
   Select topics to quiz (e.g. 1,2 or all, or Enter to cancel):
   > 1,2
 ```
+
+The two extra numbers (`R` and `M`) are the freshness factor and your last-3 mastery — recall is just their product. Topic 1 is fresh (89% R) but you got it wrong last time (25% M), so Rocky still treats it as a gap.
 
 ---
 
@@ -437,19 +466,22 @@ By default, Rocky runs a maximum of 3 quizzes per day via automatic triggers (gi
 ''';
 
 const kRichContext = r'''
-# Rich-Context Pipeline (alpha)
+# Rich-Context Pipeline
 
-This is the flow that ships in the alpha branch. It replaces the older "extract topics from a single commit at commit time" path with a richer, **session-aware** pipeline — and pairs it with a fully-redesigned `rocky view` web UI built around a **Rocky IQ** score that goes up as you keep recent material sharp.
+Rocky doesn't extract topics one commit at a time. It batches diffs across a whole working session, pairs them with the Claude Code transcript and a cached project summary, and produces **rich nodes with a question bank** (~4 implication-grounded Q+A+clue triples each) — driven by an agent already sitting in your editor.
 
 ![Dashboard](screenshots/rocky-dashboard.png)
 
 | Stage | What happens | Where |
 |---|---|---|
-| `rocky explore` | Reads CLAUDE.md / README / docs / recent commits and synthesises a **project context** summary | Run once per project (and after major shape changes) |
-| `rocky post-commit` | Silently appends the latest commit's diff to a queue. **No LLM call.** | Wired to the git post-commit hook |
-| `rocky session-end` | Drains the queue, reads the Claude Code session transcript, and produces **rich nodes with a question bank** (4 implication-grounded Q+A+clue triples per topic). Honours layer-1 dedup so existing topic names get reused instead of fragmented. | Wired to the Claude Code Stop hook |
+| `rocky explore` | Reads CLAUDE.md / README / docs / recent commits and synthesises a **project context** summary cached at `~/.rocky/summaries/<repo>.txt` | Run once per project, again after major shape changes |
+| `rocky post-commit` (queue mode) | Silently appends the latest commit's diff to a per-project queue. **No LLM call.** | Wired by `rocky install claude-all` |
+| `/rocky-checkpoint` (Claude skill) | Drains the diff queue, reads the active session's transcript, and writes nodes + question banks straight into the PKG. Uses the **global** dedup list — same topic across two projects becomes one node with `repos[]` accumulating. | Invoked inside Claude Code, end of a session |
+| `/rocky-quiz` (Claude skill) | Picks the weakest topics by `recall_now`, asks from the canonical question bank, records scores back to FSRS. | Invoked inside Claude Code any time |
 
-The motivation: a single commit message like *"feat: rotate refresh tokens"* is too thin a context to generate good questions from. By batching at session end, Rocky has the project summary, the actual diffs, **and** the agent's reasoning trail to ground questions in.
+The motivation: a single commit message like *"feat: rotate refresh tokens"* is too thin a context to ground good questions in. By batching at session end, the extractor has the project summary, the actual diffs, **and** the agent's reasoning trail. And by running inside Claude Code itself rather than shelling out to a local Ollama on every Stop event, the per-turn latency drops to zero — the heavy step only happens when you ask for it.
+
+> The legacy Stop-hook → Ollama path still ships and is opt-in via `rocky install stop`. It runs after every Claude turn and is useful if you don't keep a Claude session open the whole day. The skill-driven default is faster and produces sharper extraction because it sees the full transcript at once.
 
 ## Try it on a throwaway repo
 
@@ -513,18 +545,18 @@ Per-repository health, cross-project flow chord diagram, and a domain-mix donut.
 
 ![Projects](screenshots/rocky-projects.png)
 
-## Layer-1 deduplication
+## Cross-project dedup
 
-When the LLM extracts topics, Rocky passes the existing topic list as part of the prompt and asks for **exact** name reuse when a new finding is semantically equivalent. The third commit in the tutorial demonstrates this:
+When the checkpoint skill extracts topics, it's fed the **global** topic list (across every project Rocky knows about) and asked to reuse exact names where a new finding is semantically equivalent. The result: a topic like *Token Rotation* lives as one node with a `repos[]` array that accumulates as the same idea reappears in another codebase.
 
 ```
 ▸ refactor: surface is_rotated helper for refresh token reuse checks
-  ◇ Token Rotation (existing — encounter +1)
+  ◇ Token Rotation (existing — encounter +1, repos: [taskify, home-bank])
 
 Done. 0 new topic(s), 1 encounter update(s).
 ```
 
-The existing **Token Rotation** node's `encounter_count` ticks up by 1 instead of a near-duplicate "Refresh Token Reuse Check" being created next to it. Layer-2 (LLM-assisted merge of long-tail near-duplicates) is on the roadmap.
+The web UI's **Projects** panel for a topic shows everywhere it's appeared. Layer-2 (LLM-assisted merge of long-tail near-duplicates) is on the roadmap.
 
 ## Backfilling legacy nodes
 
@@ -623,9 +655,9 @@ rocky quiz "auth"
 
   Matching topics for "redis":
 
-  [1]  Redis TTL expiry           (gap    · 38% recall)
-  [2]  Redis pub/sub              (fading · 74% recall)
-  [3]  Redis cluster sharding     (known  · 91% recall)
+  [1]  Redis TTL expiry           (gap    · 22% recall · R 89% · M 25%)
+  [2]  Redis pub/sub              (fading · 45% recall · R 75% · M 60%)
+  [3]  Redis cluster sharding     (known  · 78% recall · R 87% · M 90%)
 
   Select topics to quiz (e.g. 1,2 or all, or Enter to cancel):
   > 1,2
@@ -643,14 +675,15 @@ During any question, you have these choices:
 |---|---|
 | Type your answer + Enter | Rocky evaluates and gives feedback |
 | Enter (blank) | Skip — topic is queued for later |
-| `i` | Ignore — dismiss the topic entirely (useful for hallucinated topics) |
-| `e` | Too easy — mark as known without a full Q&A |
 | `s` | Simpler — regenerate the question at lower difficulty |
 | `h` | Harder — regenerate the question with edge cases and deeper implications |
 | `c` | Clue — show a short hint without giving away the answer |
-| `?` | Explain — show a full explanation and mark with low confidence |
+| `?` | Explain it — reveal the ideal answer and record a 0.0 score (you didn't get it) |
+| `x` | Delete the topic (Rocky asks for confirmation before removing) |
 
-Each question also shows whether it is **(canonical)** — pre-generated at backfill time from the actual commit diff — or **(generated)** — generated live. Canonical questions are more specific to your actual code.
+There's no `[e]` (too easy) and no separate `[i]` (ignore) any more. The old `[e]` was a loophole — the only way mastery rises now is by actually answering the question, and `[?]` already covers the *I don't know, show me* case. `[x]` replaces ignore: if a topic is hallucinated or genuinely irrelevant, delete it — the FK cascade cleans up reviews and contexts.
+
+Each question shows whether it came from the **question bank** (pre-generated from the diff + transcript at extraction time) or was **generated live**. Bank questions are sharper because they were grounded in real code.
 
 ---
 
@@ -667,14 +700,17 @@ rocky stats
   Total topics:  24
   Known:         15
   Fading:         6
-  Gaps/weak:      3
+  Gaps/weak:     3
 
   Quiz budget: 2/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
 
   Edges: 18 total  ·  Most connected: JWT authentication (4 edges)
+  Weakest: SQL injection prevention (recall 18%)
 
   Good progress, friend. Keep science going.
 ```
+
+The **Weakest** line surfaces the single lowest-recall topic in your PKG so you have a one-line "next thing to drill" pointer without running `rocky ls`.
 
 ---
 
@@ -693,8 +729,8 @@ rocky ls
 ```
 
 Columns:
-- **Recall** — retrievability score (probability of recall right now)
-- **Stab** — stability (how embedded; higher = decays slower)
+- **Recall** — `retrievability × mastery`. Freshness combined with the mean of your last 3 review scores.
+- **Stab** — stability (how embedded; higher = decays slower; initial value is set by kind)
 - **Diff** — difficulty (how hard you've historically found this)
 - **Reviews** — number of times quizzed
 
@@ -718,16 +754,33 @@ rocky uninstall git
 
 `rocky install git` also adds `.rocky` to `.gitignore` so your local prompt log isn't committed.
 
-### Claude Code hook
+### Claude Code skills (`claude-all`)
 
-Silently logs every prompt you send to Claude Code so `rocky quiz` has data to review. Writes the hook entry to `~/.claude/settings.json`.
+The recommended Claude Code integration. One command sets up the skill-driven extraction pipeline:
 
 ```bash
-rocky install claude
-rocky uninstall claude
+rocky install claude-all
+rocky uninstall claude-all
 ```
 
-After installing, every Claude Code prompt in any project is logged. Run `rocky quiz` at any time to review what topics came up.
+This wires:
+
+- The two skills (`/rocky-checkpoint`, `/rocky-quiz`) into `~/.claude/skills/`
+- The Claude Code prompt-logging hook into `~/.claude/settings.json` (so the skills can see your transcript)
+- The git post-commit hook in **queue mode** — commits append diffs to a per-project queue instead of running their own LLM call. The checkpoint skill drains the queue.
+
+After install, work normally. End of session: type `/rocky-checkpoint` in Claude Code to extract topics, or `/rocky-quiz` any time to drill the weakest. Each skill operates on the global PKG, so the same topic surfaced in two projects becomes one node with `repos[]` accumulating.
+
+### Sub-targets (when you want pieces, not the bundle)
+
+```bash
+rocky install skills    # just the two skills, no hook changes
+rocky install claude    # just the prompt-logging hook (legacy)
+rocky install stop      # legacy: Stop hook → Ollama auto-extraction every Claude turn
+rocky uninstall skills | claude | stop
+```
+
+Use `stop` if you don't keep a Claude session open — it auto-extracts after every turn but pays Ollama latency each time.
 
 ### Prompt logging only (no git hook)
 
@@ -909,7 +962,7 @@ rocky backfill --all-authors --limit 50
 rocky backfill --fill-clues
 ```
 
-Rocky reads the diff for each commit, extracts topics the same way `rocky diff` does, and adds any that aren't already in your PKG. It sets initial retrievability to 0.5 (neutral — you saw the code but weren't quizzed). Edges are generated for all new topics after the scan completes.
+Rocky reads the diff for each commit, extracts topics the same way `rocky diff` does, and adds any that aren't already in your PKG. Initial **stability** is set by the topic's kind — Concept = 4.0, Pattern = 2.5, Implementation = 1.5 — and **mastery defaults to 0.5** because there's no review history yet. So a freshly backfilled topic lands in the *fading* bucket (recall ~0.5 × 1.0 = 0.5), not *known* — backfill alone isn't a quiz. Edges are generated for all new topics after the scan completes.
 
 Each new topic is enriched at insertion time:
 
@@ -1050,7 +1103,14 @@ rocky view
 
 Rocky writes the graph to `~/.rocky/view.html` and opens it automatically.
 
-**Graph** — D3.js force simulation. Drag nodes, zoom in/out, filter by domain, search topics by name. Click any node to open a detail panel showing retrievability, stability, review history, all connected edges, and — when available — the pre-generated question and ideal answer for that topic. Click any edge to see the reason Rocky created it.
+**Graph** — D3.js force simulation. Drag nodes, zoom in/out, filter by domain, search topics by name. Click any node to open a detail panel showing:
+
+- **Recall (R × M)** — the headline number plus the freshness factor (R) and your last-3 mastery (M) broken out, so you can see whether a topic is fading because of time or because of bad answers.
+- **Question Bank** — every canonical question + ideal answer + clue stored on the node, with the "asked count" so you know which ones have been used.
+- **Projects** — every repo this topic has appeared in. Click a repo name to filter the graph to that project.
+- Stability, difficulty, full review history, all connected edges.
+
+Click any edge to see the reason Rocky created it.
 
 **Spread slider** — controls the repulsion force between nodes. Drag right to spread the graph out; drag left to pull clusters together. Useful when many nodes overlap after a large backfill.
 
@@ -1062,9 +1122,105 @@ Rocky writes the graph to `~/.rocky/view.html` and opens it automatically.
 
 ---
 
+## PKG primitives (called by skills, also useful by hand)
+
+The skill-driven extraction in `claude-all` is built on a layer of small, scriptable commands. You can call them directly when you want fine control or for ad-hoc tooling.
+
+### `rocky add-topic`
+
+Insert a topic into the PKG without going through LLM extraction. The skill uses this for each topic it pulls from a session; you can call it directly to seed things the extractor wouldn't catch.
+
+```bash
+rocky add-topic --name "CRDT merge semantics" \
+                --description "Conflict-free replicated data types: state merges are commutative and idempotent so concurrent edits converge without coordination." \
+                --kind concept \
+                --domain Architecture \
+                --context "$(git show HEAD -- src/replicate.rs)" \
+                --commit "$(git rev-parse HEAD)" \
+                --score 0.7
+```
+
+The current repo is detected from the git remote, so `repos[]` accumulates automatically — call `add-topic` from any project and the same canonical name lands as one node with multiple repos.
+
+### `rocky add-question`
+
+Append a question to an existing topic's question bank. Idempotent on the question text — adding the same question twice is a no-op.
+
+```bash
+rocky add-question --topic "CRDT merge semantics" \
+                   --question "Why can't last-write-wins replace a CRDT?" \
+                   --answer "LWW silently drops concurrent edits; CRDTs preserve them via commutative merge." \
+                   --clue "Think about concurrent edits."
+```
+
+### `rocky delete-topic`
+
+Remove a topic by name (substring match — must resolve to exactly one). Cascades to reviews and contexts via FK, and unlinks from edges.
+
+```bash
+rocky delete-topic "JWT authentication"
+```
+
+### `rocky context`
+
+Emit the cached project context summary (the one `rocky explore` produces) as JSON. The checkpoint skill reads this to ground extraction in the project's vocabulary.
+
+```bash
+rocky context
+```
+
+### `rocky checkpoint`
+
+Two subcommands the `/rocky-checkpoint` skill uses, but you can call them too:
+
+```bash
+rocky checkpoint diff   # JSON dump of queued post-commit diffs (read-only)
+rocky checkpoint mark   # drain the queue for this project (call after extraction succeeds)
+```
+
+### `rocky due`
+
+JSON list of topics ranked by `recall_now` ascending (most-overdue first). Built for skills, but handy for piping into other tools.
+
+```bash
+rocky due --limit 10
+```
+
+Always JSON — the skill consumes it directly. Use `jq` to slice.
+
+### `rocky topic`
+
+Look up a single topic by name and print its full record as JSON: kind, domain, recall, mastery, full question bank, repos, contexts, review history.
+
+```bash
+rocky topic "CRDT merge semantics"
+```
+
+### `rocky review`
+
+Record a review score for a topic without going through interactive Q&A. The quiz skill uses this to write back after each question.
+
+```bash
+rocky review "CRDT merge semantics" \
+             --score 0.8 \
+             --question "Why can't last-write-wins replace a CRDT?" \
+             --answer "..." \
+             --feedback "Good — covered partial ordering correctly."
+```
+
+### `rocky list --json`
+
+Same data set as `rocky ls`, but emits the full PKG as JSON (recall, mastery, question bank, repos, classification — everything the skills and the web UI consume).
+
+```bash
+rocky list --json | jq '.[] | select(.recall_now < 0.3)'
+```
+
+---
+
 ## `rocky hook`
 
-Called automatically by the Claude Code hook — logs the prompt to `./.rocky`. You don't run this manually.
+Called automatically by the Claude Code prompt-logging hook — logs the prompt to `./.rocky`. You don't run this manually.
 ''';
 
 const kConfiguration = r'''
@@ -1244,21 +1400,24 @@ Use a days-based cooldown if you want variety. Use `"off"` (default) to always s
 
 ---
 
-## Claude Code hook
+## Claude Code integration
 
-To make Rocky log your AI prompts automatically:
-
-```bash
-rocky install claude
-```
-
-This writes the hook entry to `~/.claude/settings.json`. Every prompt is silently logged — run `rocky quiz` at any time to review topics from recent sessions.
-
-To remove:
+The recommended setup wires Rocky's two skills, the prompt-logging hook, and the queue-mode git hook in one shot:
 
 ```bash
-rocky uninstall claude
+rocky install claude-all
+rocky uninstall claude-all
 ```
+
+After install, type `/rocky-checkpoint` in any Claude session to extract topics into the PKG, or `/rocky-quiz` to drill the weakest. Both skills operate on the global PKG (cross-project dedup via `repos[]`).
+
+If you want pieces:
+
+| Command | What it installs |
+|---|---|
+| `rocky install skills` | Just `~/.claude/skills/{rocky-checkpoint,rocky-quiz}/SKILL.md` |
+| `rocky install claude` | Just the prompt-logging entry in `~/.claude/settings.json` |
+| `rocky install stop`   | Legacy: Stop hook → Ollama auto-extract on every Claude turn |
 
 ---
 
@@ -1292,16 +1451,16 @@ You describe what you're about to work on. Rocky extracts the topics, checks you
 
 1. Run `rocky "build a caching layer"`
 2. Extract 2–5 key topics from task description
-3. For each topic, classify against PKG:
-   - **Known** (≥90% recall) → Mark encountered, move on
-   - **Stale** (70–90%) → Write 2–3 sentence reminder, update PKG with small score bump
-   - **New / Gap** (<70%) → Check for implication edges to other well-known topics; if a relevant edge exists, generate a cross-concept question linking the two topics; otherwise, generate a standard Socratic question
+3. For each topic, classify against PKG using `recall_now = retrievability × mastery`:
+   - **Known** (recall ≥ 0.6) → Mark encountered, move on
+   - **Fading** (0.3 ≤ recall < 0.6) → Write 2–3 sentence reminder, then quiz to refresh mastery
+   - **Gap** (recall < 0.3) → Check for implication edges to other well-known topics; if a relevant edge exists, generate a cross-concept question linking the two topics; otherwise, generate a standard Socratic question
 4. User answers:
-   - **Understood** → Record in PKG with high confidence
-   - **Not understood** → Give senior-engineer explanation, ask one follow-up, record partial confidence
-   - **Too easy** (`k`) → Record as known — no Q&A needed
-   - **Skip** (Enter) → Queue topic in `.rocky`, not added to PKG yet
-   - **Ignore** (`i`) → Dismiss topic entirely, not added to PKG
+   - **Type an answer** → Score 0.0–1.0; FSRS updates stability, mastery moves toward this score
+   - **Skip** (Enter) → Queue topic in `.rocky`, no score recorded
+   - **Simpler / Harder / Clue** (`s` / `h` / `c`) → Regenerate or hint, then loop
+   - **Explain it** (`?`) → Reveal the ideal answer and record a 0.0 score
+   - **Delete** (`x`) → Confirm, then hard-delete the topic (cascades to reviews + contexts)
 5. After all Q&A: Rocky sends new topics to the LLM to infer relationships with existing PKG topics — edges are added silently in the background
 6. Summary printed — done
 
@@ -1329,16 +1488,30 @@ After every `git commit`, Rocky analyses the diff for topics that appeared in yo
 
 ---
 
-## Scenario 3: Claude Code hook (`rocky hook`)
+## Scenario 3: Claude Code skills (`/rocky-checkpoint`, `/rocky-quiz`)
 
-When Claude Code is used in a project with Rocky configured, each prompt is silently logged to `./.rocky`. No quiz happens here — this is just capture.
+The default integration after `rocky install claude-all`. The agent itself does extraction and quizzing — no separate Ollama process, no per-turn latency.
 
-**Flow:**
+**Capture flow (background):**
 
-1. Claude Code prompt submitted
-2. Is rocky hook installed? → If no, nothing happens
-3. If yes → Log prompt text to `./.rocky` SQLite, auto-delete entries older than 24h
-4. Silent — no output to user
+1. Claude Code prompt submitted → prompt-logging hook writes the prompt text to `./.rocky` (SQLite, auto-prunes after 24h)
+2. `git commit` → post-commit hook in queue mode appends the diff to a per-project queue. **No LLM call.**
+
+**Checkpoint flow (you trigger it inside Claude):**
+
+1. You type `/rocky-checkpoint` in the Claude session
+2. The skill calls `rocky context` (project summary), `rocky list --json` (global topic list for dedup), `rocky checkpoint diff` (queued diffs)
+3. Claude reads the session transcript itself, extracts topics, generates question banks
+4. For each topic: `rocky add-topic` (or update an existing canonical name with `repos[]` accumulating cross-project), then `rocky add-question` for each Q+A+clue
+5. `rocky checkpoint mark` drains the queue
+
+**Quiz flow:**
+
+1. You type `/rocky-quiz` in the Claude session (or run `rocky quiz` from the terminal)
+2. The skill calls `rocky due` to pick the lowest-recall topics
+3. For each: `rocky topic <name>` to fetch the question bank, asks via the standard `[s/h/c/?/x]` menu, calls `rocky review` to record the score
+
+The legacy Stop hook still ships and runs `rocky session-end` after every Claude turn (auto-extracts via Ollama). It's opt-in via `rocky install stop`.
 
 ---
 
@@ -1351,9 +1524,9 @@ Explicitly request a learning session. No limits apply. Rocky works through a pr
 1. Run `rocky quiz`
 2. Load queued topics from `./.rocky`, ordered by queue time
 3. If queued topics exist → Quiz each, remove from queue after completion
-4. Load PKG topics sorted by urgency (lowest retrievability first)
-5. If stale or gap topics exist → Quiz each (stale gets reminder first, gap gets full Socratic Q&A)
-6. Is rocky hook installed in this project?
+4. Load PKG topics sorted by urgency (lowest `recall_now` first)
+5. If fading or gap topics exist → Quiz each (fading gets a reminder first, gap goes straight to Socratic Q&A from the question bank)
+6. Is the prompt-logging hook installed in this project?
    - If yes → Read prompts from `./.rocky` from the last 24 hours
    - Extract new topics from prompt history
    - If new topics found → Run Socratic Q&A
@@ -1381,7 +1554,7 @@ Review your staged changes before committing. Behaves like the manual flow — n
 
 ## Scenario 6: Git history backfill (`rocky backfill`)
 
-Seed your PKG from your git history without any interactive Q&A. Useful when you first install Rocky on an existing project — Rocky scans your commits, extracts topics from each diff, and adds anything new to the PKG with a neutral starting retrievability of 0.5.
+Seed your PKG from your git history without any interactive Q&A. Useful when you first install Rocky on an existing project — Rocky scans your commits, extracts topics from each diff, and adds anything new to the PKG.
 
 **Flow:**
 
@@ -1394,32 +1567,37 @@ Seed your PKG from your git history without any interactive Q&A. Useful when you
    - Read the commit date and diff
    - Extract topics using code-aware analysis (same as `rocky diff`)
    - For each topic not already in the PKG:
-     - Add it with retrievability 0.5, `created_at` and `last_reviewed` set to the commit date, tagged with the repo name
+     - Set initial **stability** by kind (Concept = 4.0, Pattern = 2.5, Implementation = 1.5)
+     - **Mastery starts at 0.5** (no review history yet) — so initial `recall_now` lands in the *fading* bucket. Backfill seeds knowledge for surfacing, not for marking known.
+     - Set `created_at` and `last_reviewed` to the actual commit date, tag with the repo name (so `repos[]` accumulates if the same canonical name appears in multiple projects)
      - Generate a canonical question, ideal answer, and short clue using the diff + commit message + README summary
-     - Store all three in the node: the question is used at quiz time, the clue is available on request, the answer guides evaluation
    - Print `+ topic name` for each new topic added
 7. After all commits: generate edges for all newly added topics in bulk
 8. Print summary: `✓ Added N new topics · M already in PKG`
 9. Prompt to run `rocky quiz` to start reviewing
 
-Backfill never overwrites existing PKG entries — if a topic is already in your PKG, it's counted as "already in PKG" and skipped. Each topic is owned by the first commit that introduced it; later commits that mention the same topic do not update it.
+Backfill never overwrites existing PKG entries — if a topic is already in your PKG (anywhere — across all projects), it's counted as "already in PKG" and the encounter ticks up. Each topic is owned by the first commit that introduced it; later commits that mention the same topic accumulate `repos[]` and contexts without resetting stability.
 
 ---
 
 ## How the PKG classifies topics
 
-Every topic in the PKG has a **retrievability score** — an estimate of how likely you are to recall it right now, based on how long ago you last reviewed it and how stable your knowledge is.
+Every topic has a **recall** score: `recall_now = retrievability × mastery`.
 
-**Retrievability lifecycle:**
+- **Retrievability (R)** — FSRS freshness from spaced repetition. Decays with time since the last review. Decays slower when stability is high (you've demonstrated solid understanding).
+- **Mastery (M)** — mean of the last 3 review scores (default 0.5 if you've never been quizzed). Captures *how well you've actually been answering*, not just how recently.
 
-1. **Topic reviewed** → Stability score increases based on answer quality
-2. **Over time** → Retrievability decays (faster for unstable topics)
-3. **Classification:**
-   - ≥ 90% → **Known** — skipped automatically
-   - 70–90% → **Stale** — printed as reminder
-   - < 70% → **Gap** — full Socratic Q&A
+**Recall lifecycle:**
 
-Higher stability means the topic decays slower — if you've demonstrated solid understanding multiple times, Rocky won't ask you about it again for weeks.
+1. **Topic created** → stability set by kind (Concept 4.0, Pattern 2.5, Implementation 1.5), mastery defaults to 0.5
+2. **Topic reviewed** → score 0.0 to 1.0 is recorded. Stability rises if score ≥ 0.65; it floors at 1.0 + difficulty bumps if score < 0.4. The new score replaces the oldest in the last-3 mastery window.
+3. **Over time** → R decays. M is sticky until you take another quiz.
+4. **Classification:**
+   - recall ≥ 0.6 → **Known** — skipped automatically
+   - 0.3 ≤ recall < 0.6 → **Fading** — surfaced as a review candidate
+   - recall < 0.3 → **Gap** — full Socratic Q&A from the question bank
+
+The multiplicative model is the point: a freshly-reviewed topic where you got the question wrong (R high, M low) is still a gap. Freshness alone doesn't count as knowing.
 
 ---
 
@@ -1513,14 +1691,18 @@ Each topic becomes a file like `Auth/jwt-authentication.md`:
 rocky_id: jwt-authentication
 rocky_kind: pattern
 rocky_domain: Auth
-rocky_difficulty: 0.3
-rocky_stability: 8.5
-rocky_retrievability: 0.94
+rocky_repo: taskify
+rocky_status: known
+rocky_difficulty: 0.300
+rocky_stability: 8.50
+rocky_retrievability: 0.9400
+rocky_mastery: 0.9000
+rocky_recall: 0.8460
 rocky_last_reviewed: 2026-04-03
 rocky_last_encountered: 2026-04-03
 rocky_review_count: 3
 rocky_days_since_review: 0
-tags: [rocky/node, rocky/kind/pattern, rocky/domain/Auth]
+tags: [rocky/node, rocky/kind/pattern, rocky/status/known, rocky/domain/auth, rocky/repo/taskify]
 ---
 
 # JWT authentication
@@ -1534,6 +1716,14 @@ Stateless token-based auth where the server signs a payload the client stores an
 - [[token-expiry-handling]]
 - [[httponly-cookie-security]]
 ```
+
+The three frontmatter fields that drive Dataview queries:
+
+- `rocky_retrievability` — FSRS freshness alone (R)
+- `rocky_mastery` — mean of last-3 review scores (M)
+- `rocky_recall` — `R × M`, the field the dashboard pages classify on
+
+`rocky_status` is one of `known | fading | gap`, derived from `rocky_recall` against the same 0.6/0.3 thresholds Rocky uses elsewhere. Use whichever is most ergonomic for your queries.
 
 Related topics are linked via `See also:` wikilinks, so Obsidian's graph view shows the connections between your topics.
 
@@ -1562,54 +1752,66 @@ You can add your own queries to any Obsidian note.
 ### Topics that need attention
 
 ```
-TABLE rocky_retrievability AS "Recall %",
+TABLE round(rocky_recall * 100) + "%" AS "Recall",
+      round(rocky_mastery * 100) + "%" AS "Mastery",
       rocky_last_reviewed AS "Last Reviewed",
       rocky_kind AS "Kind"
 FROM #rocky/node
-WHERE rocky_retrievability < 0.7
-SORT rocky_retrievability ASC
+WHERE rocky_recall < 0.6
+SORT rocky_recall ASC
 ```
 
 ### Your strongest topics
 
 ```
-TABLE rocky_retrievability AS "Recall %",
+TABLE round(rocky_recall * 100) + "%" AS "Recall",
       rocky_review_count AS "Reviews"
 FROM #rocky/node
-WHERE rocky_retrievability >= 0.9
+WHERE rocky_recall >= 0.6
 SORT rocky_review_count DESC
 ```
 
 ### Topics by domain
 
 ```
-TABLE rocky_retrievability AS "Recall %",
+TABLE round(rocky_recall * 100) + "%" AS "Recall",
       rocky_last_reviewed AS "Last Reviewed"
-FROM #rocky/node AND #rocky/domain/Auth
-SORT rocky_retrievability ASC
+FROM #rocky/node AND #rocky/domain/auth
+SORT rocky_recall ASC
 ```
 
-Replace `Auth` with any domain name.
+Replace `auth` with any domain name (lowercased).
 
 ### Topics by kind
 
 ```
-TABLE rocky_retrievability AS "Recall %",
+TABLE round(rocky_recall * 100) + "%" AS "Recall",
       rocky_last_reviewed AS "Last Reviewed"
 FROM #rocky/node AND #rocky/kind/pattern
-SORT rocky_retrievability ASC
+SORT rocky_recall ASC
 ```
 
 Replace `pattern` with `concept` or `implementation`.
 
+### Topics from a specific project
+
+```
+TABLE round(rocky_recall * 100) + "%" AS "Recall",
+      rocky_domain AS "Domain"
+FROM #rocky/node AND #rocky/repo/taskify
+SORT rocky_recall ASC
+```
+
+Replace `taskify` with any repo tag. Note: a topic that's been encountered in multiple projects only carries the *primary* repo as `rocky_repo`; the cross-project view in `rocky view` is authoritative.
+
 ### Everything sorted by recall
 
 ```
-TABLE rocky_retrievability AS "Recall",
+TABLE round(rocky_recall * 100) + "%" AS "Recall",
       rocky_domain AS "Domain",
       rocky_days_since_review AS "Days ago"
 FROM #rocky/node
-SORT rocky_retrievability ASC
+SORT rocky_recall ASC
 ```
 
 ---
@@ -1794,6 +1996,8 @@ This is a complete, realistic example of building a Personal Knowledge Graph acr
 - **home-bank** — a Python data pipeline that imports bank CSV exports, categorises transactions, and models accounts with double-entry bookkeeping
 
 We follow commits across both projects. The full interactive graph (stage 7) shows 21 topics across both repos — use the **repo filter** buttons to isolate either project and see its summary.
+
+> **Note on the recall numbers below.** v0.3 introduced `recall = retrievability × mastery`. The percentages in the example tables show recall, and assume you answered each question well (so mastery starts near 1.0 and recall ≈ retrievability for newly-quizzed topics). Classification thresholds: **Known ≥ 60%**, **Fading 30–60%**, **Gap < 30%**.
 
 ---
 
@@ -2073,13 +2277,14 @@ graphs/stage2.html|Open interactive graph: commit 2
   ──────────────────────────────────────
 
   Total topics:  8
-  Known:         7
-  Fading:        1
+  Known:         8
+  Fading:        0
   Gaps/weak:     0
 
   Quiz budget: 0/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
 
   Edges: 6 total  ·  Most connected: JWT authentication (3 edges)
+  Weakest: httpOnly cookie security (recall 68%)
 
   Good progress, friend. PKG growing. Keep science going.
 ```
@@ -2240,7 +2445,7 @@ graphs/stage4.html|Open interactive graph: commit 4
     part_of              1        0.82
 ```
 
-**`rocky view` after commit 5:** This is when the graph becomes interesting. JWT authentication is the most-connected node — edges radiate outward to token expiry handling, httpOnly cookie security, Redis sorted sets, and Lua scripting. The cross-concept edge between Auth and Database clusters appears in cyan (`implies`), crossing the gap between clusters. The `conflicts_with` edge glows red. Click any node to open its detail panel showing retrievability, stability, review history, and all connected edges.
+**`rocky view` after commit 5:** This is when the graph becomes interesting. JWT authentication is the most-connected node — edges radiate outward to token expiry handling, httpOnly cookie security, Redis sorted sets, and Lua scripting. The cross-concept edge between Auth and Database clusters appears in cyan (`implies`), crossing the gap between clusters. The `conflicts_with` edge glows red. Click any node to open its detail panel showing Recall (R × M), the question bank (4 implication-grounded Q+A+clue triples), Projects, stability, review history, and all connected edges.
 
 ```graphlink
 graphs/stage5.html|Open interactive graph: commit 5
@@ -2248,9 +2453,9 @@ graphs/stage5.html|Open interactive graph: commit 5
 
 ---
 
-## One week later — decay begins
+## Three months later — decay begins
 
-You've been shipping features. It's been 7 days since commit 1.
+You've been shipping features. It's been ~90 days since commit 1.
 
 ```bash
 ~/taskify $ rocky stats
@@ -2259,13 +2464,14 @@ You've been shipping features. It's been 7 days since commit 1.
   ──────────────────────────────────────
 
   Total topics:  12
-  Known:         7
-  Fading:        4
-  Gaps/weak:     1
+  Known:         3
+  Fading:        7
+  Gaps/weak:     2
 
   Quiz budget: 3/3 remaining today  ·  provider: claude (claude-sonnet-4-6)
 
   Edges: 14 total  ·  Most connected: JWT authentication (5 edges)
+  Weakest: httpOnly cookie security (recall 18%)
 
   Some topics fading, friend. Time for science.
 ```
@@ -2275,24 +2481,24 @@ You've been shipping features. It's been 7 days since commit 1.
 
   Topic                       Kind           Recall         Stab  Diff  Reviews  Last Reviewed
   ──────────────────────────────────────────────────────────────────────────────────────────────
-  Rust async/await            concept        ██████░░░░ 63%  4.5   0.3   1        2026-04-01
-  tokio runtime               concept        ███████░░░ 72%  4.5   0.2   1        2026-04-01
-  Axum framework              concept        ███████░░░ 73%  4.5   0.3   1        2026-04-01
-  sqlx connection pooling     implementation ████████░░ 80%  4.8   0.3   1        2026-04-02
-  database migrations         concept        ████████░░ 81%  5.0   0.2   1        2026-04-02
-  JWT authentication          pattern        ████████░░ 82%  5.2   0.3   1        2026-04-03
-  httpOnly cookie security    concept        ████████░░ 82%  5.0   0.3   1        2026-04-03
-  token expiry handling       concept        ████████░░ 83%  4.8   0.2   1        2026-04-03
-  Redis TTL expiry            implementation ████████░░ 78%  5.1   0.3   1        2026-04-04
-  cache invalidation          concept        ████████░░ 79%  5.2   0.2   1        2026-04-04
-  Redis sorted sets           implementation ██████████ 95%  5.3   0.3   1        2026-04-07
-  Lua scripting in Redis      concept        ██████████ 95%  5.5   0.2   1        2026-04-07
+  Rust async/await            concept        ████░░░░░░ 35%  4.5   0.3   1        2026-04-01
+  tokio runtime               concept        ████░░░░░░ 36%  4.5   0.2   1        2026-04-01
+  Axum framework              concept        ████░░░░░░ 36%  4.5   0.3   1        2026-04-01
+  sqlx connection pooling     implementation ████░░░░░░ 38%  4.8   0.3   1        2026-04-02
+  database migrations         concept        █████░░░░░ 40%  5.0   0.2   1        2026-04-02
+  JWT authentication          pattern        █████░░░░░ 41%  5.2   0.3   1        2026-04-03
+  httpOnly cookie security    concept        ██░░░░░░░░ 18%  1.8   0.4   1        2026-04-03
+  token expiry handling       concept        █████░░░░░ 39%  4.8   0.2   1        2026-04-03
+  Redis TTL expiry            implementation █████░░░░░ 41%  5.1   0.3   1        2026-04-04
+  cache invalidation          concept        █████░░░░░ 42%  5.2   0.2   1        2026-04-04
+  Redis sorted sets           implementation ██████░░░░ 64%  5.3   0.3   1        2026-04-07
+  Lua scripting in Redis      concept        ██████░░░░ 65%  5.5   0.2   1        2026-04-07
 ```
 
-**`rocky view` after one week:** The same 12 nodes — but now in three colors. The Language cluster (Rust, tokio, Axum) has shifted amber to orange. Rust async/await glows red (gap — below 70%). The Auth and Database clusters are amber. The two Redis topics from this week are still bright gold. This is the core value of the timeline scrubber: it shows current decay state, not just when topics were added.
+**`rocky view` after three months:** The same 12 nodes — but now in three colors. The Language and Database clusters have settled into amber (Fading: 30–60%). httpOnly cookie security glows red — its low initial stability (1.8) means it decayed faster than the Concept-kind topics around it. The two Redis topics from week 5 just barely cling to *Known* in green. This is the core value of the timeline scrubber: it shows current decay state, not just when topics were added.
 
 ```graphlink
-graphs/stage6.html|Open interactive graph: one week later
+graphs/stage6.html|Open interactive graph: three months later
 ```
 
 ```bash
@@ -2302,9 +2508,9 @@ graphs/stage6.html|Open interactive graph: one week later
   ──────────────────────────────────────
 
   0 topics in queue.
-  4 fading topics · 1 gap topic — starting review…
+  7 fading topics · 2 gap topics — starting review…
 
-  ~ Rust async/await  (gap · 63% recall)
+  ~ Rust async/await  (fading · 35% recall · R 35% · M 100%)
     Reminder: Rust's async/await uses state machines compiled at build time —
     when you .await, the compiler pauses execution and polls the future again
     when the resource is ready.
@@ -2320,10 +2526,10 @@ graphs/stage6.html|Open interactive graph: one week later
 
   Fist my bump, friend! Is correct!
 
-  ✓ Rust async/await — stability increased to 6.8 · recall now at 94%
+  ✓ Rust async/await — stability increased to 6.8 · recall now 99% (R 99% · M 100%)
 ```
 
-**`rocky view` after the quiz:** Rust async/await snaps from red back to gold. Click the node — the detail panel now shows **two review entries**: the Q&A from April 1 (initial stability 4.5) and today's harder question on April 8 (stability 6.8 — deeper embedding). Each entry shows the question, your answer, Rocky's feedback, and the score. The decay curve between those two points is visible in the timeline scrubber.
+**`rocky view` after the quiz:** Rust async/await snaps from amber back to gold. Click the node — the detail panel now shows **two review entries**: the Q&A from April 1 (initial stability 4.5) and today's harder question (stability 6.8 — deeper embedding). Each entry shows the question, your answer, Rocky's feedback, and the score. The Recall (R × M) line in the panel went from `35% · R 35% · M 100%` to `99% · R 99% · M 100%` — the freshness factor reset, and mastery stayed pinned at the top.
 
 ---
 
@@ -2365,7 +2571,7 @@ A week in, you realize you want your PKG to reflect *everything* in the git hist
   Run  rocky quiz  to start reviewing them.
 ```
 
-Rocky tagged each new node as `taskify`, set `created_at` and `last_reviewed` to the actual commit date (not today), and generated a canonical question and ideal answer from the diff context. The Docker topic from March is already decaying correctly — its retrievability is calculated from March, not April.
+Rocky tagged each new node with `taskify` (added to `repos[]`), set `created_at` and `last_reviewed` to the actual commit date (not today), and generated a canonical question + ideal answer + clue from the diff context. The Docker topic from March is already decaying correctly — its retrievability is calculated from March, not April. Mastery defaults to 0.5 since none of these have been quizzed yet, so they all start in the *fading* band — backfill seeds knowledge for surfacing, not for marking known.
 
 ```bash
 ~/taskify $ rocky stats
@@ -2444,14 +2650,14 @@ Click **All** to return to the full cross-project view. The timeline scrubber no
 
 The interactive graph opens in your browser:
 
-- **Nodes** — colored by recall: gold (≥90%), amber (70–90%), red (<70%)
+- **Nodes** — colored by `recall_now` (R × M): gold (≥ 60%), amber (30–60%), red (< 30%)
 - **Node size** — proportional to stability (deeper knowledge = bigger node)
 - **Edges** — colored by kind: cyan (`implies`), yellow (`depends_on`), red (`conflicts_with`), green (`part_of`)
 - **Spread slider** — controls node repulsion; drag right to spread the graph, left to cluster it
 - **Domain panel** — left sidebar showing active domains and node counts; click to highlight a cluster
 - **Repo filter** — filter the graph to a single project; shows the project summary and only that repo's topics
 - **Search** — type "redis" to highlight all Redis-related nodes
-- **Node detail panel** — click any node to see retrievability score, stability, all connected edges, review history, and the pre-generated question + ideal answer
+- **Node detail panel** — click any node to see Recall (R × M), Mastery, the full Question Bank, the Projects this topic has appeared in, stability, all connected edges, and review history
 - **Edge detail** — click any edge to see the reason Rocky created it
 - **Timeline scrubber** — drag the range slider to any date to see what your PKG looked like at that point. Scrub from October 2025 to April 2026 to watch both projects grow in.
 
@@ -2600,9 +2806,9 @@ A topic can enter your PKG two ways: from your own code (a diff you wrote, a com
 
 ### Independence score
 
-A second axis alongside retrievability: what fraction of this topic's appearances came from your own diffs vs. AI-generated code?
+A second axis alongside recall: what fraction of this topic's appearances came from your own diffs vs. AI-generated code?
 
-**Planned change:** Track per-topic encounter sources. In `rocky stats`, show a new category — "AI-dependent" — for topics with high retrievability but low independent-code encounters. These are the risk areas: you could ship them confidently and be lost if the AI gets them wrong.
+**Planned change:** Track per-topic encounter sources. In `rocky stats`, show a new category — "AI-dependent" — for topics with high recall but low independent-code encounters. These are the risk areas: you could ship them confidently and be lost if the AI gets them wrong.
 
 ---
 
@@ -2641,7 +2847,7 @@ When you run `rocky "task description"`, Rocky currently tells you what you know
 
 ### Rocky as a required PR check
 
-A GitHub Actions workflow that makes Rocky a required status check on pull requests. Before a PR can merge, Rocky analyses the diff, identifies the topics introduced, and checks whether the author has those topics in their PKG above a configurable retrievability threshold.
+A GitHub Actions workflow that makes Rocky a required status check on pull requests. Before a PR can merge, Rocky analyses the diff, identifies the topics introduced, and checks whether the author has those topics in their PKG above a configurable recall threshold.
 
 **Planned design:**
 
@@ -2657,7 +2863,7 @@ jobs:
       - name: Rocky knowledge check
         uses: NVME-git/rocky-action@v1
         with:
-          min_retrievability: 0.7
+          min_recall: 0.6
           pkg_url: ${{ secrets.ROCKY_PKG_URL }}   # your private PKG repo
 ```
 
@@ -2670,7 +2876,7 @@ Rocky fetches your PKG, runs the diff against the PR, and reports which topics a
 ```toml
 [pr_check]
 enabled = true
-min_retrievability = 0.7   # topics below this threshold block merge
+min_recall = 0.6   # topics below this threshold block merge
 allow_bypass = false        # if true, author can override with a reason
 notify_reviewer = true      # post a comment showing topic scores
 ```

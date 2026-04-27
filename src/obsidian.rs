@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use chrono::Local;
 
-use crate::db::Edge;
+use crate::db::{Db, Edge};
 use crate::fsrs;
 use crate::node::Node;
 
@@ -30,23 +30,26 @@ fn node_path(node: &Node, pkg_dir: &Path) -> PathBuf {
 // ── Write a single node ───────────────────────────────────────────────────────
 
 /// Write a node with edges resolved from the full edge list.
-pub fn write_node_with_edges(node: &Node, pkg_dir: &Path, all_edges: &[Edge]) -> Result<()> {
+/// `mastery` is the mean of the node's last-3 review scores (0.5 default when none).
+pub fn write_node_with_edges(node: &Node, pkg_dir: &Path, all_edges: &[Edge], mastery: f64) -> Result<()> {
     let edges: Vec<&Edge> = all_edges.iter()
         .filter(|e| e.source_id == node.id || e.target_id == node.id)
         .collect();
-    write_node_inner(node, pkg_dir, &edges)
+    write_node_inner(node, pkg_dir, &edges, mastery)
 }
 
 /// Write a node with no edge context (used when edges are unavailable).
-pub fn write_node(node: &Node, pkg_dir: &Path) -> Result<()> {
-    write_node_inner(node, pkg_dir, &[])
+pub fn write_node(node: &Node, pkg_dir: &Path, mastery: f64) -> Result<()> {
+    write_node_inner(node, pkg_dir, &[], mastery)
 }
 
-fn recall_status(r: f64) -> &'static str {
-    if r >= 0.9 { "known" } else if r >= 0.7 { "fading" } else { "gap" }
+fn recall_status(recall_now: f64) -> &'static str {
+    if recall_now >= fsrs::KNOWN_RECALL { "known" }
+    else if recall_now >= fsrs::STALE_RECALL { "fading" }
+    else { "gap" }
 }
 
-fn write_node_inner(node: &Node, pkg_dir: &Path, edges: &[&Edge]) -> Result<()> {
+fn write_node_inner(node: &Node, pkg_dir: &Path, edges: &[&Edge], mastery: f64) -> Result<()> {
     let path = node_path(node, pkg_dir);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -60,9 +63,10 @@ fn write_node_inner(node: &Node, pkg_dir: &Path, edges: &[&Edge]) -> Result<()> 
     }
 
     let r = fsrs::retrievability(node.stability, node.last_reviewed);
+    let recall_now = fsrs::recall_now(r, mastery);
     let today = Local::now().date_naive();
     let days_since = (today - node.last_reviewed).num_days();
-    let status = recall_status(r);
+    let status = recall_status(recall_now);
 
     let domain_tag = if node.domain.is_empty() {
         String::new()
@@ -91,11 +95,13 @@ fn write_node_inner(node: &Node, pkg_dir: &Path, edges: &[&Edge]) -> Result<()> 
     };
 
     let frontmatter = format!(
-        "---\nrocky_id: {}\nrocky_kind: {kind_tag}{domain_tag}{repo_tag}\nrocky_status: {status}\nrocky_difficulty: {:.3}\nrocky_stability: {:.2}\nrocky_retrievability: {:.4}\nrocky_last_reviewed: {}\nrocky_last_encountered: {}\nrocky_review_count: {}\nrocky_days_since_review: {}\ntags: [rocky/node, rocky/kind/{kind_tag}, rocky/status/{status}{domain_folder_tag}{repo_folder_tag}]\n---\n",
+        "---\nrocky_id: {}\nrocky_kind: {kind_tag}{domain_tag}{repo_tag}\nrocky_status: {status}\nrocky_difficulty: {:.3}\nrocky_stability: {:.2}\nrocky_retrievability: {:.4}\nrocky_mastery: {:.4}\nrocky_recall: {:.4}\nrocky_last_reviewed: {}\nrocky_last_encountered: {}\nrocky_review_count: {}\nrocky_days_since_review: {}\ntags: [rocky/node, rocky/kind/{kind_tag}, rocky/status/{status}{domain_folder_tag}{repo_folder_tag}]\n---\n",
         node.id,
         node.difficulty,
         node.stability,
         r,
+        mastery,
+        recall_now,
         node.last_reviewed,
         node.last_encountered,
         node.review_count,
@@ -162,11 +168,12 @@ pub fn delete_node(node_id: &str, domain: &str, pkg_dir: &Path) {
 
 // ── Export all nodes ──────────────────────────────────────────────────────────
 
-pub fn write_all(nodes: &[Node], all_edges: &[Edge], pkg_dir: &Path) -> Result<usize> {
+pub fn write_all(db: &Db, nodes: &[Node], all_edges: &[Edge], pkg_dir: &Path) -> Result<usize> {
     std::fs::create_dir_all(pkg_dir)?;
 
     for node in nodes {
-        write_node_with_edges(node, pkg_dir, all_edges)?;
+        let (_, mastery, _) = db.node_recall(node);
+        write_node_with_edges(node, pkg_dir, all_edges, mastery)?;
     }
 
     write_dashboard_pages(pkg_dir)?;
@@ -199,9 +206,9 @@ tags: [rocky/meta]
 
 ```dataviewjs
 const pages = dv.pages('#rocky/node');
-const known  = pages.filter(p => p.rocky_retrievability >= 0.9).length;
-const fading = pages.filter(p => p.rocky_retrievability >= 0.7 && p.rocky_retrievability < 0.9).length;
-const gaps   = pages.filter(p => p.rocky_retrievability < 0.7).length;
+const known  = pages.filter(p => p.rocky_recall >= 0.6).length;
+const fading = pages.filter(p => p.rocky_recall >= 0.3 && p.rocky_recall < 0.6).length;
+const gaps   = pages.filter(p => p.rocky_recall < 0.3).length;
 const total  = pages.length;
 dv.paragraph(
   `**${total} topics total** — ` +
@@ -220,14 +227,14 @@ dv.paragraph(
 
 ```dataview
 TABLE
-  round(rocky_retrievability * 100) + "%" AS "Recall",
+  round(rocky_recall * 100) + "%" AS "Recall",
   rocky_domain AS "Domain",
   rocky_kind AS "Kind",
   rocky_days_since_review + "d ago" AS "Last Reviewed",
   round(rocky_difficulty * 100) + "%" AS "Difficulty"
 FROM #rocky/node
-WHERE rocky_retrievability < 0.7
-SORT rocky_retrievability ASC
+WHERE rocky_recall < 0.3
+SORT rocky_recall ASC
 ```
 
 ---
@@ -236,14 +243,14 @@ SORT rocky_retrievability ASC
 
 ```dataview
 TABLE
-  round(rocky_retrievability * 100) + "%" AS "Recall",
+  round(rocky_recall * 100) + "%" AS "Recall",
   rocky_domain AS "Domain",
   rocky_kind AS "Kind",
   rocky_last_reviewed AS "Last Reviewed",
   round(rocky_stability) + "d" AS "Stability"
 FROM #rocky/node
-WHERE rocky_retrievability >= 0.7 AND rocky_retrievability < 0.9
-SORT rocky_retrievability ASC
+WHERE rocky_recall >= 0.3 AND rocky_recall < 0.6
+SORT rocky_recall ASC
 ```
 
 ---
@@ -252,13 +259,13 @@ SORT rocky_retrievability ASC
 
 ```dataview
 TABLE
-  round(rocky_retrievability * 100) + "%" AS "Recall",
+  round(rocky_recall * 100) + "%" AS "Recall",
   round(rocky_stability) + "d" AS "Stability",
   rocky_domain AS "Domain",
   rocky_kind AS "Kind",
   rocky_review_count AS "Reviews"
 FROM #rocky/node
-WHERE rocky_retrievability >= 0.9
+WHERE rocky_recall >= 0.6
 SORT rocky_stability DESC
 ```
 
@@ -270,13 +277,13 @@ SORT rocky_stability DESC
 const domains = [...new Set(dv.pages('#rocky/node').map(p => p.rocky_domain).filter(d => d))];
 for (const domain of domains.sort()) {
   const pages = dv.pages('#rocky/node').filter(p => p.rocky_domain === domain);
-  const known = pages.filter(p => p.rocky_retrievability >= 0.9).length;
+  const known = pages.filter(p => p.rocky_recall >= 0.6).length;
   dv.header(3, `${domain} (${pages.length} topics · ${known} known)`);
   dv.table(
     ["Topic", "Recall", "Kind", "Reviews"],
-    pages.sort(p => p.rocky_retrievability).map(p => [
+    pages.sort(p => p.rocky_recall).map(p => [
       p.file.link,
-      Math.round(p.rocky_retrievability * 100) + "%",
+      Math.round(p.rocky_recall * 100) + "%",
       p.rocky_kind,
       p.rocky_review_count
     ])
@@ -295,14 +302,14 @@ if (repos.length === 0) {
 } else {
   for (const repo of repos.sort()) {
     const pages = dv.pages('#rocky/node').filter(p => p.rocky_repo === repo);
-    const known = pages.filter(p => p.rocky_retrievability >= 0.9).length;
-    const gaps  = pages.filter(p => p.rocky_retrievability < 0.7).length;
+    const known = pages.filter(p => p.rocky_recall >= 0.6).length;
+    const gaps  = pages.filter(p => p.rocky_recall < 0.3).length;
     dv.header(3, `${repo} (${pages.length} topics · ${known} known · ${gaps} gaps)`);
     dv.table(
       ["Topic", "Recall", "Domain", "Kind"],
-      pages.sort(p => p.rocky_retrievability).map(p => [
+      pages.sort(p => p.rocky_recall).map(p => [
         p.file.link,
-        Math.round(p.rocky_retrievability * 100) + "%",
+        Math.round(p.rocky_recall * 100) + "%",
         p.rocky_domain,
         p.rocky_kind
       ])
@@ -318,7 +325,7 @@ if (repos.length === 0) {
 ```dataview
 TABLE
   round(rocky_difficulty * 100) + "%" AS "Difficulty",
-  round(rocky_retrievability * 100) + "%" AS "Recall",
+  round(rocky_recall * 100) + "%" AS "Recall",
   rocky_domain AS "Domain",
   rocky_review_count AS "Reviews"
 FROM #rocky/node
@@ -334,7 +341,7 @@ LIMIT 15
 ```dataview
 TABLE
   rocky_review_count AS "Reviews",
-  round(rocky_retrievability * 100) + "%" AS "Recall",
+  round(rocky_recall * 100) + "%" AS "Recall",
   round(rocky_stability) + "d" AS "Stability",
   rocky_domain AS "Domain"
 FROM #rocky/node
@@ -349,7 +356,7 @@ LIMIT 15
 ```dataview
 TABLE
   rocky_last_encountered AS "Last Encountered",
-  round(rocky_retrievability * 100) + "%" AS "Recall",
+  round(rocky_recall * 100) + "%" AS "Recall",
   rocky_domain AS "Domain",
   rocky_kind AS "Kind"
 FROM #rocky/node
@@ -375,14 +382,14 @@ tags: [rocky/meta]
 
 ```dataview
 TABLE
-  round(rocky_retrievability * 100) + "%" AS "Recall",
+  round(rocky_recall * 100) + "%" AS "Recall",
   rocky_domain AS "Domain",
   rocky_kind AS "Kind",
   rocky_days_since_review + "d ago" AS "Last Reviewed",
   round(rocky_difficulty * 100) + "%" AS "Difficulty"
 FROM #rocky/node
-WHERE rocky_retrievability < 0.9
-SORT rocky_retrievability ASC
+WHERE rocky_recall < 0.6
+SORT rocky_recall ASC
 ```
 
 ---
@@ -390,16 +397,16 @@ SORT rocky_retrievability ASC
 ## By Domain
 
 ```dataviewjs
-const domains = [...new Set(dv.pages('#rocky/node').filter(p => p.rocky_retrievability < 0.9).map(p => p.rocky_domain).filter(d => d))];
+const domains = [...new Set(dv.pages('#rocky/node').filter(p => p.rocky_recall < 0.6).map(p => p.rocky_domain).filter(d => d))];
 for (const domain of domains.sort()) {
-  const pages = dv.pages('#rocky/node').filter(p => p.rocky_domain === domain && p.rocky_retrievability < 0.9);
+  const pages = dv.pages('#rocky/node').filter(p => p.rocky_domain === domain && p.rocky_recall < 0.6);
   if (pages.length === 0) continue;
   dv.header(3, domain);
   dv.table(
     ["Topic", "Recall", "Days Since Review"],
-    pages.sort(p => p.rocky_retrievability).map(p => [
+    pages.sort(p => p.rocky_recall).map(p => [
       p.file.link,
-      Math.round(p.rocky_retrievability * 100) + "%",
+      Math.round(p.rocky_recall * 100) + "%",
       p.rocky_days_since_review + "d ago"
     ])
   );
@@ -411,16 +418,16 @@ for (const domain of domains.sort()) {
 ## By Project
 
 ```dataviewjs
-const repos = [...new Set(dv.pages('#rocky/node').filter(p => p.rocky_retrievability < 0.9).map(p => p.rocky_repo).filter(r => r))];
+const repos = [...new Set(dv.pages('#rocky/node').filter(p => p.rocky_recall < 0.6).map(p => p.rocky_repo).filter(r => r))];
 for (const repo of repos.sort()) {
-  const pages = dv.pages('#rocky/node').filter(p => p.rocky_repo === repo && p.rocky_retrievability < 0.9);
+  const pages = dv.pages('#rocky/node').filter(p => p.rocky_repo === repo && p.rocky_recall < 0.6);
   if (pages.length === 0) continue;
   dv.header(3, repo);
   dv.table(
     ["Topic", "Recall", "Domain", "Days Since Review"],
-    pages.sort(p => p.rocky_retrievability).map(p => [
+    pages.sort(p => p.rocky_recall).map(p => [
       p.file.link,
-      Math.round(p.rocky_retrievability * 100) + "%",
+      Math.round(p.rocky_recall * 100) + "%",
       p.rocky_domain,
       p.rocky_days_since_review + "d ago"
     ])

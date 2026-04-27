@@ -402,7 +402,8 @@ impl Db {
 
         // Write Obsidian PKG file (best-effort — never block on failure)
         if let Ok(Some(node)) = self.get_node(topic) {
-            obsidian::write_node(&node, &self.pkg_dir).ok();
+            let (_, mastery, _) = self.node_recall(&node);
+            obsidian::write_node(&node, &self.pkg_dir, mastery).ok();
         }
 
         Ok(())
