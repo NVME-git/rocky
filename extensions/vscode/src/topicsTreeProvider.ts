@@ -1,15 +1,16 @@
 import * as vscode from "vscode";
 import { RockyDataProvider } from "./rockyDataProvider";
 import type { RockyNode } from "./extension";
+import { recallNow } from "./extension";
 
-type SortMode = "retrievability" | "name";
+type SortMode = "recall" | "name";
 type GroupMode = "domain" | "repo";
 
 export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<TopicItem | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private sortMode: SortMode = "retrievability";
+  private sortMode: SortMode = "recall";
   private groupMode: GroupMode = "domain";
 
   constructor(private readonly dataProvider: RockyDataProvider) {}
@@ -29,7 +30,7 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
   }
 
   toggleSort(): void {
-    this.setSortMode(this.sortMode === "retrievability" ? "name" : "retrievability");
+    this.setSortMode(this.sortMode === "recall" ? "name" : "recall");
   }
 
   toggleGroup(): void {
@@ -66,8 +67,8 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
     }
 
     const sortFn =
-      this.sortMode === "retrievability"
-        ? (a: RockyNode, b: RockyNode) => a.retrievability - b.retrievability
+      this.sortMode === "recall"
+        ? (a: RockyNode, b: RockyNode) => recallNow(a) - recallNow(b)
         : (a: RockyNode, b: RockyNode) => a.topic.localeCompare(b.topic);
 
     const sortedKeys = [...groups.keys()].sort();
@@ -75,8 +76,9 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
       const nodes = groups.get(groupKey)!.sort(sortFn);
 
       const children = nodes.map((n) => {
-        const pct = (n.retrievability * 100).toFixed(0);
-        const icon = n.retrievability > 0.7 ? "🟢" : n.retrievability > 0.4 ? "🟡" : "🔴";
+        const recall = recallNow(n);
+        const pct = (recall * 100).toFixed(0);
+        const icon = recall > 0.6 ? "🟢" : recall > 0.3 ? "🟡" : "🔴";
         const subtitle =
           this.groupMode === "domain" ? (n.repo ?? "") : (n.domain || "Other");
         const item = new TopicItem(
@@ -84,9 +86,11 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
           vscode.TreeItemCollapsibleState.None
         );
         item.description = subtitle;
+        const masteryPct = ((n.mastery ?? 0.5) * 100).toFixed(0);
+        const rPct = (n.retrievability * 100).toFixed(0);
         item.tooltip = [
           n.topic,
-          `Retrievability: ${pct}%`,
+          `Recall: ${pct}%  (R ${rPct}% · M ${masteryPct}%)`,
           `Domain: ${n.domain || "Other"}`,
           `Repo: ${n.repo ?? "global"}`,
           `Difficulty: ${n.difficulty.toFixed(2)}`,
@@ -102,7 +106,7 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
         return item;
       });
 
-      const weak = nodes.filter((n) => n.retrievability < 0.5).length;
+      const weak = nodes.filter((n) => recallNow(n) < 0.3).length;
       const groupItem = new TopicItem(
         `${groupKey}  (${nodes.length}${weak > 0 ? ` · ${weak} due` : ""})`,
         vscode.TreeItemCollapsibleState.Collapsed

@@ -417,8 +417,8 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
         let mut gap = 0u32;
 
         for n in nodes_in_repo {
-            let r = fsrs::retrievability(n.stability, n.last_reviewed);
-            let cls = fsrs::classify(r);
+            let (_, _, recall) = db.node_recall(n);
+            let cls = fsrs::classify(recall);
             match cls {
                 "known" => known += 1,
                 "stale" => fading += 1,
@@ -510,8 +510,8 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
     let mut nodes_json: Vec<Value> = topic_nodes
         .iter()
         .map(|n| {
-            let r = fsrs::retrievability(n.stability, n.last_reviewed);
-            let cls = fsrs::classify(r);
+            let (r, m, recall) = db.node_recall(n);
+            let cls = fsrs::classify(recall);
             let reviews: Vec<Value> = db
                 .get_reviews(&n.id)
                 .unwrap_or_default()
@@ -527,13 +527,16 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
                 "id": n.id, "topic": n.topic, "kind": n.kind.as_str(),
                 "domain": n.domain, "description": n.description,
                 "stability": n.stability, "difficulty": n.difficulty,
-                "retrievability": r, "classification": cls,
+                "retrievability": r, "mastery": m, "recall_now": recall,
+                "classification": cls,
                 "last_reviewed": n.last_reviewed.to_string(),
                 "review_count": n.review_count, "created_at": n.created_at.to_string(),
                 "repo": if n.repo.is_empty() { "Other" } else { &n.repo },
+                "repos": n.repos,
                 "canonical_question": n.canonical_question,
                 "canonical_answer": n.canonical_answer,
                 "canonical_clue": n.canonical_clue,
+                "question_bank": n.question_bank,
                 "reviews": reviews,
             })
         })
@@ -620,9 +623,9 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
         }
     }
 
-    let atrophy = atrophy_score(&topic_nodes);
-    let domain_health = domain_health_breakdown(&topic_nodes);
-    let due_for_review = due_for_review_list(&topic_nodes, 8);
+    let atrophy = atrophy_score(db, &topic_nodes);
+    let domain_health = domain_health_breakdown(db, &topic_nodes);
+    let due_for_review = due_for_review_list(db, &topic_nodes, 8);
     let recently_added = recently_added_list(&topic_nodes, 8);
 
     Ok(json!({
@@ -646,12 +649,13 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
 ///
 /// For each non-domain node:
 ///   weight = max(0, 1 - days_since_created / 60)   — recent material counts more
-///   decay  = max(0, 0.7 - retrievability)          — only nodes below 70% recall
+///   decay  = max(0, 0.6 - recall_now)              — only nodes below the "known" threshold
 ///   contribution = weight * decay
 ///
-/// score = (sum contribution) / (sum weight)  normalized into 0..1 by /0.7.
-/// Returns 0.0 when there are no recent topics — nothing to atrophy yet.
-fn atrophy_score(nodes: &[&crate::node::Node]) -> f64 {
+/// score = (sum contribution) / (sum weight) normalized into 0..1 by /0.6.
+/// `recall_now` (= retrievability × mastery) catches both "I forgot it" and
+/// "I never knew it" — a topic the user just answered wrong is correctly atrophied.
+fn atrophy_score(db: &crate::db::Db, nodes: &[&crate::node::Node]) -> f64 {
     let today = chrono::Local::now().date_naive();
     let mut total_weight = 0.0_f64;
     let mut total_contrib = 0.0_f64;
@@ -659,27 +663,27 @@ fn atrophy_score(nodes: &[&crate::node::Node]) -> f64 {
         let days = (today - n.created_at).num_days() as f64;
         let weight = (1.0_f64 - (days / 60.0_f64)).max(0.0);
         if weight == 0.0 { continue; }
-        let r = fsrs::retrievability(n.stability, n.last_reviewed);
-        let decay = (0.7_f64 - r).max(0.0);
+        let (_, _, recall) = db.node_recall(n);
+        let decay = (0.6_f64 - recall).max(0.0);
         total_weight += weight;
         total_contrib += weight * decay;
     }
     if total_weight == 0.0 {
         return 0.0;
     }
-    ((total_contrib / total_weight) / 0.7).clamp(0.0, 1.0)
+    ((total_contrib / total_weight) / 0.6).clamp(0.0, 1.0)
 }
 
-fn domain_health_breakdown(nodes: &[&crate::node::Node]) -> Vec<Value> {
+fn domain_health_breakdown(db: &crate::db::Db, nodes: &[&crate::node::Node]) -> Vec<Value> {
     use std::collections::HashMap;
     #[derive(Default)] struct Bucket { sum_r: f64, n: u32, known: u32, fading: u32, gap: u32 }
     let mut by_domain: HashMap<String, Bucket> = HashMap::new();
     for n in nodes {
         let d = if n.domain.is_empty() { "Other" } else { n.domain.as_str() };
-        let r = fsrs::retrievability(n.stability, n.last_reviewed);
-        let cls = fsrs::classify(r);
+        let (_, _, recall) = db.node_recall(n);
+        let cls = fsrs::classify(recall);
         let b = by_domain.entry(d.to_string()).or_default();
-        b.sum_r += r; b.n += 1;
+        b.sum_r += recall; b.n += 1;
         match cls { "known" => b.known += 1, "stale" => b.fading += 1, _ => b.gap += 1 }
     }
     let mut out: Vec<Value> = by_domain.into_iter()
@@ -698,14 +702,17 @@ fn domain_health_breakdown(nodes: &[&crate::node::Node]) -> Vec<Value> {
     out
 }
 
-fn due_for_review_list(nodes: &[&crate::node::Node], limit: usize) -> Vec<Value> {
+fn due_for_review_list(db: &crate::db::Db, nodes: &[&crate::node::Node], limit: usize) -> Vec<Value> {
     let mut scored: Vec<(f64, &crate::node::Node)> = nodes.iter()
-        .map(|n| (fsrs::retrievability(n.stability, n.last_reviewed), *n))
+        .map(|n| {
+            let (_, _, recall) = db.node_recall(n);
+            (recall, *n)
+        })
         .collect();
     scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    scored.into_iter().take(limit).map(|(r, n)| json!({
+    scored.into_iter().take(limit).map(|(recall, n)| json!({
         "id": n.id, "topic": n.topic, "domain": n.domain,
-        "retrievability": r,
+        "recall_now": recall,
         "last_reviewed": n.last_reviewed.to_string(),
     })).collect()
 }

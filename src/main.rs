@@ -55,6 +55,95 @@ enum Cmd {
         /// Filter by creation date: today, yesterday, week, month, or a number of days (e.g. 7)
         #[arg(long)]
         since: Option<String>,
+        /// Emit a JSON array (used by the rocky-checkpoint skill for dedup lookup)
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add a topic to the PKG (low-level — invoked by the rocky-checkpoint skill).
+    /// In the agent-driven workflow, the agent extracts topics from recent commits
+    /// and calls this for each one. Bypasses any LLM call inside Rocky.
+    AddTopic {
+        /// Topic name (noun phrase, ≤8 words)
+        #[arg(long)]
+        name: String,
+        /// One-sentence description of the topic
+        #[arg(long)]
+        description: String,
+        /// Domain hint: Language, Database, Auth, API, Frontend, DevOps, Architecture,
+        /// Performance, Security, Testing, Tooling, Data, Other
+        #[arg(long, default_value = "Other")]
+        domain: String,
+        /// Kind: concept | pattern | implementation
+        #[arg(long, default_value = "concept")]
+        kind: String,
+        /// Diff hunk or code fragment that grounds future quiz questions
+        #[arg(long)]
+        context: Option<String>,
+        /// Commit SHA this topic was learned from
+        #[arg(long)]
+        commit: Option<String>,
+        /// Initial recall score (0..1). Defaults to 0.7 (newly-introduced).
+        #[arg(long, default_value = "0.7")]
+        score: f64,
+    },
+    /// Emit the project context summary (from `rocky explore`) as JSON.
+    /// Used by the rocky-checkpoint skill to ground topic extraction in the
+    /// project's vocabulary.
+    Context,
+    /// Inspect / drain the post-commit queue. Used by the rocky-checkpoint skill.
+    Checkpoint {
+        #[command(subcommand)]
+        action: CheckpointAction,
+    },
+    /// List topics due for review as JSON. Used by the rocky-quiz skill.
+    Due {
+        /// Maximum number of topics to surface (lowest retrievability first)
+        #[arg(long, default_value = "5")]
+        limit: usize,
+    },
+    /// Look up a topic by name and print its full record as JSON.
+    /// Used by the rocky-quiz skill to fetch question banks + history.
+    Topic {
+        /// Topic name (substring match — must resolve to exactly one topic)
+        name: String,
+    },
+    /// Append a single question to a topic's question_bank (used by the rocky-quiz
+    /// skill so good questions persist across sessions for rotation).
+    AddQuestion {
+        /// Topic name (substring match — must resolve to exactly one topic)
+        #[arg(long)]
+        topic: String,
+        /// The question
+        #[arg(long)]
+        question: String,
+        /// Ideal answer (≤200 chars)
+        #[arg(long)]
+        answer: String,
+        /// Short clue / hint shown when the user asks for one
+        #[arg(long, default_value = "")]
+        clue: String,
+    },
+    /// Hard-delete a topic from the PKG (used by the rocky-quiz skill's [x] action).
+    DeleteTopic {
+        /// Topic name (substring match — must resolve to exactly one topic)
+        topic: String,
+    },
+    /// Record a quiz outcome for a topic. Used by the rocky-quiz skill.
+    Review {
+        /// Topic name (substring match) or topic id
+        topic: String,
+        /// Score in [0, 1] — 1.0 = perfect recall, 0.0 = total miss
+        #[arg(long)]
+        score: f64,
+        /// The question that was asked
+        #[arg(long)]
+        question: Option<String>,
+        /// The answer the user gave (recorded for audit)
+        #[arg(long)]
+        answer: Option<String>,
+        /// Short feedback line shown to the user (recorded for audit)
+        #[arg(long)]
+        feedback: Option<String>,
     },
     /// Install a hook (git post-commit by default)
     Install {
@@ -202,8 +291,19 @@ enum HookTarget {
     Prompt,
     /// Claude Code Stop hook — runs `rocky session-end` when a session closes
     Stop,
+    /// Install the rocky-checkpoint and rocky-quiz Claude Code skills.
+    /// In the agent-driven workflow these replace the Stop-hook → Ollama path.
+    Skills,
     /// Full Claude-aware install: prompt logging + Stop hook + queue-mode git hook
     ClaudeAll,
+}
+
+#[derive(Subcommand)]
+enum CheckpointAction {
+    /// Print the queued commits + their diffs as JSON. Read-only.
+    Diff,
+    /// Drain the queue for this project (call after extraction succeeds).
+    Mark,
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -275,15 +375,23 @@ fn run() -> Result<()> {
                         println!("  {}", "Rocky will batch-process commits + transcript when each Claude Code session ends.".dimmed());
                     }
                 }
+                HookTarget::Skills => {
+                    p.banner();
+                    let results = install_claude_skills()?;
+                    for (ok, msg) in &results {
+                        let glyph = if *ok { "✓".truecolor(29, 158, 117) } else { "·".dimmed() };
+                        println!("  {glyph} {msg}");
+                    }
+                    println!();
+                    println!("  {}", "In Claude Code, type  /rocky-checkpoint  after a commit to extract topics.".dimmed());
+                    println!("  {}", "Type  /rocky-quiz  any time to drill the weakest topics.".dimmed());
+                }
                 HookTarget::ClaudeAll => {
                     p.banner();
-                    println!("  {}", "Installing full Claude-aware integration:".dimmed());
+                    println!("  {}", "Installing Claude-aware integration (skill-driven default):".dimmed());
 
                     let (ok1, msg1) = install_claude_hook()?;
                     println!("    {} {msg1}", if ok1 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
-
-                    let (ok2, msg2) = install_claude_stop_hook()?;
-                    println!("    {} {msg2}", if ok2 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
 
                     let (ok3, msg3) = install_git_hook_queue_mode()?;
                     println!("    {} {msg3}", if ok3 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
@@ -291,8 +399,14 @@ fn run() -> Result<()> {
                     let (ok4, msg4) = local_log::install_prompt_marker()?;
                     println!("    {} {msg4}", if ok4 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
 
+                    for (ok, msg) in install_claude_skills()? {
+                        println!("    {} {msg}", if ok { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
+                    }
+
                     println!();
                     println!("  {}", "Next: run  rocky explore  to build the project context summary.".dimmed());
+                    println!("  {}", "Then in Claude Code:  /rocky-checkpoint  after each commit, or  /rocky-quiz  any time.".dimmed());
+                    println!("  {}", "(For legacy auto-extraction at every Claude turn:  rocky install stop)".dimmed());
                 }
             }
         }
@@ -327,11 +441,18 @@ fn run() -> Result<()> {
                     let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "✗".truecolor(226, 75, 74) };
                     println!("  {glyph} {msg}");
                 }
+                HookTarget::Skills => {
+                    for (ok, msg) in uninstall_claude_skills()? {
+                        let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "·".dimmed() };
+                        println!("  {glyph} {msg}");
+                    }
+                }
                 HookTarget::ClaudeAll => {
                     let _ = uninstall_claude_hook()?;
                     let _ = uninstall_claude_stop_hook()?;
                     let _ = uninstall_git_hook()?;
                     let _ = local_log::uninstall_prompt_marker()?;
+                    let _ = uninstall_claude_skills()?;
                     println!("  {} Claude integration removed.", "✓".truecolor(29, 158, 117));
                 }
             }
@@ -382,7 +503,32 @@ fn run() -> Result<()> {
         }
         Some(Cmd::Inspect { topic }) => inspect_topic(&db, &topic)?,
         Some(Cmd::Stats) => show_stats(&db, &cfg, &p)?,
-        Some(Cmd::List { since }) => list_topics(&db, since.as_deref())?,
+        Some(Cmd::List { since, json }) => {
+            if json {
+                emit_topics_json(&db, since.as_deref())?;
+            } else {
+                list_topics(&db, since.as_deref())?;
+            }
+        }
+        Some(Cmd::AddTopic { name, description, domain, kind, context, commit, score }) => {
+            run_add_topic(&db, &name, &description, &domain, &kind, context.as_deref(), commit.as_deref(), score)?;
+        }
+        Some(Cmd::Context) => emit_project_context_json(&db)?,
+        Some(Cmd::Checkpoint { action }) => match action {
+            CheckpointAction::Diff => emit_checkpoint_diff_json(&db)?,
+            CheckpointAction::Mark => run_checkpoint_mark(&db)?,
+        },
+        Some(Cmd::Due { limit }) => emit_due_json(&db, limit)?,
+        Some(Cmd::Topic { name }) => emit_topic_json(&db, &name)?,
+        Some(Cmd::AddQuestion { topic, question, answer, clue }) => {
+            run_add_question(&db, &topic, &question, &answer, &clue)?;
+        }
+        Some(Cmd::DeleteTopic { topic }) => {
+            run_delete_topic(&db, &topic)?;
+        }
+        Some(Cmd::Review { topic, score, question, answer, feedback }) => {
+            run_record_review(&db, &topic, score, question.as_deref(), answer.as_deref(), feedback.as_deref())?;
+        }
         Some(Cmd::Delete { query, since, before }) => {
             delete_topics(&db, &cfg.pkg_dir, query.as_deref(), since.as_deref(), before.as_deref())?;
         }
@@ -491,6 +637,23 @@ fn show_stats(db: &Db, cfg: &Config, p: &personality::Personality) -> Result<()>
     println!("  {}", format!("Fading:        {stale}").truecolor(239, 159, 39));
     println!("  {}", format!("Gaps/weak:     {gaps}").truecolor(226, 75, 74));
 
+    // Surface the single weakest topic so the user has an obvious next action.
+    let mut weakest: Option<(f64, String)> = None;
+    for n in db.all_nodes()?.iter().filter(|n| !n.kind.is_domain()) {
+        let (_, _, recall) = db.node_recall(n);
+        match weakest {
+            None => weakest = Some((recall, n.topic.clone())),
+            Some((cur, _)) if recall < cur => weakest = Some((recall, n.topic.clone())),
+            _ => {}
+        }
+    }
+    if let Some((recall, topic)) = weakest {
+        println!(
+            "  {}",
+            format!("Weakest:       {topic}  (recall {:.0}%)", recall * 100.0).dimmed()
+        );
+    }
+
     nudge_if_context_stale(db);
 
     let session = Session::new(
@@ -567,17 +730,19 @@ fn list_topics(db: &Db, since: Option<&str>) -> Result<()> {
     );
     println!("  {}", "─".repeat(115).dimmed());
 
-    let mut sorted = nodes;
-    sorted.sort_by(|a, b| {
-        let ra = fsrs::retrievability(a.stability, a.last_reviewed);
-        let rb = fsrs::retrievability(b.stability, b.last_reviewed);
-        rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
-    });
+    // Sort by recall_now descending (most-recalled at top, gaps at bottom).
+    let mut scored: Vec<_> = nodes
+        .into_iter()
+        .map(|n| {
+            let (_, _, recall) = db.node_recall(&n);
+            (recall, n)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    for node in sorted {
-        let r = fsrs::retrievability(node.stability, node.last_reviewed);
-        let cls = fsrs::classify(r);
-        let filled = (r * 10.0) as usize;
+    for (recall, node) in scored {
+        let cls = fsrs::classify(recall);
+        let filled = (recall * 10.0) as usize;
         let bar = format!("{}{}", "█".repeat(filled), "░".repeat(10 - filled));
         let topic_str = &node.topic[..node.topic.len().min(34)];
         let domain_str = if node.domain.is_empty() { "—" } else { &node.domain };
@@ -590,7 +755,7 @@ fn list_topics(db: &Db, since: Option<&str>) -> Result<()> {
             domain_str,
             node.kind.as_str(),
             bar,
-            r * 100.0,
+            recall * 100.0,
             stab_str,
             diff_str,
             node.review_count,
@@ -1462,9 +1627,9 @@ fn run_socratic_loop(
         println!("{}{} {display_q}", format!("Q{questions_asked}.").bold(), source_label);
 
         let hint_line = if cli_voice.is_some() {
-            "   [e] too easy  [s] simpler  [h] harder  [c] clue  [?] explain it  [i] not relevant  or type / [Enter] to record:"
+            "   [s] simpler  [h] harder  [c] clue  [?] explain it  [x] delete  or type / [Enter] to record:"
         } else {
-            "   [e] too easy  [s] simpler  [h] harder  [c] clue  [?] explain it  [i] not relevant  or type your answer:"
+            "   [s] simpler  [h] harder  [c] clue  [?] explain it  [x] delete  or type your answer:"
         };
         println!("{}", hint_line.dimmed());
         print!("   > ");
@@ -1485,10 +1650,22 @@ fn run_socratic_loop(
             return Ok((true, false));
         }
 
-        // Ignore — LLM hallucinated or topic is irrelevant, discard silently
-        if answer.eq_ignore_ascii_case("i") {
-            if let Some(msg) = p.ignored() { println!("   {msg}"); }
-            else { println!("{}", "   Ignored — not added to PKG.".dimmed()); }
+        // Delete — hard-remove from the PKG (replaces old [i] not-relevant + [e] too-easy hacks).
+        // Confirms first because this cascades reviews + contexts.
+        if answer.eq_ignore_ascii_case("x") {
+            print!("   Delete \"{topic}\" from your PKG? This is permanent. [y/N] ");
+            io::stdout().flush()?;
+            let mut confirm = String::new();
+            io::stdin().read_line(&mut confirm)?;
+            if confirm.trim().eq_ignore_ascii_case("y") {
+                if db.delete_node_by_topic(topic).unwrap_or(false) {
+                    println!("{}", format!("   Deleted: {topic}").truecolor(226, 75, 74));
+                } else {
+                    println!("{}", "   Topic not found in PKG (nothing deleted).".dimmed());
+                }
+            } else {
+                println!("{}", "   Cancelled.".dimmed());
+            }
             return Ok((false, false));
         }
 
@@ -1534,22 +1711,9 @@ fn run_socratic_loop(
             db.fire_edge(&edge_id).ok();
         }
 
-        // Too easy — self-report high confidence
-        if answer.eq_ignore_ascii_case("e") {
-            db.add_or_update(
-                topic,
-                0.75,
-                &Kind::from_str(&topic_info.kind),
-                &topic_info.domain,
-                &topic_info.description,
-                task,
-                node_date, repo, node_date,
-            )?;
-            if let Some(msg) = p.too_easy() { println!("   {msg}"); }
-            else { println!("{}", "   Marked as known.".truecolor(29, 158, 117)); }
-            print_milestone(db, p, topic);
-            return Ok((true, true));
-        }
+        // [e] too easy was removed — it was a loophole letting users mass-mark
+        // topics as known without demonstrating mastery. The new metric requires
+        // an actual quiz score to drive recall_now upward.
 
         // Explain it — show explanation, mark with low confidence
         if answer == "?" {
@@ -2645,6 +2809,359 @@ fn install_git_hook_queue_mode() -> Result<(bool, String)> {
     Ok((true, "git hook installed in queue mode".into()))
 }
 
+// ── skill-facing CLI primitives ──────────────────────────────────────────────
+//
+// These commands exist for the rocky-checkpoint and rocky-quiz Claude Code skills.
+// They are pure storage/lookup wrappers — no LLM calls — so the agent (which is
+// already running and has full context) does the thinking, and Rocky just records
+// the result.
+
+fn project_path_str() -> Result<String> {
+    Ok(std::env::current_dir()?
+        .canonicalize()?
+        .to_string_lossy()
+        .to_string())
+}
+
+fn project_repo_name() -> String {
+    std::env::current_dir()
+        .ok()
+        .and_then(|p| p.canonicalize().ok())
+        .and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()))
+        .unwrap_or_default()
+}
+
+fn node_to_json(db: &Db, n: &node::Node) -> serde_json::Value {
+    let (r, m, recall) = db.node_recall(n);
+    serde_json::json!({
+        "id": n.id,
+        "topic": n.topic,
+        "kind": n.kind.as_str(),
+        "domain": n.domain,
+        "description": n.description,
+        "difficulty": n.difficulty,
+        "stability": n.stability,
+        "retrievability": r,
+        "mastery": m,
+        "recall_now": recall,
+        "classification": fsrs::classify(recall),
+        "last_reviewed": n.last_reviewed.to_string(),
+        "last_encountered": n.last_encountered.to_string(),
+        "review_count": n.review_count,
+        "encounter_count": n.encounter_count,
+        "created_at": n.created_at.to_string(),
+        "contexts": n.contexts,
+        "source_commits": n.source_commits,
+        "canonical_question": n.canonical_question,
+        "canonical_answer": n.canonical_answer,
+        "canonical_clue": n.canonical_clue,
+        "question_bank": n.question_bank,
+        "repo": n.repo,
+        "repos": n.repos,
+    })
+}
+
+fn emit_topics_json(db: &Db, since: Option<&str>) -> Result<()> {
+    let cutoff: Option<chrono::NaiveDate> = since.and_then(|s| parse_since_days(s)).map(|days| {
+        chrono::Local::now().date_naive() - chrono::Duration::days(days)
+    });
+    let nodes: Vec<serde_json::Value> = db.all_nodes()?
+        .into_iter()
+        .filter(|n| !n.kind.is_domain())
+        .filter(|n| cutoff.map_or(true, |c| n.created_at >= c))
+        .map(|n| node_to_json(db, &n))
+        .collect();
+    println!("{}", serde_json::to_string_pretty(&nodes)?);
+    Ok(())
+}
+
+fn emit_project_context_json(db: &Db) -> Result<()> {
+    let project_path = project_path_str()?;
+    let ctx = db.get_project_context(&project_path)?;
+    let value = match ctx {
+        Some(c) => serde_json::json!({
+            "project_path": project_path,
+            "summary": c.summary,
+            "sources": c.sources,
+            "last_explored_at": c.last_explored_at,
+            "commits_since_explore": c.commits_since_explore,
+        }),
+        None => serde_json::json!({
+            "project_path": project_path,
+            "summary": null,
+            "sources": [],
+            "last_explored_at": null,
+            "commits_since_explore": 0,
+        }),
+    };
+    println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+
+fn emit_checkpoint_diff_json(db: &Db) -> Result<()> {
+    let project_path = project_path_str()?;
+    let pending = db.peek_pending_diffs(&project_path)?;
+    let commits: Vec<serde_json::Value> = pending.iter().map(|p| serde_json::json!({
+        "id": p.id,
+        "sha": p.commit_sha,
+        "subject": p.commit_msg.lines().next().unwrap_or("").to_string(),
+        "message": p.commit_msg,
+        "diff": p.diff,
+        "queued_at": p.queued_at,
+    })).collect();
+    let envelope = serde_json::json!({
+        "project_path": project_path,
+        "pending_count": commits.len(),
+        "commits": commits,
+    });
+    println!("{}", serde_json::to_string_pretty(&envelope)?);
+    Ok(())
+}
+
+fn run_checkpoint_mark(db: &Db) -> Result<()> {
+    let project_path = project_path_str()?;
+    let drained = db.drain_pending_diffs(&project_path)?;
+    let envelope = serde_json::json!({
+        "project_path": project_path,
+        "drained": drained.len(),
+    });
+    println!("{}", serde_json::to_string_pretty(&envelope)?);
+    Ok(())
+}
+
+fn run_add_topic(
+    db: &Db,
+    name: &str,
+    description: &str,
+    domain: &str,
+    kind: &str,
+    context: Option<&str>,
+    commit: Option<&str>,
+    score: f64,
+) -> Result<()> {
+    let kind_enum = node::Kind::from_str(kind);
+    let pre_existing = db.get_node(name)?.is_some();
+    db.add_or_update(
+        name,
+        score,
+        &kind_enum,
+        domain,
+        description,
+        context.unwrap_or(""),
+        None,
+        &project_repo_name(),
+        None,
+    )?;
+    let repo = project_repo_name();
+    if let Some(sha) = commit {
+        if !sha.is_empty() {
+            db.record_topic_encounter(name, sha, &repo)?;
+        }
+    } else if !repo.is_empty() {
+        // No commit linked but we still want to record cross-project encounters.
+        db.record_topic_encounter(name, "", &repo)?;
+    }
+
+    // Surface the new recall_now so the skill can report meaningfully.
+    let (r, m, recall) = db.get_node(name)?
+        .map(|n| db.node_recall(&n))
+        .unwrap_or((1.0, 0.5, 0.5));
+
+    let action = if pre_existing { "merged" } else { "created" };
+    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+        "topic": name,
+        "action": action,
+        "domain": domain,
+        "kind": kind,
+        "retrievability": r,
+        "mastery": m,
+        "recall_now": recall,
+    }))?);
+    Ok(())
+}
+
+fn emit_due_json(db: &Db, limit: usize) -> Result<()> {
+    // Rank by recall_now ascending (lowest first = most urgent to drill).
+    let mut scored: Vec<(f64, node::Node)> = db.all_nodes()?
+        .into_iter()
+        .filter(|n| !n.kind.is_domain())
+        .map(|n| {
+            let (_, _, recall) = db.node_recall(&n);
+            (recall, n)
+        })
+        .collect();
+    scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(limit);
+    let value: Vec<serde_json::Value> = scored.iter().map(|(_, n)| node_to_json(db, n)).collect();
+    println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+
+fn emit_topic_json(db: &Db, name: &str) -> Result<()> {
+    let nodes = db.all_nodes()?;
+    let q = name.to_lowercase();
+    let matches: Vec<&node::Node> = nodes
+        .iter()
+        .filter(|n| !n.kind.is_domain())
+        .filter(|n| n.topic.to_lowercase().contains(&q) || n.id == name)
+        .collect();
+    if matches.is_empty() {
+        anyhow::bail!("no topic matching '{name}'");
+    }
+    if matches.len() > 1 {
+        let names: Vec<&str> = matches.iter().map(|n| n.topic.as_str()).collect();
+        anyhow::bail!("ambiguous: {} topics match '{name}': {}", names.len(), names.join(", "));
+    }
+    let n = matches[0];
+    let mut value = node_to_json(db, n);
+    let reviews = db.get_reviews(&n.id).unwrap_or_default();
+    value["recent_reviews"] = serde_json::json!(reviews.iter().rev().take(5).map(|r| {
+        serde_json::json!({
+            "reviewed_at": r.reviewed_at,
+            "question": r.question,
+            "answer": r.answer,
+            "feedback": r.feedback,
+            "score": r.score,
+        })
+    }).collect::<Vec<_>>());
+    println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+
+fn run_record_review(
+    db: &Db,
+    topic_query: &str,
+    score: f64,
+    question: Option<&str>,
+    answer: Option<&str>,
+    feedback: Option<&str>,
+) -> Result<()> {
+    if !(0.0..=1.0).contains(&score) {
+        anyhow::bail!("score must be in [0, 1] (got {score})");
+    }
+    let nodes = db.all_nodes()?;
+    let q = topic_query.to_lowercase();
+    let matches: Vec<&node::Node> = nodes
+        .iter()
+        .filter(|n| !n.kind.is_domain())
+        .filter(|n| n.id == topic_query || n.topic.to_lowercase().contains(&q))
+        .collect();
+    if matches.is_empty() {
+        anyhow::bail!("no topic matching '{topic_query}'");
+    }
+    if matches.len() > 1 {
+        let names: Vec<&str> = matches.iter().map(|n| n.topic.as_str()).collect();
+        anyhow::bail!("ambiguous: {} topics match '{topic_query}': {}", names.len(), names.join(", "));
+    }
+    let n = matches[0];
+    let q_text = question.unwrap_or("");
+    let a_text = answer.unwrap_or("");
+    let f_text = feedback.unwrap_or("");
+    let new_r = db.record_quiz_review_full(&n.id, score, q_text, a_text, f_text)?;
+    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+        "topic": n.topic,
+        "score": score,
+        "new_retrievability": new_r,
+        "review_count": n.review_count + 1,
+    }))?);
+    Ok(())
+}
+
+fn run_add_question(db: &Db, topic_query: &str, question: &str, answer: &str, clue: &str) -> Result<()> {
+    let nodes = db.all_nodes()?;
+    let q = topic_query.to_lowercase();
+    let matches: Vec<&node::Node> = nodes
+        .iter()
+        .filter(|n| !n.kind.is_domain())
+        .filter(|n| n.id == topic_query || n.topic.to_lowercase().contains(&q))
+        .collect();
+    if matches.is_empty() {
+        anyhow::bail!("no topic matching '{topic_query}'");
+    }
+    if matches.len() > 1 {
+        let names: Vec<&str> = matches.iter().map(|n| n.topic.as_str()).collect();
+        anyhow::bail!("ambiguous: {} topics match '{topic_query}': {}", names.len(), names.join(", "));
+    }
+    let n = matches[0];
+    let item = node::QuestionBankItem {
+        question: question.trim().to_string(),
+        answer: answer.trim().to_string(),
+        clue: clue.trim().to_string(),
+        asked_count: 0,
+    };
+    let added = db.append_question(&n.topic, item)?;
+    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+        "topic": n.topic,
+        "added": added,
+        "reason": if added { "appended" } else { "duplicate question text — skipped" },
+    }))?);
+    Ok(())
+}
+
+fn run_delete_topic(db: &Db, topic_query: &str) -> Result<()> {
+    let nodes = db.all_nodes()?;
+    let q = topic_query.to_lowercase();
+    let matches: Vec<&node::Node> = nodes
+        .iter()
+        .filter(|n| !n.kind.is_domain())
+        .filter(|n| n.id == topic_query || n.topic.to_lowercase().contains(&q))
+        .collect();
+    if matches.is_empty() {
+        anyhow::bail!("no topic matching '{topic_query}'");
+    }
+    if matches.len() > 1 {
+        let names: Vec<&str> = matches.iter().map(|n| n.topic.as_str()).collect();
+        anyhow::bail!("ambiguous: {} topics match '{topic_query}': {}", names.len(), names.join(", "));
+    }
+    let n = matches[0];
+    let deleted = db.delete_node_by_topic(&n.topic)?;
+    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+        "topic": n.topic,
+        "deleted": deleted,
+    }))?);
+    Ok(())
+}
+
+// ── claude code skill installer ──────────────────────────────────────────────
+
+const SKILL_CHECKPOINT: &str = include_str!("../skills/rocky-checkpoint/SKILL.md");
+const SKILL_QUIZ: &str = include_str!("../skills/rocky-quiz/SKILL.md");
+
+fn claude_skills_dir() -> Result<std::path::PathBuf> {
+    let home = dirs::home_dir().context("could not resolve home directory")?;
+    Ok(home.join(".claude").join("skills"))
+}
+
+fn install_claude_skills() -> Result<Vec<(bool, String)>> {
+    let base = claude_skills_dir()?;
+    std::fs::create_dir_all(&base)?;
+    let skills = [("rocky-checkpoint", SKILL_CHECKPOINT), ("rocky-quiz", SKILL_QUIZ)];
+    let mut out = Vec::new();
+    for (name, body) in skills {
+        let dir = base.join(name);
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join("SKILL.md");
+        std::fs::write(&path, body)?;
+        out.push((true, format!("installed skill: {} → {}", name, path.display())));
+    }
+    Ok(out)
+}
+
+fn uninstall_claude_skills() -> Result<Vec<(bool, String)>> {
+    let base = claude_skills_dir()?;
+    let mut out = Vec::new();
+    for name in ["rocky-checkpoint", "rocky-quiz"] {
+        let dir = base.join(name);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir)?;
+            out.push((true, format!("removed skill: {name}")));
+        } else {
+            out.push((false, format!("skill not present: {name}")));
+        }
+    }
+    Ok(out)
+}
+
 // ── post-commit queue command ────────────────────────────────────────────────
 
 fn run_post_commit(db: &Db) -> Result<()> {
@@ -3615,7 +4132,7 @@ fn run_session_end(
 
             if exists {
                 // Layer 1 dedup hit — record encounter, no node creation
-                db.record_topic_encounter(&t.topic, &pd.commit_sha).ok();
+                db.record_topic_encounter(&t.topic, &pd.commit_sha, &repo).ok();
                 deduped += 1;
                 if !quiet {
                     println!("    {} {} (existing — encounter +1)", "◇".dimmed(), t.topic.dimmed());
@@ -3660,8 +4177,8 @@ fn run_session_end(
                 }
             }
 
-            // Bump source_commits with this commit SHA
-            db.record_topic_encounter(&t.topic, &pd.commit_sha).ok();
+            // Bump source_commits + repos with this commit SHA / repo
+            db.record_topic_encounter(&t.topic, &pd.commit_sha, &repo).ok();
             new_topics += 1;
 
             if !quiet {

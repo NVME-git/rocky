@@ -280,6 +280,11 @@ function normalizeServerNode(n: ServerNode): RockyNode {
 
 function normalizeExportedNode(n: ExportedNode): RockyNode {
   const r = computeRetrievability(n.stability, n.last_reviewed);
+  // pkg.json export doesn't carry review history, so we can't compute true mastery.
+  // Default to 0.5 (mid-urgency) — matches what fsrs::mastery() returns for nodes
+  // with no review history. The server (/api/data) supplies the real values.
+  const m = 0.5;
+  const recall = r * m;
   return {
     id: n.id,
     topic: n.topic,
@@ -289,11 +294,13 @@ function normalizeExportedNode(n: ExportedNode): RockyNode {
     stability: n.stability,
     difficulty: n.difficulty,
     retrievability: r,
-    classification: classify(r),
+    mastery: m,
+    recall_now: recall,
+    classification: classify(recall),
     last_reviewed: n.last_reviewed,
     review_count: n.review_count,
     created_at: n.created_at,
-    repo: undefined, // pkg.json export doesn't carry repo
+    repo: undefined,
   };
 }
 
@@ -309,8 +316,9 @@ function computeRetrievability(stability: number, lastReviewed: string): number 
   return 1 / (1 + days / (9 * stability));
 }
 
-function classify(r: number): RockyNode["classification"] {
-  if (r >= 0.7) return "known";
-  if (r >= 0.4) return "stale";
+/** Thresholds applied to recall_now (= R × M). Match Rust fsrs::classify. */
+function classify(recall: number): RockyNode["classification"] {
+  if (recall >= 0.6) return "known";
+  if (recall >= 0.3) return "stale";
   return "gap";
 }

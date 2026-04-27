@@ -1,14 +1,23 @@
-/// FSRS-inspired DSR model.
+/// FSRS-inspired DSR model with a mastery overlay.
 ///
-/// D (difficulty)    — how hard this topic has been for this user (0–1)
-/// S (stability)     — days until retrievability drops to 90%
-/// R (retrievability) — current probability of recall
+/// D (difficulty)     — how hard this topic has been for this user (0–1)
+/// S (stability)      — days until retrievability drops to 90%
+/// R (retrievability) — time-decay-since-last-review probability of recall
+/// M (mastery)        — recent score history (did you actually know it, regardless of freshness)
+/// recall_now = R × M — what we sort and classify by
+///
+/// Why both: R alone is "did you forget" (assumes you ever knew). After a wrong
+/// review R bounces back to 1.0 (reviewed today) but mastery stays low — so the
+/// topic is correctly surfaced as a gap, not hidden as "fresh."
 use chrono::Local;
 
 use crate::node::Kind;
 
-pub const KNOWN_R: f64 = 0.90;
-pub const STALE_R: f64 = 0.70;
+/// Thresholds applied to recall_now (= retrievability × mastery), not raw R.
+/// Tuned for multiplied-metric ranges: two halfway-decent factors product to
+/// ~0.5, which we want to land in the middle "stale" bucket.
+pub const KNOWN_RECALL: f64 = 0.60;
+pub const STALE_RECALL: f64 = 0.30;
 
 pub fn retrievability(stability: f64, last_reviewed: chrono::NaiveDate) -> f64 {
     let today = Local::now().date_naive();
@@ -20,10 +29,29 @@ pub fn retrievability(stability: f64, last_reviewed: chrono::NaiveDate) -> f64 {
     (r * 10000.0).round() / 10000.0
 }
 
-pub fn classify(r: f64) -> &'static str {
-    if r >= KNOWN_R {
+/// Mean of the last N review scores (most-recent-first weighting kept simple).
+/// Returns 0.5 when there is no review history — neutral, mid-urgency.
+pub fn mastery(recent_scores: &[f64]) -> f64 {
+    if recent_scores.is_empty() {
+        return 0.5;
+    }
+    let n = recent_scores.len().min(3);
+    let sum: f64 = recent_scores.iter().rev().take(n).sum();
+    let m = sum / n as f64;
+    (m * 10000.0).round() / 10000.0
+}
+
+/// Effective recall combining time decay (retrievability) with score history (mastery).
+/// Multiplicative — one wrong recent answer dominates a high freshness number.
+pub fn recall_now(retrievability: f64, mastery: f64) -> f64 {
+    let r = (retrievability * mastery * 10000.0).round() / 10000.0;
+    r.clamp(0.0, 1.0)
+}
+
+pub fn classify(recall: f64) -> &'static str {
+    if recall >= KNOWN_RECALL {
         "known"
-    } else if r >= STALE_R {
+    } else if recall >= STALE_RECALL {
         "stale"
     } else {
         "new"
@@ -88,12 +116,34 @@ mod tests {
 
     #[test]
     fn classify_thresholds() {
-        assert_eq!(classify(0.95), "known");
-        assert_eq!(classify(0.90), "known");
-        assert_eq!(classify(0.80), "stale");
-        assert_eq!(classify(0.70), "stale");
-        assert_eq!(classify(0.69), "new");
+        // Now classifies recall_now (= R × M), not raw R.
+        assert_eq!(classify(0.80), "known");   // 0.9 × 0.9
+        assert_eq!(classify(0.60), "known");   // boundary
+        assert_eq!(classify(0.50), "stale");   // ~0.7 × 0.7
+        assert_eq!(classify(0.30), "stale");   // boundary
+        assert_eq!(classify(0.20), "new");
         assert_eq!(classify(0.0),  "new");
+    }
+
+    #[test]
+    fn mastery_default_when_empty() {
+        assert_eq!(mastery(&[]), 0.5);
+    }
+
+    #[test]
+    fn mastery_uses_last_three_scores() {
+        // Old reviews shouldn't drag if there are >=3 newer ones.
+        let scores = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        assert_eq!(mastery(&scores), 1.0);
+    }
+
+    #[test]
+    fn recall_now_is_multiplicative() {
+        // High freshness × low mastery = low recall (the bug fix).
+        let r = recall_now(1.0, 0.0);
+        assert_eq!(r, 0.0);
+        // Both high → high.
+        assert!((recall_now(0.9, 0.9) - 0.81).abs() < 1e-6);
     }
 
     #[test]

@@ -185,6 +185,7 @@ impl Db {
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN encounter_count INTEGER NOT NULL DEFAULT 1", []);
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN source_commits TEXT NOT NULL DEFAULT '[]'", []);
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN question_bank TEXT NOT NULL DEFAULT '[]'", []);
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN repos TEXT NOT NULL DEFAULT '[]'", []);
         Ok(())
     }
 
@@ -224,6 +225,9 @@ impl Db {
         let question_bank_json: String = row.get::<_, String>("question_bank").unwrap_or_else(|_| "[]".into());
         let question_bank: Vec<QuestionBankItem> = serde_json::from_str(&question_bank_json).unwrap_or_default();
 
+        let repos_json: String = row.get::<_, String>("repos").unwrap_or_else(|_| "[]".into());
+        let repos: Vec<String> = serde_json::from_str(&repos_json).unwrap_or_default();
+
         Ok(Node {
             id: id.clone(),
             topic: row.get("topic")?,
@@ -244,6 +248,7 @@ impl Db {
             encounter_count: row.get::<_, i64>("encounter_count").unwrap_or(1),
             source_commits,
             question_bank,
+            repos,
         })
     }
 
@@ -273,6 +278,20 @@ impl Db {
     }
 
     pub fn record_quiz_review(&self, node_id: &str, score: f64, question: &str) -> Result<f64> {
+        self.record_quiz_review_full(node_id, score, question, "", "")
+    }
+
+    /// Same as `record_quiz_review` but lets callers attach the user's answer
+    /// and a feedback string to the review row (used by `rocky review` so the
+    /// rocky-quiz skill can record audit info in a single round-trip).
+    pub fn record_quiz_review_full(
+        &self,
+        node_id: &str,
+        score: f64,
+        question: &str,
+        answer: &str,
+        feedback: &str,
+    ) -> Result<f64> {
         let node = self.get_node_by_id(node_id)?
             .with_context(|| format!("node not found: {node_id}"))?;
         let r = fsrs::retrievability(node.stability, node.last_reviewed);
@@ -284,7 +303,7 @@ impl Db {
              review_count = review_count + 1 WHERE id = ?4",
             params![new_s, new_d, today, node_id],
         )?;
-        self.add_review(node_id, question, "", "", score)?;
+        self.add_review(node_id, question, answer, feedback, score)?;
         let new_r = fsrs::retrievability(new_s, Local::now().date_naive());
         Ok(new_r)
     }
@@ -767,14 +786,16 @@ impl Db {
         // Exclude taxonomy skeleton nodes from all user-facing counts
         let nodes: Vec<_> = nodes.into_iter().filter(|n| !n.kind.is_domain()).collect();
         let total = nodes.len();
-        let known = nodes
-            .iter()
-            .filter(|n| fsrs::classify(fsrs::retrievability(n.stability, n.last_reviewed)) == "known")
-            .count();
-        let stale = nodes
-            .iter()
-            .filter(|n| fsrs::classify(fsrs::retrievability(n.stability, n.last_reviewed)) == "stale")
-            .count();
+        let mut known = 0usize;
+        let mut stale = 0usize;
+        for n in &nodes {
+            let (_, _, recall) = self.node_recall(n);
+            match fsrs::classify(recall) {
+                "known" => known += 1,
+                "stale" => stale += 1,
+                _ => {}
+            }
+        }
         let gaps = total - known - stale;
         Ok((total, known, stale, gaps))
     }
@@ -833,6 +854,33 @@ impl Db {
             params![node_id, Self::today(), question, answer, feedback, score],
         )?;
         Ok(())
+    }
+
+    /// Last `limit` review scores for a node, oldest first.
+    /// Used by `fsrs::mastery` to weight the "did you actually know it" signal.
+    pub fn recent_review_scores(&self, node_id: &str, limit: usize) -> Result<Vec<f64>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT score FROM (
+                 SELECT score, id FROM reviews WHERE node_id = ?1 ORDER BY id DESC LIMIT ?2
+             ) ORDER BY id ASC",
+        )?;
+        let scores: Vec<f64> = stmt
+            .query_map(params![node_id, limit as i64], |r| r.get::<_, f64>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(scores)
+    }
+
+    /// Combined recall metric for a node: retrievability × mastery.
+    /// Use this anywhere you previously called `fsrs::classify(fsrs::retrievability(...))`.
+    /// Returns (retrievability, mastery, recall_now) so callers can show all three.
+    pub fn node_recall(&self, node: &Node) -> (f64, f64, f64) {
+        let r = fsrs::retrievability(node.stability, node.last_reviewed);
+        let scores = self.recent_review_scores(&node.id, 3).unwrap_or_default();
+        let m = fsrs::mastery(&scores);
+        let recall = fsrs::recall_now(r, m);
+        (r, m, recall)
     }
 
     // ── project context ──────────────────────────────────────────────────────
@@ -909,6 +957,30 @@ impl Db {
         Ok(())
     }
 
+    /// Read pending diffs without removing them. Used by `rocky checkpoint diff`
+    /// so the agent can inspect the queue, extract topics, and only call
+    /// `rocky checkpoint mark` once it has succeeded.
+    pub fn peek_pending_diffs(&self, project_path: &str) -> Result<Vec<PendingDiff>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, commit_sha, commit_msg, diff, queued_at
+             FROM pending_diffs WHERE project_path = ? ORDER BY id ASC",
+        )?;
+        let diffs: Vec<PendingDiff> = stmt
+            .query_map(params![project_path], |r| {
+                Ok(PendingDiff {
+                    id: r.get(0)?,
+                    commit_sha: r.get(1)?,
+                    commit_msg: r.get(2)?,
+                    diff: r.get(3)?,
+                    queued_at: r.get(4)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(diffs)
+    }
+
     pub fn drain_pending_diffs(&self, project_path: &str) -> Result<Vec<PendingDiff>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
@@ -949,26 +1021,65 @@ impl Db {
         Ok(())
     }
 
-    /// Increment encounter_count and append a new commit SHA to source_commits.
+    /// Increment encounter_count, append a commit SHA to source_commits, and
+    /// add the originating repo to `repos` if not already present.
     /// Used when an existing topic is matched again (Layer 1 dedup).
-    pub fn record_topic_encounter(&self, topic: &str, commit_sha: &str) -> Result<()> {
+    pub fn record_topic_encounter(&self, topic: &str, commit_sha: &str, repo: &str) -> Result<()> {
         let node_id = Self::node_id(topic);
         let conn = self.connect()?;
-        let mut stmt = conn.prepare("SELECT source_commits, encounter_count FROM nodes WHERE id = ?")?;
+        let mut stmt = conn.prepare("SELECT source_commits, repos FROM nodes WHERE id = ?")?;
         let mut rows = stmt.query(params![node_id])?;
         if let Some(row) = rows.next()? {
-            let current_json: String = row.get(0)?;
-            let mut commits: Vec<String> = serde_json::from_str(&current_json).unwrap_or_default();
+            let commits_json: String = row.get(0)?;
+            let mut commits: Vec<String> = serde_json::from_str(&commits_json).unwrap_or_default();
             if !commit_sha.is_empty() && !commits.contains(&commit_sha.to_string()) {
                 commits.push(commit_sha.to_string());
             }
-            let new_json = serde_json::to_string(&commits)?;
+            let repos_json: String = row.get::<_, String>(1).unwrap_or_else(|_| "[]".into());
+            let mut repos: Vec<String> = serde_json::from_str(&repos_json).unwrap_or_default();
+            if !repo.is_empty() && !repos.contains(&repo.to_string()) {
+                repos.push(repo.to_string());
+            }
+            let new_commits = serde_json::to_string(&commits)?;
+            let new_repos = serde_json::to_string(&repos)?;
             conn.execute(
-                "UPDATE nodes SET source_commits = ?, encounter_count = encounter_count + 1 WHERE id = ?",
-                params![new_json, node_id],
+                "UPDATE nodes SET source_commits = ?, repos = ?, encounter_count = encounter_count + 1 WHERE id = ?",
+                params![new_commits, new_repos, node_id],
             )?;
         }
         Ok(())
+    }
+
+    /// Append a single question to a topic's question_bank (no duplicates by
+    /// question text). Used by `rocky add-question` so the rocky-quiz skill can
+    /// persist generated questions for future rotation.
+    pub fn append_question(&self, topic: &str, item: QuestionBankItem) -> Result<bool> {
+        let node_id = Self::node_id(topic);
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare("SELECT question_bank FROM nodes WHERE id = ?")?;
+        let mut rows = stmt.query(params![node_id])?;
+        if let Some(row) = rows.next()? {
+            let bank_json: String = row.get(0)?;
+            let mut bank: Vec<QuestionBankItem> = serde_json::from_str(&bank_json).unwrap_or_default();
+            if bank.iter().any(|q| q.question.trim() == item.question.trim()) {
+                return Ok(false); // already present
+            }
+            bank.push(item);
+            let new_json = serde_json::to_string(&bank)?;
+            conn.execute("UPDATE nodes SET question_bank = ? WHERE id = ?", params![new_json, node_id])?;
+            Ok(true)
+        } else {
+            anyhow::bail!("topic not found: {topic}")
+        }
+    }
+
+    /// Hard-delete a node (and cascading contexts/edges/reviews via FK).
+    /// Returns true if a row was removed.
+    pub fn delete_node_by_topic(&self, topic: &str) -> Result<bool> {
+        let node_id = Self::node_id(topic);
+        let conn = self.connect()?;
+        let n = conn.execute("DELETE FROM nodes WHERE id = ?", params![node_id])?;
+        Ok(n > 0)
     }
 
     pub fn get_reviews(&self, node_id: &str) -> Result<Vec<Review>> {
@@ -1136,13 +1247,23 @@ mod tests {
     #[test]
     fn summary_counts_correctly() {
         let (db, _dir) = open_temp_db();
-        // Add one topic reviewed today — will be "known"
+        // Add one topic — starts at mastery=0.5 (no real quiz history) →
+        // recall_now ≈ 0.5 → classified "stale", not "known". A topic only
+        // becomes "known" after the user actually demonstrates recall via
+        // `rocky review`.
         db.add_or_update("fresh topic", 0.9, &Kind::Concept, "Other",
             "desc", "ctx", None, "", None).unwrap();
 
-        let (total, known, _stale, _gaps) = db.summary().unwrap();
+        let (total, known, stale, _gaps) = db.summary().unwrap();
         assert_eq!(total, 1);
-        assert_eq!(known, 1);
+        assert_eq!(known, 0, "fresh topics aren't 'known' until a review confirms mastery");
+        assert_eq!(stale, 1);
+
+        // After a high-scoring review, mastery rises and topic flips to known.
+        let n = db.get_node("fresh topic").unwrap().unwrap();
+        db.record_quiz_review_full(&n.id, 1.0, "q", "a", "f").unwrap();
+        let (_, known_after, _, _) = db.summary().unwrap();
+        assert_eq!(known_after, 1);
     }
 
     #[test]

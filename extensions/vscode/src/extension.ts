@@ -173,8 +173,8 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage("Rocky: Topics sorted by name");
     }),
     vscode.commands.registerCommand("rocky.sortByRetrievability", () => {
-      topicsTree.setSortMode("retrievability");
-      vscode.window.showInformationMessage("Rocky: Topics sorted by retrievability (weakest first)");
+      topicsTree.setSortMode("recall");
+      vscode.window.showInformationMessage("Rocky: Topics sorted by recall (weakest first)");
     }),
     vscode.commands.registerCommand("rocky.groupByDomain", () => {
       topicsTree.setGroupMode("domain");
@@ -379,18 +379,34 @@ export interface RockyNode {
   description: string;
   stability: number;
   difficulty: number;
+  /** Time-decay-since-last-review (FSRS R). */
   retrievability: number;
-  /** FSRS class: "known" (≥0.7), "stale" (≥0.4), "gap" (<0.4). */
+  /** Mean of last 3 review scores (default 0.5 if no real reviews). */
+  mastery?: number;
+  /** retrievability × mastery — what we sort/filter "due" by. */
+  recall_now?: number;
+  /** Class: "known" (≥0.6), "stale" (≥0.3), "gap" (<0.3) — applied to recall_now. */
   classification: "known" | "stale" | "gap";
   last_reviewed: string;
   review_count: number;
   created_at: string;
   /** Repo name. `undefined` when loaded from pkg.json (export schema omits it). */
   repo?: string;
+  /** Distinct repos this topic has been encountered in. */
+  repos?: string[];
   canonical_question?: string;
   canonical_answer?: string;
   canonical_clue?: string;
+  question_bank?: Array<{ question: string; answer: string; clue?: string; asked_count?: number }>;
   reviews?: RockyReview[];
+}
+
+/** Compute recall_now from a node, falling back to retrievability when the
+ * server didn't supply it (e.g. older exports). */
+export function recallNow(n: RockyNode): number {
+  if (typeof n.recall_now === "number") return n.recall_now;
+  const m = typeof n.mastery === "number" ? n.mastery : 0.5;
+  return n.retrievability * m;
 }
 
 export interface RockyEdge {

@@ -115,4 +115,7 @@ pub struct Node {
     pub source_commits: Vec<String>,
     /// Pre-generated bank of 3-5 questions (rotated through during reviews).
     pub question_bank: Vec<QuestionBankItem>,
+    /// Distinct repo names this topic has been encountered in. Cross-project
+    /// audit trail — `repo` is where it was first seen, `repos` accumulates.
+    pub repos: Vec<String>,
 }

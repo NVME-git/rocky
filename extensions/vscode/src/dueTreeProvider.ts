@@ -1,9 +1,12 @@
 import * as vscode from "vscode";
 import { RockyDataProvider } from "./rockyDataProvider";
 import type { RockyNode } from "./extension";
+import { recallNow } from "./extension";
 
 /**
- * Shows topics that are due for review (retrievability < 0.5), sorted weakest first.
+ * Shows topics that are due for review (recall_now < 0.6), sorted weakest first.
+ * Uses recall_now (= retrievability × mastery) so wrong-answered topics surface
+ * even though they were "just reviewed today" (high freshness, low mastery).
  * Grouped by repo so it's clear which project each topic belongs to.
  */
 export class DueTreeProvider implements vscode.TreeDataProvider<DueItem> {
@@ -31,8 +34,8 @@ export class DueTreeProvider implements vscode.TreeDataProvider<DueItem> {
     }
 
     const dueNodes = pkg.nodes
-      .filter((n) => n.retrievability < 0.5)
-      .sort((a, b) => a.retrievability - b.retrievability);
+      .filter((n) => recallNow(n) < 0.6)
+      .sort((a, b) => recallNow(a) - recallNow(b));
 
     if (dueNodes.length === 0) {
       return [new DueItem("✅ Nothing due for review — great work!", [], "info")];
@@ -48,12 +51,15 @@ export class DueTreeProvider implements vscode.TreeDataProvider<DueItem> {
     const items: DueItem[] = [];
     for (const [repo, nodes] of [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
       const children: DueItem[] = nodes.map((n) => {
-        const pct = (n.retrievability * 100).toFixed(0);
-        const icon = n.retrievability > 0.4 ? "🟡" : "🔴";
+        const recall = recallNow(n);
+        const pct = (recall * 100).toFixed(0);
+        const icon = recall > 0.3 ? "🟡" : "🔴";
         const item = new DueItem(`${icon} ${n.topic}  (${pct}%)`, [], "topic");
+        const masteryPct = ((n.mastery ?? 0.5) * 100).toFixed(0);
+        const rPct = (n.retrievability * 100).toFixed(0);
         item.tooltip = [
           n.topic,
-          `Retrievability: ${pct}%`,
+          `Recall: ${pct}%  (R ${rPct}% · M ${masteryPct}%)`,
           `Domain: ${n.domain || "Other"}`,
           `Reviews: ${n.review_count}`,
           n.canonical_question ? `Q: ${n.canonical_question}` : "",

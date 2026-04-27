@@ -255,7 +255,7 @@ function lerpColor(a, b, t) {
 function nodeColorHex(d) {
   if (d.kind === 'user')   return 0xF59E0B;
   if (d.kind === 'domain') return 0x1E293B;
-  const r = d.retrievability;
+  const r = d.recall_now;
   if (r >= 0.7) return lerpColor(0xEF9F27, 0x1D9E75, (r - 0.7) / 0.3);
   return lerpColor(0xE24B4A, 0xEF9F27, r / 0.7);
 }
@@ -990,7 +990,7 @@ function selectNode(d) {
   document.getElementById('p-topic').textContent = d.topic;
   document.getElementById('p-domain').textContent = d.domain || 'Other';
   document.getElementById('p-desc').textContent = d.description;
-  document.getElementById('p-recall').textContent = (d.retrievability * 100).toFixed(0) + '%';
+  document.getElementById('p-recall').textContent = ((d.recall_now ?? 0) * 100).toFixed(0) + '% (R: ' + ((d.retrievability ?? 0) * 100).toFixed(0) + '% · M: ' + ((d.mastery ?? 0) * 100).toFixed(0) + '%)';
   document.getElementById('p-stab').textContent = d.stability.toFixed(1) + 'd';
   document.getElementById('p-reviewed').textContent = d.last_reviewed;
   document.getElementById('p-count').textContent = d.review_count;

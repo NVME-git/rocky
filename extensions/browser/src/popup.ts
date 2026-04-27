@@ -11,13 +11,28 @@
 interface NodeData {
   topic: string;
   kind?: string;
+  /** Time-decay-since-last-review (FSRS R). */
   retrievability?: number;
+  /** Mean of last 3 review scores (default 0.5 if no real reviews). */
+  mastery?: number;
+  /** retrievability × mastery — what we sort and filter "due" by. */
+  recall_now?: number;
   /** Taxonomy domain — Language, Auth, Database, etc. */
   domain?: string;
-  /** FSRS class: "known" | "stale" | "gap". */
+  /** Class: "known" (≥0.6) | "stale" (≥0.3) | "gap" (<0.3) — applied to recall_now. */
   classification?: string;
   repo?: string;
+  repos?: string[];
   canonical_question?: string;
+}
+
+/** Recall = retrievability × mastery. Falls back to retrievability when the
+ * server didn't supply recall_now (older exports). */
+function recallNow(n: NodeData): number {
+  if (typeof n.recall_now === "number") return n.recall_now;
+  const r = n.retrievability ?? 1;
+  const m = typeof n.mastery === "number" ? n.mastery : 0.5;
+  return r * m;
 }
 
 interface CaptureRecord {
@@ -67,7 +82,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   const topicsInfo = document.getElementById("topics-info")!;
   topicsInfo.textContent = allTopics.length > 0
-    ? `${allTopics.length} topics loaded (${allNodes.filter((n) => (n.retrievability ?? 0) < 0.4).length} due for review)`
+    ? `${allTopics.length} topics loaded (${allNodes.filter((n) => recallNow(n) < 0.3).length} due for review)`
     : "No topics loaded. Configure server URL and sync.";
 
   document.getElementById("save-url-btn")!.addEventListener("click", async () => {
@@ -84,7 +99,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const fresh = await chrome.storage.local.get(["rockyNodes", "rockyTopics", "rockyIq"]);
       allNodes = (fresh["rockyNodes"] as NodeData[] | undefined) ?? [];
       allTopics = (fresh["rockyTopics"] as string[] | undefined) ?? [];
-      topicsInfo.textContent = `${allTopics.length} topics · ${allNodes.filter((n) => (n.retrievability ?? 0) < 0.4).length} due`;
+      topicsInfo.textContent = `${allTopics.length} topics · ${allNodes.filter((n) => recallNow(n) < 0.3).length} due`;
       renderIq(fresh["rockyIq"] as number | undefined);
     } else {
       syncInfo.textContent = `✗ ${resp.error}`;
@@ -172,9 +187,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   function renderChips(nodes: NodeData[], container: HTMLElement, isSuggested: boolean): void {
     for (const node of nodes) {
       const chip = document.createElement("span");
+      const recall = recallNow(node);
       const rClass =
-        (node.retrievability ?? 0) >= 0.7 ? "r-known"
-        : (node.retrievability ?? 0) >= 0.4 ? "r-stale"
+        recall >= 0.6 ? "r-known"
+        : recall >= 0.3 ? "r-stale"
         : "r-gap";
 
       chip.className = "topic-chip" +
@@ -186,11 +202,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       chip.appendChild(dot);
       chip.appendChild(document.createTextNode(node.topic));
+      const recallPct = Math.round(recall * 100);
+      const rPct = Math.round((node.retrievability ?? 1) * 100);
+      const mPct = Math.round((node.mastery ?? 0.5) * 100);
       chip.title = [
         node.topic,
         node.domain ? `Domain: ${node.domain}` : "",
-        node.repo ? `Repo: ${node.repo}` : "",
-        node.retrievability !== undefined ? `Retrievability: ${Math.round(node.retrievability * 100)}%` : "",
+        (node.repos && node.repos.length > 1) ? `Projects: ${node.repos.join(", ")}` : (node.repo ? `Repo: ${node.repo}` : ""),
+        node.retrievability !== undefined ? `Recall: ${recallPct}%  (R ${rPct}% · M ${mPct}%)` : "",
         node.canonical_question ? `Q: ${node.canonical_question}` : "",
       ].filter(Boolean).join("\n");
 
@@ -355,8 +374,10 @@ function findSuggestedTopics(keywords: string[], nodes: NodeData[]): NodeData[] 
     if (score > 0) scored.push({ node, score });
   }
 
+  // Tie-break by recall_now ascending — surface weaker matches first so the
+  // user is reminded of fragile knowledge in context.
   return scored
-    .sort((a, b) => b.score - a.score || (b.node.retrievability ?? 0) - (a.node.retrievability ?? 0))
+    .sort((a, b) => b.score - a.score || recallNow(a.node) - recallNow(b.node))
     .slice(0, 8)
     .map((s) => s.node);
 }

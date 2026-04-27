@@ -8,6 +8,15 @@
  * - History tab: last 50 captures with topics
  * - Settings tab: configure rocky server URL, sync topics live
  */
+/** Recall = retrievability × mastery. Falls back to retrievability when the
+ * server didn't supply recall_now (older exports). */
+function recallNow(n) {
+    if (typeof n.recall_now === "number")
+        return n.recall_now;
+    const r = n.retrievability ?? 1;
+    const m = typeof n.mastery === "number" ? n.mastery : 0.5;
+    return r * m;
+}
 let allNodes = [];
 let allTopics = [];
 let selectedTopics = new Set();
@@ -33,7 +42,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     const topicsInfo = document.getElementById("topics-info");
     topicsInfo.textContent = allTopics.length > 0
-        ? `${allTopics.length} topics loaded (${allNodes.filter((n) => (n.retrievability ?? 0) < 0.4).length} due for review)`
+        ? `${allTopics.length} topics loaded (${allNodes.filter((n) => recallNow(n) < 0.3).length} due for review)`
         : "No topics loaded. Configure server URL and sync.";
     document.getElementById("save-url-btn").addEventListener("click", async () => {
         const url = serverInput.value.trim().replace(/\/$/, "");
@@ -48,7 +57,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const fresh = await chrome.storage.local.get(["rockyNodes", "rockyTopics", "rockyIq"]);
             allNodes = fresh["rockyNodes"] ?? [];
             allTopics = fresh["rockyTopics"] ?? [];
-            topicsInfo.textContent = `${allTopics.length} topics · ${allNodes.filter((n) => (n.retrievability ?? 0) < 0.4).length} due`;
+            topicsInfo.textContent = `${allTopics.length} topics · ${allNodes.filter((n) => recallNow(n) < 0.3).length} due`;
             renderIq(fresh["rockyIq"]);
         }
         else {
@@ -127,8 +136,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     function renderChips(nodes, container, isSuggested) {
         for (const node of nodes) {
             const chip = document.createElement("span");
-            const rClass = (node.retrievability ?? 0) >= 0.7 ? "r-known"
-                : (node.retrievability ?? 0) >= 0.4 ? "r-stale"
+            const recall = recallNow(node);
+            const rClass = recall >= 0.6 ? "r-known"
+                : recall >= 0.3 ? "r-stale"
                     : "r-gap";
             chip.className = "topic-chip" +
                 (selectedTopics.has(node.topic) ? " selected" : "") +
@@ -137,11 +147,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             dot.className = `r-dot ${node.retrievability !== undefined ? rClass : ""}`;
             chip.appendChild(dot);
             chip.appendChild(document.createTextNode(node.topic));
+            const recallPct = Math.round(recall * 100);
+            const rPct = Math.round((node.retrievability ?? 1) * 100);
+            const mPct = Math.round((node.mastery ?? 0.5) * 100);
             chip.title = [
                 node.topic,
                 node.domain ? `Domain: ${node.domain}` : "",
-                node.repo ? `Repo: ${node.repo}` : "",
-                node.retrievability !== undefined ? `Retrievability: ${Math.round(node.retrievability * 100)}%` : "",
+                (node.repos && node.repos.length > 1) ? `Projects: ${node.repos.join(", ")}` : (node.repo ? `Repo: ${node.repo}` : ""),
+                node.retrievability !== undefined ? `Recall: ${recallPct}%  (R ${rPct}% · M ${mPct}%)` : "",
                 node.canonical_question ? `Q: ${node.canonical_question}` : "",
             ].filter(Boolean).join("\n");
             chip.addEventListener("click", () => {
@@ -298,8 +311,10 @@ function findSuggestedTopics(keywords, nodes) {
         if (score > 0)
             scored.push({ node, score });
     }
+    // Tie-break by recall_now ascending — surface weaker matches first so the
+    // user is reminded of fragile knowledge in context.
     return scored
-        .sort((a, b) => b.score - a.score || (b.node.retrievability ?? 0) - (a.node.retrievability ?? 0))
+        .sort((a, b) => b.score - a.score || recallNow(a.node) - recallNow(b.node))
         .slice(0, 8)
         .map((s) => s.node);
 }

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { RockyDataProvider } from "./rockyDataProvider";
+import { recallNow } from "./extension";
 
 /**
  * Self-assessment quiz webview panel.
@@ -54,9 +55,9 @@ export class QuizPanel {
 
     let nodes = pkg?.nodes ?? [];
     if (filter === "weak") {
-      nodes = nodes.filter((n) => n.retrievability < 0.5).sort((a, b) => a.retrievability - b.retrievability).slice(0, 20);
+      nodes = nodes.filter((n) => recallNow(n) < 0.6).sort((a, b) => recallNow(a) - recallNow(b)).slice(0, 20);
     } else if (filter !== "all") {
-      nodes = nodes.filter((n) => n.repo === filter).sort((a, b) => a.retrievability - b.retrievability).slice(0, 20);
+      nodes = nodes.filter((n) => n.repo === filter).sort((a, b) => recallNow(a) - recallNow(b)).slice(0, 20);
     }
 
     this.panel.title = `Rocky: Quiz${filter === "weak" ? " (Weakest)" : filter !== "all" ? ` — ${filter}` : ""}`;

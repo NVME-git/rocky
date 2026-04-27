@@ -1221,7 +1221,7 @@ function selectGraphNode(id) {
 }
 
 function openDetailPanel(n) {
-  const r = n.retrievability||0;
+  const r = n.recall_now||0;
   const rPct = Math.round(r*100);
   const rColor = r>=.7?'#1d9e75':r>=.4?'#e6a817':'#e74c3c';
   const reviews = (n.reviews||[]).slice(-3).reverse();
@@ -1231,16 +1231,24 @@ function openDetailPanel(n) {
       <span style="margin-left:8px;font-size:10px;color:${rv.score>=.8?'#1d9e75':rv.score>=.5?'#e6a817':'#e74c3c'}">${scoreLabel(rv.score)}</span>
     </div>`).join('');
 
+  const projectsLine = (n.repos && n.repos.length > 1)
+    ? `<p class="panel-label">Projects</p><p class="panel-value" style="font-size:11px">${n.repos.join(', ')}</p>`
+    : `<p class="panel-label">Repo</p><p class="panel-value">${n.repo||'—'}</p>`;
+  const bankHTML = (n.question_bank && n.question_bank.length)
+    ? `<p class="panel-label">Question Bank (${n.question_bank.length})</p>` +
+      n.question_bank.map(q => `<div style="border-top:1px solid #1e2340;margin-top:6px;padding-top:6px;font-size:11px"><div style="color:#cfd6e8">Q: ${q.question}</div><div style="color:#8892a4;margin-top:2px">A: ${q.answer}</div>${q.clue ? `<div style="color:#555e7a;margin-top:2px">Clue: ${q.clue}</div>` : ''}</div>`).join('')
+    : '';
   document.getElementById('detail-content').innerHTML = `
     <p class="panel-h">${n.topic}</p>
     <p class="panel-label">Domain</p><p class="panel-value" style="color:${DOMAIN_COLORS[n.domain]||'#8892a4'}">${n.domain||'—'}</p>
-    <p class="panel-label">Repo</p><p class="panel-value">${n.repo||'—'}</p>
+    ${projectsLine}
     ${n.description?`<p class="panel-label">Description</p><p class="panel-value" style="color:#8892a4;font-size:11px">${n.description}</p>`:''}
-    <p class="panel-label">Retrievability</p>
-    <p class="panel-value" style="color:${rColor}">${rPct}%</p>
+    <p class="panel-label">Recall (R × M)</p>
+    <p class="panel-value" style="color:${rColor}">${rPct}% <span style="font-size:10px;color:#555e7a">· R ${Math.round((n.retrievability||0)*100)}% · M ${Math.round((n.mastery||0)*100)}%</span></p>
     <div class="r-bar"><div class="r-fill" style="width:${rPct}%;background:${rColor}"></div></div>
     <p class="panel-label">Reviews</p><p class="panel-value">${n.review_count||0}</p>
     ${revHTML}
+    ${bankHTML}
     <button class="panel-quiz-btn" onclick="startQuizNodes(['${n.id}'])">Quiz me on this topic</button>`;
   document.getElementById('detail-panel').classList.add('open');
 }
@@ -1251,7 +1259,7 @@ function openTaxPanel(n) {
   document.getElementById('tax-list').innerHTML = items.map(t=>`
     <li onclick="selectGraphNode('${t.id}')" style="border-left:2px solid ${CLASS_COLORS[t.classification]||'#607d8b'}">
       ${t.topic}
-      <span class="badge">${Math.round((t.retrievability||0)*100)}%</span>
+      <span class="badge">${Math.round((t.recall_now||0)*100)}%</span>
     </li>`).join('');
 }
 
@@ -1273,7 +1281,7 @@ let quizState = null;
 async function quizProject(repo) {
   // Get stale/gap nodes for this project, sorted by retrievability asc
   const nodes = DATA.nodes.filter(n=>n.repo===repo&&n.kind!=='domain'&&n.kind!=='user')
-    .sort((a,b)=>(a.retrievability||0)-(b.retrievability||0))
+    .sort((a,b)=>(a.recall_now||0)-(b.recall_now||0))
     .slice(0,20);
   if (nodes.length===0) { alert('No topics found for '+repo); return; }
   await startQuizNodes(nodes.map(n=>n.id));
@@ -1458,7 +1466,7 @@ function renderDashboard() {
   document.getElementById('due-pill').textContent = due.length;
   dueList.innerHTML = due.length ? '' : '<div class="empty-msg">Nothing due yet.</div>';
   for (const t of due) {
-    const r = Math.round((t.retrievability || 0) * 100);
+    const r = Math.round((t.recall_now || 0) * 100);
     const cls = r < 40 ? 'bad' : r < 70 ? 'warn' : 'ok';
     const row = document.createElement('div');
     row.className = 'dl-row';
@@ -1544,10 +1552,10 @@ function renderQueue() {
   const filter = document.getElementById('queue-filter').value;
 
   let nodes = DATA.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
-  if (filter === 'due')      nodes = nodes.filter(n => n.retrievability < 0.7);
-  if (filter === 'critical') nodes = nodes.filter(n => n.retrievability < 0.4);
+  if (filter === 'due')      nodes = nodes.filter(n => n.recall_now < 0.7);
+  if (filter === 'critical') nodes = nodes.filter(n => n.recall_now < 0.4);
 
-  if (sortBy === 'recall')      nodes.sort((a, b) => a.retrievability - b.retrievability);
+  if (sortBy === 'recall')      nodes.sort((a, b) => a.recall_now - b.recall_now);
   else if (sortBy === 'recent') nodes.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
   else if (sortBy === 'reviews')nodes.sort((a, b) => (a.review_count || 0) - (b.review_count || 0));
   else if (sortBy === 'alpha')  nodes.sort((a, b) => a.topic.localeCompare(b.topic));
@@ -1563,7 +1571,7 @@ function renderQueue() {
   table.appendChild(hdr);
 
   for (const n of nodes.slice(0, 200)) {
-    const r = Math.round((n.retrievability || 0) * 100);
+    const r = Math.round((n.recall_now || 0) * 100);
     const cls = r < 40 ? 'bad' : r < 70 ? 'warn' : 'ok';
     const trend = n.classification === 'gap' ? '↓↓' : n.classification === 'stale' ? '↓' : '·';
     const row = document.createElement('div');
@@ -1585,9 +1593,9 @@ function quizFromQueue() {
   const sortBy = document.getElementById('queue-sort').value;
   const filter = document.getElementById('queue-filter').value;
   let nodes = DATA.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
-  if (filter === 'due')      nodes = nodes.filter(n => n.retrievability < 0.7);
-  if (filter === 'critical') nodes = nodes.filter(n => n.retrievability < 0.4);
-  if (sortBy === 'recall')   nodes.sort((a, b) => a.retrievability - b.retrievability);
+  if (filter === 'due')      nodes = nodes.filter(n => n.recall_now < 0.7);
+  if (filter === 'critical') nodes = nodes.filter(n => n.recall_now < 0.4);
+  if (sortBy === 'recall')   nodes.sort((a, b) => a.recall_now - b.recall_now);
   const ids = nodes.slice(0, 5).map(n => n.id);
   if (ids.length) startQuizNodes(ids);
 }
@@ -1661,7 +1669,7 @@ function applyPlanningStyle() {
   const nodeById = Object.fromEntries((allNodes || []).map(n => [n.id, n]));
   const knownIds = new Set();
   for (const n of allNodes) {
-    if (n.kind !== 'domain' && (n.retrievability || 0) >= 0.8) knownIds.add(n.id);
+    if (n.kind !== 'domain' && (n.recall_now || 0) >= 0.8) knownIds.add(n.id);
   }
   // Adjacent unlearned: connected to a known node, review_count = 0
   const adjacent = new Set();

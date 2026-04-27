@@ -115,7 +115,17 @@ async function syncTopicsFromServer(): Promise<{ success: boolean; count?: numbe
     const resp = await fetch(`${serverUrl}/api/data`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const json = await resp.json() as {
-      nodes?: Array<{ topic: string; kind?: string; retrievability?: number; classification?: string; repo?: string; canonical_question?: string }>;
+      nodes?: Array<{
+        topic: string;
+        kind?: string;
+        retrievability?: number;
+        mastery?: number;
+        recall_now?: number;
+        classification?: string;
+        repo?: string;
+        repos?: string[];
+        canonical_question?: string;
+      }>;
       atrophyScore?: number;
     };
 

@@ -542,7 +542,7 @@ function nodeColorHex(d) {
     const c = projectColor[d.topic] || '#F59E0B';
     return parseInt(c.slice(1), 16);
   }
-  const r = d.retrievability;
+  const r = d.recall_now;
   if (r >= 0.7) return lerpColor(0xEF9F27, 0x1D9E75, (r - 0.7) / 0.3);
   return lerpColor(0xE24B4A, 0xEF9F27, r / 0.7);
 }
@@ -1017,11 +1017,15 @@ function showPanel(d) {
     <div class="panel-topic">${d.topic}</div>
     <div class="panel-domain">${d.domain || 'Other'}${d.repo ? ' \u00b7 ' + d.repo : ''}</div>
     <div class="panel-desc">${d.description || '<em style="color:#475569">No description</em>'}</div>
-    <div class="panel-row"><span class="panel-label">Retrievability</span><span class="panel-value">${(d.retrievability * 100).toFixed(0)}%</span></div>
+    <div class="panel-row"><span class="panel-label">Recall</span><span class="panel-value">${((d.recall_now ?? 0) * 100).toFixed(0)}%</span></div>
+    <div class="panel-row"><span class="panel-label">Freshness (R)</span><span class="panel-value">${((d.retrievability ?? 0) * 100).toFixed(0)}%</span></div>
+    <div class="panel-row"><span class="panel-label">Mastery (M)</span><span class="panel-value">${((d.mastery ?? 0) * 100).toFixed(0)}%</span></div>
     <div class="panel-row"><span class="panel-label">Stability</span><span class="panel-value">${d.stability.toFixed(1)}d</span></div>
     <div class="panel-row"><span class="panel-label">Last reviewed</span><span class="panel-value">${d.last_reviewed || 'Never'}</span></div>
     <div class="panel-row"><span class="panel-label">Reviews</span><span class="panel-value">${d.review_count}</span></div>
+    ${(d.repos && d.repos.length > 1) ? `<div class="panel-row"><span class="panel-label">Projects</span><span class="panel-value">${d.repos.join(', ')}</span></div>` : ''}
     <div class="panel-section"><div class="panel-section-title">Edges (${nodeEdges.length})</div>${edgesHtml}</div>
+    ${(d.question_bank && d.question_bank.length) ? `<div class="panel-section"><div class="panel-section-title">Question Bank (${d.question_bank.length})</div>${d.question_bank.map(q => `<div class="review-row"><div class="review-q">Q: ${q.question}</div><div class="review-a">A: ${q.answer}</div>${q.clue ? `<div class="review-f">Clue: ${q.clue}</div>` : ''}</div>`).join('')}</div>` : ''}
     <div class="panel-section"><div class="panel-section-title">Review History</div>${reviewsHtml}</div>
   `;
 

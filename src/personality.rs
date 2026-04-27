@@ -77,18 +77,6 @@ const SKIPPED: &[&str] = &[
     "Rocky save question for later. Is wise.",
 ];
 
-const IGNORED: &[&str] = &[
-    "Rocky agree. Not important topic.",
-    "Good call, friend. Focus on real science.",
-    "Yes, ignore. Rocky sometimes also get confused.",
-];
-
-const TOO_EASY: &[&str] = &[
-    "Fist my bump! Friend already know!",
-    "Of course friend know this. Rocky not surprised.",
-    "Brain strong on this one. Excite!",
-];
-
 const SESSION_DONE_FEW: &[&str] = &[
     "Good session! Friend brain stronger now.",
     "Rocky is pleased. Science happened today.",
@@ -206,16 +194,6 @@ impl Personality {
     pub fn skipped(&self) -> Option<String> {
         if !self.enabled { return None; }
         Some(pick(SKIPPED).dimmed().to_string())
-    }
-
-    pub fn ignored(&self) -> Option<String> {
-        if !self.enabled { return None; }
-        Some(pick(IGNORED).dimmed().to_string())
-    }
-
-    pub fn too_easy(&self) -> Option<String> {
-        if !self.enabled { return None; }
-        Some(pick(TOO_EASY).truecolor(29, 158, 117).to_string())
     }
 
     pub fn session_done(&self, topics_completed: u32) -> Option<String> {
