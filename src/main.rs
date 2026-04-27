@@ -5,11 +5,11 @@ mod local_log;
 mod node;
 mod obsidian;
 mod personality;
+mod promptiq;
 mod server;
 mod session;
 mod sync;
 mod teacher;
-mod transcript;
 mod voice;
 
 use std::io::{self, Read as _, Write as _};
@@ -263,20 +263,51 @@ enum Cmd {
         #[arg(long)]
         show: bool,
     },
-    /// Process queued commits + Claude Code session transcript at session end.
-    /// Called by the Claude Code Stop hook. Generates rich nodes + question bank.
-    SessionEnd {
-        /// Look back N hours for transcript activity (default: 6)
-        #[arg(long, default_value = "6")]
-        hours: u32,
-        /// Suppress output
-        #[arg(long)]
-        quiet: bool,
-    },
     /// Silently queue the latest commit's diff for later batch processing.
     /// Intended for the git post-commit hook in Claude-aware queue mode.
-    /// No LLM call. Stop hook (`rocky session-end`) does the enrichment.
+    /// No LLM call. The /rocky-checkpoint skill drains the queue at session end.
     PostCommit,
+    /// Log a prompt for PromptIQ scoring + the per-project quiz history.
+    /// Generic primitive — call from any agent's hook, shell alias, IDE plugin.
+    Prompt {
+        /// Where the prompt came from (claude, opencode, manual, ...)
+        #[arg(long, default_value = "manual")]
+        source: String,
+        /// The prompt text. Reads from stdin if omitted.
+        #[arg(long)]
+        log: Option<String>,
+    },
+    /// Print the current PromptIQ score + trend.
+    PromptIq {
+        /// Show the most recent N prompts with scores + feedback.
+        #[arg(long)]
+        recent: Option<usize>,
+        /// JSON output (for the dashboard tile + the rescore skill).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Persist an agent-evaluated PromptIQ score for a logged prompt. Called
+    /// by the /rocky-promptiq-rescore skill after the agent judges the prompt.
+    PromptEval {
+        /// Prompt id (returned by `rocky prompts --json`)
+        #[arg(long)]
+        id: i64,
+        /// Score 0..100
+        #[arg(long)]
+        score: i64,
+        /// Short human-readable feedback (≤512 chars)
+        #[arg(long)]
+        feedback: Option<String>,
+    },
+    /// Dump prompts as JSON. Used by the rescore skill.
+    Prompts {
+        /// Only prompts that haven't been agent-rescored yet.
+        #[arg(long)]
+        unscored: bool,
+        /// Look back N days (default 7)
+        #[arg(long, default_value = "7")]
+        since_days: i64,
+    },
     /// Find and interactively merge near-duplicate topics in your PKG.
     /// Scans all topics for word-overlap candidates, then lets you decide which to keep.
     Dedupe {
@@ -297,12 +328,16 @@ enum HookTarget {
     Claude,
     /// Enable prompt logging for this project without the git hook
     Prompt,
-    /// Claude Code Stop hook — runs `rocky session-end` when a session closes
-    Stop,
-    /// Install the rocky-checkpoint and rocky-quiz Claude Code skills.
-    /// In the agent-driven workflow these replace the Stop-hook → Ollama path.
-    Skills,
-    /// Full Claude-aware install: prompt logging + Stop hook + queue-mode git hook
+    /// Install the rocky-checkpoint and rocky-quiz skills (Claude Code + OpenCode).
+    /// Pass `--opencode` to also write to OpenCode's preferred path.
+    Skills {
+        /// Also write skills to ~/.config/opencode/skills/ (in addition to the
+        /// Claude path, which OpenCode also discovers).
+        #[arg(long)]
+        opencode: bool,
+    },
+    /// Full agent-aware install: prompt logging + queue-mode git hook + skills
+    /// (Claude Code + OpenCode discoverable).
     ClaudeAll,
 }
 
@@ -375,28 +410,27 @@ fn run() -> Result<()> {
                         println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
-                HookTarget::Stop => {
-                    let (ok, msg) = install_claude_stop_hook()?;
-                    let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "✗".truecolor(226, 75, 74) };
-                    println!("  {glyph} {msg}");
-                    if ok {
-                        println!("  {}", "Rocky will batch-process commits + transcript when each Claude Code session ends.".dimmed());
-                    }
-                }
-                HookTarget::Skills => {
+                HookTarget::Skills { opencode } => {
                     p.banner();
                     let results = install_claude_skills()?;
                     for (ok, msg) in &results {
                         let glyph = if *ok { "✓".truecolor(29, 158, 117) } else { "·".dimmed() };
                         println!("  {glyph} {msg}");
                     }
+                    if opencode {
+                        for (ok, msg) in install_opencode_skills()? {
+                            let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "·".dimmed() };
+                            println!("  {glyph} {msg}");
+                        }
+                    }
                     println!();
-                    println!("  {}", "In Claude Code, type  /rocky-checkpoint  after a commit to extract topics.".dimmed());
+                    println!("  {}", "In Claude Code or OpenCode, type  /rocky-checkpoint  after a commit to extract topics.".dimmed());
                     println!("  {}", "Type  /rocky-quiz  any time to drill the weakest topics.".dimmed());
+                    println!("  {}", "(OpenCode also discovers skills from ~/.claude/skills/, so the default install works for both.)".dimmed());
                 }
                 HookTarget::ClaudeAll => {
                     p.banner();
-                    println!("  {}", "Installing Claude-aware integration (skill-driven default):".dimmed());
+                    println!("  {}", "Installing agent-aware integration (skill-driven default):".dimmed());
 
                     let (ok1, msg1) = install_claude_hook()?;
                     println!("    {} {msg1}", if ok1 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
@@ -413,8 +447,7 @@ fn run() -> Result<()> {
 
                     println!();
                     println!("  {}", "Next: run  rocky explore  to build the project context summary.".dimmed());
-                    println!("  {}", "Then in Claude Code:  /rocky-checkpoint  after each commit, or  /rocky-quiz  any time.".dimmed());
-                    println!("  {}", "(For legacy auto-extraction at every Claude turn:  rocky install stop)".dimmed());
+                    println!("  {}", "Then in Claude Code or OpenCode:  /rocky-checkpoint  after each commit, or  /rocky-quiz  any time.".dimmed());
                 }
             }
         }
@@ -444,24 +477,24 @@ fn run() -> Result<()> {
                         println!("  {} {msg}", "✗".truecolor(226, 75, 74));
                     }
                 }
-                HookTarget::Stop => {
-                    let (ok, msg) = uninstall_claude_stop_hook()?;
-                    let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "✗".truecolor(226, 75, 74) };
-                    println!("  {glyph} {msg}");
-                }
-                HookTarget::Skills => {
+                HookTarget::Skills { opencode } => {
                     for (ok, msg) in uninstall_claude_skills()? {
                         let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "·".dimmed() };
                         println!("  {glyph} {msg}");
                     }
+                    if opencode {
+                        for (ok, msg) in uninstall_opencode_skills()? {
+                            let glyph = if ok { "✓".truecolor(29, 158, 117) } else { "·".dimmed() };
+                            println!("  {glyph} {msg}");
+                        }
+                    }
                 }
                 HookTarget::ClaudeAll => {
                     let _ = uninstall_claude_hook()?;
-                    let _ = uninstall_claude_stop_hook()?;
                     let _ = uninstall_git_hook()?;
                     let _ = local_log::uninstall_prompt_marker()?;
                     let _ = uninstall_claude_skills()?;
-                    println!("  {} Claude integration removed.", "✓".truecolor(29, 158, 117));
+                    println!("  {} Agent integration removed.", "✓".truecolor(29, 158, 117));
                 }
             }
         }
@@ -591,11 +624,57 @@ fn run() -> Result<()> {
                 run_explore(&db, &make_teacher(&cfg)?, force, quiet)?;
             }
         }
-        Some(Cmd::SessionEnd { hours, quiet }) => {
-            run_session_end(&db, &make_teacher(&cfg)?, &cfg, hours, quiet)?;
-        }
         Some(Cmd::PostCommit) => {
             run_post_commit(&db)?;
+        }
+        Some(Cmd::Prompt { source, log }) => {
+            let text = match log {
+                Some(t) => t,
+                None => {
+                    let mut s = String::new();
+                    io::stdin().read_to_string(&mut s)?;
+                    s
+                }
+            };
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                return Ok(());
+            }
+            let project = std::env::current_dir().ok().and_then(|p| p.to_str().map(String::from)).unwrap_or_default();
+            let id = promptiq::log_prompt(trimmed, &source, &project)?;
+            // Optionally print immediate feedback (config-gated).
+            if cfg.promptiq.feedback == "immediate" {
+                if let Some(score) = promptiq::heuristic_score(trimmed) {
+                    let critique = promptiq::heuristic_top_issue(trimmed, &score);
+                    eprintln!("[PromptIQ {}] {}{}",
+                        score.total,
+                        if critique.is_empty() { "" } else { "· " },
+                        critique);
+                }
+            }
+            // Print id so callers can chain (e.g. shell aliases that rescore).
+            println!("{}", serde_json::json!({ "id": id, "source": source }));
+        }
+        Some(Cmd::PromptIq { recent, json }) => {
+            promptiq::ensure_migrated(&db)?;
+            let report = promptiq::current_iq()?;
+            if json {
+                println!("{}", serde_json::to_string(&report)?);
+            } else {
+                promptiq::print_iq_human(&report);
+                if let Some(n) = recent {
+                    promptiq::print_recent_human(n)?;
+                }
+            }
+        }
+        Some(Cmd::PromptEval { id, score, feedback }) => {
+            promptiq::set_llm_score(id, score, feedback.as_deref())?;
+            println!("{}", serde_json::json!({ "id": id, "llm_score": score, "ok": true }));
+        }
+        Some(Cmd::Prompts { unscored, since_days }) => {
+            promptiq::ensure_migrated(&db)?;
+            let prompts = promptiq::list_prompts(unscored, since_days)?;
+            println!("{}", serde_json::to_string(&prompts)?);
         }
         None => {
             if let Some(msg) = cli.after {
@@ -2444,9 +2523,16 @@ fn run_hook() -> Result<()> {
         if let Some(prompt) = data.get("prompt").and_then(|v| v.as_str()) {
             let prompt = prompt.trim();
             if !prompt.is_empty() {
+                // Per-project log (legacy, feeds `rocky logs`).
                 if let Some(log) = local_log::LocalLog::open_if_configured() {
                     log.log_prompt(prompt).ok();
                 }
+                // Global PromptIQ log (canonical store, feeds /api/prompt-iq).
+                let project = std::env::current_dir()
+                    .ok()
+                    .and_then(|p| p.to_str().map(String::from))
+                    .unwrap_or_default();
+                let _ = promptiq::log_prompt(prompt, "claude", &project);
             }
         }
     }
@@ -2684,109 +2770,6 @@ fn uninstall_claude_hook() -> Result<(bool, String)> {
 
     std::fs::write(&path, serde_json::to_string_pretty(&settings)?)?;
     Ok((true, "Claude Code hook removed".into()))
-}
-
-// ── Stop hook (Claude Code session-end) ──────────────────────────────────────
-
-const STOP_HOOK_MATCHER_TAG: &str = "rocky session-end";
-
-fn install_claude_stop_hook() -> Result<(bool, String)> {
-    let path = claude_settings_path()
-        .ok_or_else(|| anyhow::anyhow!("could not locate home directory"))?;
-
-    let mut settings: serde_json::Value = if path.exists() {
-        let text = std::fs::read_to_string(&path)?;
-        serde_json::from_str(&text).unwrap_or(serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    let hooks = settings
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("settings.json is not a JSON object"))?
-        .entry("hooks")
-        .or_insert(serde_json::json!({}));
-
-    let stop = hooks
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("hooks is not a JSON object"))?
-        .entry("Stop")
-        .or_insert(serde_json::json!([]));
-
-    let arr = stop
-        .as_array_mut()
-        .ok_or_else(|| anyhow::anyhow!("Stop is not an array"))?;
-
-    let rocky_bin = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.to_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| "rocky".to_string());
-    let cmd = format!("{rocky_bin} session-end --quiet");
-
-    let already = arr.iter().any(|v| {
-        v.get("hooks")
-            .and_then(|h| h.as_array())
-            .map(|hs| hs.iter().any(|h| {
-                h.get("command").and_then(|c| c.as_str())
-                    .map(|c| c.contains(STOP_HOOK_MATCHER_TAG))
-                    .unwrap_or(false)
-            }))
-            .unwrap_or(false)
-    });
-    if already {
-        return Ok((false, "Claude Code Stop hook already installed".into()));
-    }
-
-    arr.push(serde_json::json!({
-        "hooks": [{"command": cmd, "type": "command"}]
-    }));
-
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&path, serde_json::to_string_pretty(&settings)?)?;
-    Ok((true, format!("Claude Code Stop hook installed in {}", path.display())))
-}
-
-fn uninstall_claude_stop_hook() -> Result<(bool, String)> {
-    let path = claude_settings_path()
-        .ok_or_else(|| anyhow::anyhow!("could not locate home directory"))?;
-    if !path.exists() {
-        return Ok((false, "~/.claude/settings.json not found".into()));
-    }
-
-    let text = std::fs::read_to_string(&path)?;
-    let mut settings: serde_json::Value = serde_json::from_str(&text)
-        .unwrap_or(serde_json::json!({}));
-
-    let removed = if let Some(arr) = settings
-        .get_mut("hooks")
-        .and_then(|h| h.get_mut("Stop"))
-        .and_then(|v| v.as_array_mut())
-    {
-        let before = arr.len();
-        arr.retain(|v| {
-            let is_rocky = v.get("hooks")
-                .and_then(|h| h.as_array())
-                .map(|hs| hs.iter().any(|h| {
-                    h.get("command").and_then(|c| c.as_str())
-                        .map(|c| c.contains(STOP_HOOK_MATCHER_TAG))
-                        .unwrap_or(false)
-                }))
-                .unwrap_or(false);
-            !is_rocky
-        });
-        arr.len() < before
-    } else {
-        false
-    };
-
-    if !removed {
-        return Ok((false, "Claude Code Stop hook not found".into()));
-    }
-
-    std::fs::write(&path, serde_json::to_string_pretty(&settings)?)?;
-    Ok((true, "Claude Code Stop hook removed".into()))
 }
 
 /// Like install_git_hook but uses queue-mode (`rocky post-commit`) so commits
@@ -3152,16 +3135,26 @@ fn run_delete_topic(db: &Db, topic_query: &str) -> Result<()> {
 
 const SKILL_CHECKPOINT: &str = include_str!("../skills/rocky-checkpoint/SKILL.md");
 const SKILL_QUIZ: &str = include_str!("../skills/rocky-quiz/SKILL.md");
+const SKILL_PROMPTIQ_RESCORE: &str = include_str!("../skills/rocky-promptiq-rescore/SKILL.md");
 
 fn claude_skills_dir() -> Result<std::path::PathBuf> {
     let home = dirs::home_dir().context("could not resolve home directory")?;
     Ok(home.join(".claude").join("skills"))
 }
 
+fn opencode_skills_dir() -> Result<std::path::PathBuf> {
+    let home = dirs::home_dir().context("could not resolve home directory")?;
+    Ok(home.join(".config").join("opencode").join("skills"))
+}
+
 fn install_claude_skills() -> Result<Vec<(bool, String)>> {
     let base = claude_skills_dir()?;
     std::fs::create_dir_all(&base)?;
-    let skills = [("rocky-checkpoint", SKILL_CHECKPOINT), ("rocky-quiz", SKILL_QUIZ)];
+    let skills = [
+        ("rocky-checkpoint", SKILL_CHECKPOINT),
+        ("rocky-quiz", SKILL_QUIZ),
+        ("rocky-promptiq-rescore", SKILL_PROMPTIQ_RESCORE),
+    ];
     let mut out = Vec::new();
     for (name, body) in skills {
         let dir = base.join(name);
@@ -3176,13 +3169,47 @@ fn install_claude_skills() -> Result<Vec<(bool, String)>> {
 fn uninstall_claude_skills() -> Result<Vec<(bool, String)>> {
     let base = claude_skills_dir()?;
     let mut out = Vec::new();
-    for name in ["rocky-checkpoint", "rocky-quiz"] {
+    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq-rescore"] {
         let dir = base.join(name);
         if dir.exists() {
             std::fs::remove_dir_all(&dir)?;
             out.push((true, format!("removed skill: {name}")));
         } else {
             out.push((false, format!("skill not present: {name}")));
+        }
+    }
+    Ok(out)
+}
+
+fn install_opencode_skills() -> Result<Vec<(bool, String)>> {
+    let base = opencode_skills_dir()?;
+    std::fs::create_dir_all(&base)?;
+    let skills = [
+        ("rocky-checkpoint", SKILL_CHECKPOINT),
+        ("rocky-quiz", SKILL_QUIZ),
+        ("rocky-promptiq-rescore", SKILL_PROMPTIQ_RESCORE),
+    ];
+    let mut out = Vec::new();
+    for (name, body) in skills {
+        let dir = base.join(name);
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join("SKILL.md");
+        std::fs::write(&path, body)?;
+        out.push((true, format!("installed (opencode): {} → {}", name, path.display())));
+    }
+    Ok(out)
+}
+
+fn uninstall_opencode_skills() -> Result<Vec<(bool, String)>> {
+    let base = opencode_skills_dir()?;
+    let mut out = Vec::new();
+    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq-rescore"] {
+        let dir = base.join(name);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir)?;
+            out.push((true, format!("removed (opencode): {name}")));
+        } else {
+            out.push((false, format!("skill not present (opencode): {name}")));
         }
     }
     Ok(out)
@@ -4052,190 +4079,3 @@ fn recent_commit_messages(limit: usize) -> Vec<String> {
     }
 }
 
-// ── rocky session-end ─────────────────────────────────────────────────────────
-
-/// Cap commits processed per Stop-hook invocation so we never block the user's
-/// terminal for minutes while they're trying to exit Claude Code. Anything over
-/// the cap stays queued and gets picked up by the next session-end (or
-/// `rocky session-end` invoked manually).
-const MAX_COMMITS_PER_SESSION_END: usize = 5;
-
-fn run_session_end(
-    db: &Db,
-    teacher: &Teacher,
-    cfg: &Config,
-    hours: u32,
-    quiet: bool,
-) -> Result<()> {
-    let project_path = std::env::current_dir()?
-        .canonicalize()?
-        .to_string_lossy()
-        .to_string();
-
-    // 1. Drain queued diffs (cap to keep terminal-exit latency bounded)
-    let mut pending = db.drain_pending_diffs(&project_path)?;
-    if pending.is_empty() {
-        if !quiet {
-            println!("  {} No pending commits to process.", "·".dimmed());
-        }
-        return Ok(());
-    }
-
-    let deferred: Vec<crate::db::PendingDiff> = if pending.len() > MAX_COMMITS_PER_SESSION_END {
-        pending.split_off(MAX_COMMITS_PER_SESSION_END)
-    } else {
-        Vec::new()
-    };
-
-    if !quiet {
-        print_header();
-        println!("  Processing {} commit(s) from this session...\n", pending.len());
-        if !deferred.is_empty() {
-            println!(
-                "  {} {} additional commit(s) deferred to the next session-end.",
-                "·".dimmed(),
-                deferred.len()
-            );
-        }
-    }
-
-    // 2. Load project context (may be empty)
-    let project_ctx = db.get_project_context(&project_path)?
-        .map(|c| c.summary)
-        .unwrap_or_default();
-
-    // 3. Read session transcript
-    let transcript = transcript::read_recent(
-        &std::path::PathBuf::from(&project_path),
-        hours,
-    ).unwrap_or_default();
-    let transcript_block = transcript.to_prompt_block();
-
-    if !quiet && !transcript.is_empty() {
-        println!("  {} Loaded transcript: {} prompts, {} agent messages, {} files read",
-            "·".dimmed(),
-            transcript.user_prompts.len(),
-            transcript.assistant_messages.len(),
-            transcript.files_read.len(),
-        );
-    }
-
-    // 4. Build existing topic list (for Layer 1 dedup)
-    let existing: Vec<(String, String)> = db.all_nodes()?
-        .into_iter()
-        .filter(|n| !n.kind.is_domain())
-        .map(|n| (n.topic, n.domain))
-        .collect();
-
-    let repo = detect_repo_name();
-    let mut new_topics = 0u32;
-    let mut deduped = 0u32;
-
-    // 5. Process each pending diff
-    for pd in &pending {
-        if !quiet {
-            println!("\n  {} {}", "▸".truecolor(124, 158, 243), pd.commit_msg.lines().next().unwrap_or(""));
-        }
-
-        let topics = match teacher.extract_topics_with_dedup(
-            &pd.commit_msg,
-            &pd.diff,
-            &existing,
-            &project_ctx,
-        ) {
-            Ok(t) => t,
-            Err(e) => {
-                if !quiet {
-                    eprintln!("    {} extract failed: {e}", "!".truecolor(226, 75, 74));
-                }
-                continue;
-            }
-        };
-
-        for t in topics {
-            let topic_id = Db::node_id_static(&t.topic);
-            let exists = db.get_node_by_id(&topic_id)?.is_some();
-
-            if exists {
-                // Layer 1 dedup hit — record encounter, no node creation
-                db.record_topic_encounter(&t.topic, &pd.commit_sha, &repo).ok();
-                deduped += 1;
-                if !quiet {
-                    println!("    {} {} (existing — encounter +1)", "◇".dimmed(), t.topic.dimmed());
-                }
-                continue;
-            }
-
-            // New topic: insert node with rich data
-            db.add_or_update(
-                &t.topic,
-                0.5,
-                &Kind::from_str(&t.kind),
-                &t.domain,
-                &t.description,
-                &pd.commit_msg,
-                None,
-                &repo,
-                None,
-            )?;
-
-            // Generate question bank using ALL the rich context
-            match teacher.generate_question_bank(
-                &t.topic,
-                &t.description,
-                &project_ctx,
-                &transcript_block,
-                &pd.diff,
-            ) {
-                Ok(bank) if !bank.is_empty() => {
-                    db.set_question_bank(&t.topic, &bank).ok();
-                    // Mirror the first question into the canonical_question slot
-                    // so the existing quiz flow has something to grab without changes.
-                    if let Some(first) = bank.first() {
-                        db.set_canonical_qa(&t.topic, &first.question, &first.answer, &first.clue).ok();
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    if !quiet {
-                        eprintln!("    {} question bank failed for {}: {e}", "!".truecolor(239, 159, 39), t.topic);
-                    }
-                }
-            }
-
-            // Bump source_commits + repos with this commit SHA / repo
-            db.record_topic_encounter(&t.topic, &pd.commit_sha, &repo).ok();
-            new_topics += 1;
-
-            if !quiet {
-                println!("    {} {}", "+".truecolor(29, 158, 117), t.topic);
-            }
-        }
-    }
-
-    // Re-queue anything we deferred so it isn't lost — the next session-end will
-    // pick it up. Done after the main loop in case any of those calls fail; we
-    // never want to silently drop a commit's diff.
-    for d in &deferred {
-        db.queue_pending_diff(&project_path, &d.commit_sha, &d.commit_msg, &d.diff).ok();
-    }
-
-    if !quiet {
-        println!();
-        println!(
-            "  {} {new_topics} new topic(s), {deduped} encounter update(s).",
-            "Done.".truecolor(29, 158, 117).bold()
-        );
-        if !deferred.is_empty() {
-            println!(
-                "  {} {} commit(s) re-queued for the next session-end.",
-                "·".dimmed(),
-                deferred.len()
-            );
-        }
-        println!("  {}", "Run  rocky quiz  to review the new material.".dimmed());
-    }
-
-    auto_sync(db, cfg);
-    Ok(())
-}

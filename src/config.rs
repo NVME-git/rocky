@@ -47,6 +47,14 @@ struct TomlFile {
     edges: Option<EdgesSection>,
     privacy: Option<PrivacySection>,
     voice: Option<VoiceSection>,
+    promptiq: Option<PromptIqSection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PromptIqSection {
+    enabled: Option<bool>,
+    /// "off" | "immediate" | "silent"
+    feedback: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,6 +150,20 @@ pub struct Config {
     /// When true: refuse to send code to remote LLMs. Local-only mode.
     pub privacy_strict: bool,
     pub voice: VoiceConfig,
+    pub promptiq: PromptIqConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct PromptIqConfig {
+    pub enabled: bool,
+    /// "off" | "immediate" | "silent"
+    pub feedback: String,
+}
+
+impl Default for PromptIqConfig {
+    fn default() -> Self {
+        Self { enabled: true, feedback: "silent".into() }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -193,6 +215,7 @@ impl Default for Config {
             },
             privacy_strict: false,
             voice: VoiceConfig::default(),
+            promptiq: PromptIqConfig::default(),
         }
     }
 }
@@ -309,6 +332,10 @@ impl Config {
             if let Some(x) = v.silence_ms { self.voice.silence_ms = x; }
             if let Some(x) = v.tts { self.voice.tts = x; }
             if let Some(x) = v.browser_consent { self.voice.browser_consent = x; }
+        }
+        if let Some(p) = file.promptiq {
+            if let Some(v) = p.enabled { self.promptiq.enabled = v; }
+            if let Some(v) = p.feedback { self.promptiq.feedback = v; }
         }
     }
 

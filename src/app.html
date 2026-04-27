@@ -29,6 +29,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 /* ── dashboard tab ── */
 #tab-dashboard{overflow-y:auto;padding:24px}
+.iq-row{display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.iq-row .iq-half{flex:1;min-width:280px;margin-bottom:0}
+.iq-trend{font-size:11px;color:#7c9ef3;font-weight:400;letter-spacing:0;text-transform:none;margin-left:6px}
+.iq-trend.up{color:#1d9e75}
+.iq-trend.down{color:#e74c3c}
 .atrophy-banner{background:linear-gradient(135deg,#1a1d27,#0f1629);border:1px solid #2d3148;border-radius:10px;padding:18px 24px;margin-bottom:18px;display:flex;align-items:center;gap:18px}
 .atrophy-banner .label{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#555e7a;margin-bottom:6px}
 .atrophy-banner .score-value{font-size:30px;font-weight:700;color:#F59E0B;line-height:1}
@@ -410,13 +415,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- DASHBOARD TAB -->
 <div id="tab-dashboard" class="tab-content active">
-  <div class="atrophy-banner">
-    <div>
-      <div class="label">Rocky IQ</div>
-      <div class="score-value" id="atrophy-value">—</div>
-      <div class="score-meta" id="atrophy-meta">how well you are retaining recent material</div>
+  <div class="iq-row">
+    <div class="atrophy-banner iq-half">
+      <div>
+        <div class="label">Rocky IQ</div>
+        <div class="score-value" id="atrophy-value">—</div>
+        <div class="score-meta" id="atrophy-meta">how well you are retaining recent material</div>
+      </div>
+      <div class="score-bar"><div class="score-fill" id="atrophy-fill" style="width:0"></div></div>
     </div>
-    <div class="score-bar"><div class="score-fill" id="atrophy-fill" style="width:0"></div></div>
+    <div class="atrophy-banner iq-half" id="prompt-iq-banner" title="Click for recent prompts" style="cursor:default">
+      <div>
+        <div class="label">PromptIQ <span class="iq-trend" id="prompt-iq-trend">—</span></div>
+        <div class="score-value" id="prompt-iq-value">—</div>
+        <div class="score-meta" id="prompt-iq-meta">how well you direct your AI agents</div>
+      </div>
+      <div class="score-bar"><div class="score-fill" id="prompt-iq-fill" style="width:0;background:linear-gradient(90deg,#e74c3c,#e6a817 40%,#7c9ef3 80%)"></div></div>
+    </div>
   </div>
   <div class="dash-grid">
     <div class="dash-card">
@@ -2135,6 +2150,23 @@ function renderDashboard() {
              : iq >= 30 ? 'slipping — schedule a review session soon'
              : 'fading — recent material is decaying fast, quiz now to recover';
   document.getElementById('atrophy-meta').textContent = meta;
+
+  // PromptIQ — fetched lazily from /api/prompt-iq.
+  fetch('/api/prompt-iq').then(r => r.ok ? r.json() : null).then(p => {
+    if (!p) return;
+    const v = Math.max(0, Math.min(100, p.current || 0));
+    document.getElementById('prompt-iq-value').textContent = v;
+    document.getElementById('prompt-iq-fill').style.width = Math.max(2, v) + '%';
+    const trendEl = document.getElementById('prompt-iq-trend');
+    if (p.delta > 0)      { trendEl.textContent = '↑ ' + p.delta + ' this week'; trendEl.className = 'iq-trend up'; }
+    else if (p.delta < 0) { trendEl.textContent = '↓ ' + (-p.delta) + ' this week'; trendEl.className = 'iq-trend down'; }
+    else                  { trendEl.textContent = '— this week';                  trendEl.className = 'iq-trend'; }
+    const promptMeta = p.sample_size === 0 ? 'no prompts logged yet — install the Claude or OpenCode hook'
+                     : v >= 70 ? `directing well · ${p.sample_size} prompt${p.sample_size === 1 ? '' : 's'} sampled`
+                     : v >= 40 ? `building the habit · ${p.sample_size} prompt${p.sample_size === 1 ? '' : 's'} sampled`
+                     : `lots of room to grow · ${p.sample_size} prompt${p.sample_size === 1 ? '' : 's'} sampled`;
+    document.getElementById('prompt-iq-meta').textContent = promptMeta;
+  }).catch(() => { /* endpoint not available — leave defaults */ });
 
   // Due for review
   const dueList = document.getElementById('due-list');

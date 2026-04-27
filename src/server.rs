@@ -17,6 +17,7 @@ use colored::Colorize;
 use crate::config::Config;
 use crate::db::Db;
 use crate::fsrs;
+use crate::promptiq;
 use crate::teacher::Teacher;
 use crate::voice;
 
@@ -49,6 +50,7 @@ pub fn run(db: &Db, cfg: &Config) -> Result<()> {
             .route("/api/quiz/assess", post(quiz_assess))
             .route("/api/quiz/evaluate", post(quiz_evaluate))
             .route("/api/transcribe", post(transcribe))
+            .route("/api/prompt-iq", get(get_prompt_iq))
             .layer(CorsLayer::permissive())
             .with_state(state);
 
@@ -133,6 +135,21 @@ async fn get_sessions(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(result))
+}
+
+async fn get_prompt_iq(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, StatusCode> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || -> Result<Value, anyhow::Error> {
+        let _ = promptiq::ensure_migrated(&db);
+        let report = promptiq::current_iq()?;
+        Ok(serde_json::to_value(&report)?)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    .map(Json)
 }
 
 /// POST /api/transcribe — raw audio bytes in (WAV PCM 16 kHz mono preferred),
