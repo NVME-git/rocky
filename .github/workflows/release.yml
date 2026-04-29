@@ -1,0 +1,129 @@
+name: Build & release
+
+# Manual trigger only — never fires on commits or PRs.
+# Click "Run workflow" on the Actions tab, fill in the version (e.g. v0.1.0),
+# decide whether to publish as draft, and the matrix builds + uploads binaries
+# to a GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to create (e.g. v0.1.0)'
+        required: true
+        type: string
+      draft:
+        description: 'Create as draft release (recommended — gives you a chance to review before publishing)'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # needed to create the tag, the release, and upload assets
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: rocky-linux-x64
+          - target: x86_64-apple-darwin
+            os: macos-13
+            artifact: rocky-macos-x64
+          - target: aarch64-apple-darwin
+            os: macos-14
+            artifact: rocky-macos-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: rocky-windows-x64.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ matrix.target }}-cargo-
+
+      - name: Build (release)
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Strip (Unix only — macOS + Linux)
+        if: runner.os != 'Windows'
+        run: strip target/${{ matrix.target }}/release/rocky
+
+      - name: Stage artifact + checksum
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cp target/${{ matrix.target }}/release/rocky.exe dist/${{ matrix.artifact }}
+          else
+            cp target/${{ matrix.target }}/release/rocky dist/${{ matrix.artifact }}
+          fi
+          cd dist
+          # SHA-256 so users can verify the binary matches what GitHub built.
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
+          else
+            shasum -a 256 ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+          retention-days: 7
+
+  release:
+    name: Tag + publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # full history so we can tag from any commit
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create + push tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          # If the tag already exists (re-running on a botched release), reuse it.
+          if git rev-parse --verify --quiet "refs/tags/${{ inputs.version }}"; then
+            echo "tag ${{ inputs.version }} already exists, reusing"
+          else
+            git tag "${{ inputs.version }}"
+            git push origin "${{ inputs.version }}"
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.version }}" \
+            --title "Rocky ${{ inputs.version }}" \
+            --generate-notes \
+            ${{ inputs.draft && '--draft' || '' }} \
+            dist/*
