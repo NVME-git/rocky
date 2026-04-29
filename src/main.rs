@@ -32,6 +32,18 @@ const MAX_QUESTIONS: u32 = 3;
 #[command(
     name = "rocky",
     about = "Rocky — Personal Knowledge Graph\n\n  You observe. Question?\n\n  Quiz yourself on what your AI agent just built so you never lose the thread.",
+    after_help = "\
+Commands by purpose:
+
+  USER             stats · quiz · view · diff · dedupe · explore
+  READ & INSPECT   list · inspect · edges · queue · logs · prompt-iq · config
+  SKILL            topic · add-topic · add-question · delete-topic · set-domain
+                   · review · due · context · checkpoint · prompt · prompt-eval · prompts
+  SETUP & SYNC     install · uninstall · sync · restore · export
+  MAINTENANCE      delete · backfill · classify
+  HOOKS (auto)     hook · post-commit
+
+Run `rocky <command> --help` for details on any command.\n",
 )]
 struct Cli {
     /// Task description to analyze before starting work
@@ -47,17 +59,105 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    // ── User commands ───────────────────────────────────────────────────────
     /// Show PKG stats
     Stats,
-    /// List all topics in your PKG
+    /// On-demand quiz — general review, or search for specific topics
+    Quiz {
+        /// Search for specific topics to quiz (substring match). Omit for full review.
+        topic: Option<String>,
+        /// Look back N hours for prompt context (default: 24)
+        #[arg(long, default_value = "24")]
+        hours: u32,
+        /// Voice mode: reads questions aloud (TTS) and transcribes mic input for answers.
+        /// Requires [voice] provider = "whisper-cpp" in config and arecord (Linux) or rec/sox (macOS).
+        #[arg(long)]
+        voice: bool,
+    },
+    /// Open the interactive knowledge graph + Saga in the browser
+    View,
+    /// Analyze a git diff and quiz on topics found in the code changes
+    Diff {
+        /// Git ref to diff against HEAD (e.g. HEAD~1, main). Defaults to last commit.
+        #[arg(value_name = "REF")]
+        git_ref: Option<String>,
+        /// Analyze staged changes instead of a commit
+        #[arg(long)]
+        staged: bool,
+    },
+    /// Find and interactively merge near-duplicate topics in your PKG.
+    /// Scans all topics for word-overlap candidates, then lets you decide which to keep.
+    Dedupe {
+        /// Preview candidates without making any changes.
+        #[arg(long)]
+        dry_run: bool,
+        /// Pre-filter candidates using the LLM before showing them to you (slower but more precise).
+        #[arg(long)]
+        auto: bool,
+    },
+    /// Build a project context summary from CLAUDE.md, README, docs, and recent commits.
+    /// Used as grounding context for question generation. Run once per project.
+    Explore {
+        /// Re-summarise even if a recent context exists
+        #[arg(long)]
+        force: bool,
+        /// Suppress output
+        #[arg(long)]
+        quiet: bool,
+        /// Print the stored project context for the current dir without regenerating
+        #[arg(long)]
+        show: bool,
+    },
+
+    // ── Read & inspect ──────────────────────────────────────────────────────
+    /// List all topics in your PKG. Optionally pass a name to print one topic's
+    /// full record as JSON (alias for `rocky topic <name>`).
     #[command(alias = "ls")]
     List {
+        /// Topic name (substring match). When given, prints the matching topic
+        /// as full-detail JSON — same output as `rocky topic <name>`.
+        name: Option<String>,
         /// Filter by creation date: today, yesterday, week, month, or a number of days (e.g. 7)
         #[arg(long)]
         since: Option<String>,
         /// Emit a JSON array (used by the rocky-checkpoint skill for dedup lookup)
         #[arg(long)]
         json: bool,
+    },
+    /// Show all stored context for a topic: description, source commits, contexts, question bank
+    #[command(alias = "show")]
+    Inspect {
+        /// Topic name (partial match)
+        topic: String,
+    },
+    /// List all edges in the PKG (implication graph)
+    Edges {
+        /// Show edge stats summary instead of full list
+        #[arg(long)]
+        stats: bool,
+    },
+    /// Show topics queued in this project (skipped during sessions, not yet in PKG)
+    Queue,
+    /// Show recent prompts logged in this project
+    Logs,
+    /// Print the current PromptIQ score + trend
+    PromptIq {
+        /// Show the most recent N prompts with scores + feedback.
+        #[arg(long)]
+        recent: Option<usize>,
+        /// JSON output (for the dashboard tile + the rescore skill).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show active configuration
+    Config,
+
+    // ── Skill primitives (called by /rocky-* skills) ────────────────────────
+    /// Look up a topic by name and print its full record as JSON.
+    /// Used by the rocky-quiz skill. (Alias: `rocky list <name>`.)
+    Topic {
+        /// Topic name (substring match — must resolve to exactly one topic)
+        name: String,
     },
     /// Add a topic to the PKG (low-level — invoked by the rocky-checkpoint skill).
     /// In the agent-driven workflow, the agent extracts topics from recent commits
@@ -85,27 +185,6 @@ enum Cmd {
         /// Initial recall score (0..1). Defaults to 0.7 (newly-introduced).
         #[arg(long, default_value = "0.7")]
         score: f64,
-    },
-    /// Emit the project context summary (from `rocky explore`) as JSON.
-    /// Used by the rocky-checkpoint skill to ground topic extraction in the
-    /// project's vocabulary.
-    Context,
-    /// Inspect / drain the post-commit queue. Used by the rocky-checkpoint skill.
-    Checkpoint {
-        #[command(subcommand)]
-        action: CheckpointAction,
-    },
-    /// List topics due for review as JSON. Used by the rocky-quiz skill.
-    Due {
-        /// Maximum number of topics to surface (lowest retrievability first)
-        #[arg(long, default_value = "5")]
-        limit: usize,
-    },
-    /// Look up a topic by name and print its full record as JSON.
-    /// Used by the rocky-quiz skill to fetch question banks + history.
-    Topic {
-        /// Topic name (substring match — must resolve to exactly one topic)
-        name: String,
     },
     /// Append a single question to a topic's question_bank (used by the rocky-quiz
     /// skill so good questions persist across sessions for rotation).
@@ -153,120 +232,21 @@ enum Cmd {
         #[arg(long)]
         feedback: Option<String>,
     },
-    /// Install a hook (git post-commit by default)
-    Install {
+    /// List topics due for review as JSON. Used by the rocky-quiz skill.
+    Due {
+        /// Maximum number of topics to surface (lowest retrievability first)
+        #[arg(long, default_value = "5")]
+        limit: usize,
+    },
+    /// Emit the project context summary (from `rocky explore`) as JSON.
+    /// Used by the rocky-checkpoint skill to ground topic extraction in the
+    /// project's vocabulary.
+    Context,
+    /// Inspect / drain the post-commit queue. Used by the rocky-checkpoint skill.
+    Checkpoint {
         #[command(subcommand)]
-        target: Option<HookTarget>,
+        action: CheckpointAction,
     },
-    /// Remove a hook (git post-commit by default)
-    Uninstall {
-        #[command(subcommand)]
-        target: Option<HookTarget>,
-    },
-    /// Show all stored context for a topic: description, source commits, contexts, question bank
-    #[command(alias = "show")]
-    Inspect {
-        /// Topic name (partial match)
-        topic: String,
-    },
-    /// Show active configuration
-    Config,
-    /// On-demand quiz — general review, or search for specific topics
-    Quiz {
-        /// Search for specific topics to quiz (substring match). Omit for full review.
-        topic: Option<String>,
-        /// Look back N hours for prompt context (default: 24)
-        #[arg(long, default_value = "24")]
-        hours: u32,
-        /// Voice mode: reads questions aloud (TTS) and transcribes mic input for answers.
-        /// Requires [voice] provider = "whisper-cpp" in config and arecord (Linux) or rec/sox (macOS).
-        #[arg(long)]
-        voice: bool,
-    },
-    /// Analyze a git diff and quiz on topics found in the code changes
-    Diff {
-        /// Git ref to diff against HEAD (e.g. HEAD~1, main). Defaults to last commit.
-        #[arg(value_name = "REF")]
-        git_ref: Option<String>,
-        /// Analyze staged changes instead of a commit
-        #[arg(long)]
-        staged: bool,
-    },
-    /// Search for and delete topics from your PKG
-    Delete {
-        /// Search query (substring match on topic name and description)
-        query: Option<String>,
-        /// Delete topics added on or after this date (YYYY-MM-DD)
-        #[arg(long, value_name = "YYYY-MM-DD")]
-        since: Option<String>,
-        /// Delete topics added on or before this date (YYYY-MM-DD)
-        #[arg(long, value_name = "YYYY-MM-DD")]
-        before: Option<String>,
-    },
-    /// Export all PKG topics to your PKG directory (Obsidian-compatible markdown)
-    Export,
-    /// Show topics queued in this project (skipped during sessions, not yet in PKG)
-    Queue,
-    /// Show recent prompts logged in this project
-    Logs,
-    /// Claude Code hook — reads JSON from stdin, logs prompt (non-blocking)
-    Hook,
-    /// Commit PKG + pkg.json to git; optionally push or initialise the repo
-    Sync {
-        /// Initialise git repo and optionally set a remote URL
-        #[arg(long, value_name = "REMOTE_URL")]
-        init: Option<Option<String>>,
-        /// Commit pending changes and push to configured remote
-        #[arg(long)]
-        push: bool,
-        /// Show PKG git status
-        #[arg(long)]
-        status: bool,
-    },
-    /// Rebuild graph.db from pkg/pkg.json (use after cloning on a new machine)
-    Restore,
-    /// Assign taxonomy domains to existing undomained topics via LLM
-    Classify,
-    /// List all edges in the PKG (implication graph)
-    Edges {
-        /// Show edge stats summary instead of full list
-        #[arg(long)]
-        stats: bool,
-    },
-    /// Open interactive knowledge graph in the browser
-    View,
-    /// Scan git history and add topics to your PKG without interactive Q&A
-    Backfill {
-        /// Include commits from all authors (default: current user only)
-        #[arg(long)]
-        all_authors: bool,
-        /// Maximum number of commits to scan (default: all)
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-        /// Retroactively generate missing clues for nodes that already have canonical Q&A
-        #[arg(long)]
-        fill_clues: bool,
-        /// Retroactively generate question_bank for nodes that don't have one yet
-        #[arg(long)]
-        fill_question_bank: bool,
-    },
-    /// Build a project context summary from CLAUDE.md, README, docs, and recent commits.
-    /// Used as grounding context for question generation. Run once when adding Rocky to a project.
-    Explore {
-        /// Re-summarise even if a recent context exists
-        #[arg(long)]
-        force: bool,
-        /// Suppress output (used by Stop hook auto-refresh)
-        #[arg(long)]
-        quiet: bool,
-        /// Print the stored project context for the current dir without regenerating
-        #[arg(long)]
-        show: bool,
-    },
-    /// Silently queue the latest commit's diff for later batch processing.
-    /// Intended for the git post-commit hook in Claude-aware queue mode.
-    /// No LLM call. The /rocky-checkpoint skill drains the queue at session end.
-    PostCommit,
     /// Log a prompt for PromptIQ scoring + the per-project quiz history.
     /// Generic primitive — call from any agent's hook, shell alias, IDE plugin.
     Prompt {
@@ -276,15 +256,6 @@ enum Cmd {
         /// The prompt text. Reads from stdin if omitted.
         #[arg(long)]
         log: Option<String>,
-    },
-    /// Print the current PromptIQ score + trend.
-    PromptIq {
-        /// Show the most recent N prompts with scores + feedback.
-        #[arg(long)]
-        recent: Option<usize>,
-        /// JSON output (for the dashboard tile + the rescore skill).
-        #[arg(long)]
-        json: bool,
     },
     /// Persist an agent-evaluated PromptIQ score for a logged prompt. Called
     /// by the /rocky-promptiq-rescore skill after the agent judges the prompt.
@@ -308,16 +279,72 @@ enum Cmd {
         #[arg(long, default_value = "7")]
         since_days: i64,
     },
-    /// Find and interactively merge near-duplicate topics in your PKG.
-    /// Scans all topics for word-overlap candidates, then lets you decide which to keep.
-    Dedupe {
-        /// Preview candidates without making any changes.
-        #[arg(long)]
-        dry_run: bool,
-        /// Pre-filter candidates using the LLM before showing them to you (slower but more precise).
-        #[arg(long)]
-        auto: bool,
+
+    // ── Setup & sync ────────────────────────────────────────────────────────
+    /// Install a hook (git post-commit by default)
+    Install {
+        #[command(subcommand)]
+        target: Option<HookTarget>,
     },
+    /// Remove a hook (git post-commit by default)
+    Uninstall {
+        #[command(subcommand)]
+        target: Option<HookTarget>,
+    },
+    /// Commit PKG + pkg.json to git; optionally push or initialise the repo
+    Sync {
+        /// Initialise git repo and optionally set a remote URL
+        #[arg(long, value_name = "REMOTE_URL")]
+        init: Option<Option<String>>,
+        /// Commit pending changes and push to configured remote
+        #[arg(long)]
+        push: bool,
+        /// Show PKG git status
+        #[arg(long)]
+        status: bool,
+    },
+    /// Rebuild graph.db from pkg/pkg.json (use after cloning on a new machine)
+    Restore,
+    /// Export all PKG topics to your PKG directory (Obsidian-compatible markdown)
+    Export,
+
+    // ── Maintenance & batch ─────────────────────────────────────────────────
+    /// Search for and delete topics from your PKG
+    Delete {
+        /// Search query (substring match on topic name and description)
+        query: Option<String>,
+        /// Delete topics added on or after this date (YYYY-MM-DD)
+        #[arg(long, value_name = "YYYY-MM-DD")]
+        since: Option<String>,
+        /// Delete topics added on or before this date (YYYY-MM-DD)
+        #[arg(long, value_name = "YYYY-MM-DD")]
+        before: Option<String>,
+    },
+    /// Scan git history and add topics to your PKG without interactive Q&A
+    Backfill {
+        /// Include commits from all authors (default: current user only)
+        #[arg(long)]
+        all_authors: bool,
+        /// Maximum number of commits to scan (default: all)
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+        /// Retroactively generate missing clues for nodes that already have canonical Q&A
+        #[arg(long)]
+        fill_clues: bool,
+        /// Retroactively generate question_bank for nodes that don't have one yet
+        #[arg(long)]
+        fill_question_bank: bool,
+    },
+    /// Assign taxonomy domains to existing undomained topics via LLM
+    Classify,
+
+    // ── Hooks (auto-invoked, you don't type these) ──────────────────────────
+    /// Claude Code hook — reads JSON from stdin, logs prompt (non-blocking)
+    Hook,
+    /// Silently queue the latest commit's diff for later batch processing.
+    /// Intended for the git post-commit hook in Claude-aware queue mode.
+    /// No LLM call. The /rocky-checkpoint skill drains the queue at session end.
+    PostCommit,
 }
 
 #[derive(Subcommand)]
@@ -544,8 +571,12 @@ fn run() -> Result<()> {
         }
         Some(Cmd::Inspect { topic }) => inspect_topic(&db, &topic)?,
         Some(Cmd::Stats) => show_stats(&db, &cfg, &p)?,
-        Some(Cmd::List { since, json }) => {
-            if json {
+        Some(Cmd::List { name, since, json }) => {
+            // `rocky list <name>` is the human-friendly alias for `rocky topic <name>`:
+            // both emit the single-topic full-detail JSON the rocky-quiz skill consumes.
+            if let Some(n) = name {
+                emit_topic_json(&db, &n)?;
+            } else if json {
                 emit_topics_json(&db, since.as_deref())?;
             } else {
                 list_topics(&db, since.as_deref())?;
