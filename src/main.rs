@@ -1256,11 +1256,14 @@ fn run_backfill(db: &Db, teacher: &Teacher, cfg: &Config, all_authors: bool, lim
 }
 
 fn truncate_to(s: &str, max_chars: usize) -> String {
-    if s.len() <= max_chars {
-        return s.to_string();
-    }
-    let truncated = &s[..max_chars];
-    let end = truncated.rfind('\n').unwrap_or(max_chars);
+    // `&s[..N]` is a BYTE slice; if N falls inside a multi-byte UTF-8 char it
+    // panics. Use char_indices to find the nearest char boundary, then slice.
+    let cut = match s.char_indices().nth(max_chars) {
+        Some((byte_pos, _)) => byte_pos,
+        None => return s.to_string(),  // fewer chars than max — return whole
+    };
+    let truncated = &s[..cut];
+    let end = truncated.rfind('\n').unwrap_or(cut);
     format!("{}\n\n[... truncated ...]", &s[..end])
 }
 
@@ -2356,12 +2359,16 @@ fn read_diff(git_ref: Option<&str>, staged: bool) -> Result<(String, String)> {
 }
 
 fn truncate_diff(diff: &str) -> String {
-    if diff.len() <= MAX_DIFF_CHARS {
-        return diff.to_string();
-    }
-    // Keep the first MAX_DIFF_CHARS chars but end at a clean line boundary
-    let truncated = &diff[..MAX_DIFF_CHARS];
-    let end = truncated.rfind('\n').unwrap_or(MAX_DIFF_CHARS);
+    // Find the byte position of the (MAX_DIFF_CHARS + 1)th char. char_indices
+    // always yields valid char boundaries, so slicing at one is safe even if
+    // the diff contains multi-byte chars (e.g. box-drawing glyphs in commit
+    // messages — was a real panic source).
+    let cut = match diff.char_indices().nth(MAX_DIFF_CHARS) {
+        Some((byte_pos, _)) => byte_pos,
+        None => return diff.to_string(),  // diff fits — return whole
+    };
+    let truncated = &diff[..cut];
+    let end = truncated.rfind('\n').unwrap_or(cut);
     format!(
         "{}\n\n[... diff truncated at {MAX_DIFF_CHARS} chars ...]",
         &diff[..end]
@@ -4107,6 +4114,53 @@ fn recent_commit_messages(limit: usize) -> Vec<String> {
             .map(|s| s.to_string())
             .collect(),
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod truncate_tests {
+    //! Regression tests for the bytes-vs-chars panic that fired during
+    //! commit 43d47cf. The diff happened to contain `─` (3 bytes in UTF-8)
+    //! at exactly the cut point, and `&s[..MAX_DIFF_CHARS]` panicked because
+    //! the byte index landed inside the multi-byte char.
+    use super::*;
+
+    #[test]
+    fn truncate_diff_handles_multibyte_at_boundary() {
+        // ─ is 3 bytes (U+2500 BOX DRAWINGS LIGHT HORIZONTAL).
+        // Build a string that puts a `─` straddling the byte cut point so
+        // any byte-index slice would split it. Specifically: place enough
+        // ASCII so byte_pos = MAX_DIFF_CHARS - 1 lands on the first byte of `─`.
+        let prefix_bytes = MAX_DIFF_CHARS - 1;
+        let prefix = "a".repeat(prefix_bytes);
+        let payload = format!("{prefix}─tail");
+        // Sanity: the diff is longer than the cap, so we'll actually truncate.
+        assert!(payload.chars().count() > MAX_DIFF_CHARS);
+        // Should NOT panic. The fix uses char_indices to find a real boundary.
+        let out = truncate_diff(&payload);
+        assert!(out.contains("truncated"));
+    }
+
+    #[test]
+    fn truncate_diff_short_input_passthrough() {
+        let s = "small diff with multibyte ─ chars";
+        assert_eq!(truncate_diff(s), s);
+    }
+
+    #[test]
+    fn truncate_to_handles_multibyte_at_boundary() {
+        // Same shape as above for the `truncate_to` helper used by backfill.
+        let prefix = "x".repeat(99);
+        let payload = format!("{prefix}─tail");
+        // Should not panic at max_chars=100 (which would land on the `─`).
+        let out = truncate_to(&payload, 100);
+        assert!(out.contains("truncated"));
+    }
+
+    #[test]
+    fn truncate_to_short_input_passthrough() {
+        let s = "row1\nrow2\nrow3";
+        assert_eq!(truncate_to(s, 100), s);
     }
 }
 
