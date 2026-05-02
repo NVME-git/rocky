@@ -10,13 +10,9 @@ services:
       - "8080:8080"
     volumes:
       - .:/usr/local/structurizr
-      # !adrs requires every file in the directory to follow the NNN-title.md
-      # convention. The project's docs/decisions/ also contains a README.md,
-      # which would break the parser, so mount only the numbered ADRs.
-      - ../docs/decisions/0001-rich-context-pipeline.md:/usr/local/structurizr/decisions/0001-rich-context-pipeline.md:ro
-      - ../docs/decisions/0002-dedup-and-question-bank.md:/usr/local/structurizr/decisions/0002-dedup-and-question-bank.md:ro
-      - ../docs/decisions/0003-llm-resilience.md:/usr/local/structurizr/decisions/0003-llm-resilience.md:ro
-      - ../docs/decisions/0004-config-paths-and-privacy.md:/usr/local/structurizr/decisions/0004-config-paths-and-privacy.md:ro
-      - ../docs/decisions/0005-rocky-iq-and-ui.md:/usr/local/structurizr/decisions/0005-rocky-iq-and-ui.md:ro
-      - ../docs/decisions/0006-voice-architecture.md:/usr/local/structurizr/decisions/0006-voice-architecture.md:ro
+      # !adrs requires every file in the directory to follow the NNNN-title.md
+      # convention. The decisions index lives at docs/decisions.md (one level
+      # up) so this directory contains only numbered ADRs and can be mounted
+      # whole.
+      - ../docs/decisions:/usr/local/structurizr/decisions:ro
     restart: unless-stopped
