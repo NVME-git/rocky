@@ -531,9 +531,10 @@ A 2-hop neighborhood centred on one topic. The whole PKG is never on screen at o
 - **Click any hop-1 node** → the entire graph shifts so that node moves to the centre. Then nodes more than two hops away fade out and the new 2-hop ring fades in. About 1 second end-to-end.
 - **Hop-2 nodes are previews only** — colour-coded but unlabelled and not clickable for warp; clicking opens the detail panel without travelling.
 - **Edges radiate outward** from the focus with continuous dashes flowing along the line, so you always see direction. Hop-1 edges are bright; hop-2 edges are dim, pushing them visually behind the active neighborhood.
-- **Wormholes panel** (bottom-left) holds portals to elsewhere: the weakest topic globally, the most-recent topic in other domains, and the most-recent in other projects. One-click jumps to anywhere in the PKG.
+- **Single click** opens the detail panel for the clicked node. **Double click** warps focus there. The detail panel is translucent (frosted glass) so the wormhole stays visible behind it.
+- **Wormholes panel** (top-center, as a row of pills) holds portals to elsewhere: the weakest topic globally, the most-recent topic in other domains, and the most-recent in other projects. The pill matching your current focus is rendered inverted as a "you are here" marker. One-click jumps anywhere in the PKG; a `?` pill explains what each colour means.
 - **Spaceship 🚀 cursor** over the canvas — on brand.
-- **Planning mode** toggle dims topics you already know well and highlights unreviewed neighbors as "what's next".
+- **Planning mode** toggle (in the same pill bar) dims topics you already know well and highlights unreviewed neighbors as "what's next".
 
 When you click a project card on the **Projects** tab, the map switches to a **project hub view**: project name at center, domain hubs around it, three most-recent topics per domain on the outer ring. Click a topic to warp into the wormhole at that node.
 
@@ -550,12 +551,12 @@ A play / pause / scrub view of how your knowledge grew. The explorer (your git u
 - **Share dropdown** exports the current view as an SVG, a 2× PNG, or a full timelapse GIF (1080² @ 15 fps, ~8s).
 
 ### Review Queue
-A sortable, filterable table of every topic. Sort by recall, recency, review count, or alphabetical. Filter to *due* or *critical*. Click any row to start a quiz on that topic, or hit "Quiz top 5" to start a session against the lowest-recall items in the current view.
+A sortable, filterable table of every topic. Sort by recall, recency, review count, or alphabetical. Filter to *due* or *critical*, and narrow further by project. Click any row to start a quiz on that topic, or hit "Quiz top 5" to start a session against the lowest-recall items in the current view.
 
 ![Review Queue](screenshots/rocky-queue.png)
 
 ### Sessions
-Every topic Rocky has ever generated, grouped by the day it was added. Encounter counts (×N badges) show where the cross-project dedup hit — the same topic surfacing across multiple commits.
+Every topic Rocky has ever generated, grouped by the day it was added, with a project filter at the top. Encounter counts (×N badges) show where the cross-project dedup hit — the same topic surfacing across multiple commits.
 
 ![Sessions](screenshots/rocky-sessions.png)
 
@@ -1130,10 +1131,11 @@ A bounded 2-hop neighborhood — never more than ~28 nodes on screen at a time, 
 - **Hop-2 ring** (outer): neighbors of neighbors, capped at 18 total / 4 per parent. Dim, unlabelled, click-to-open detail only — they're previews of what's adjacent.
 - **Edges** colour-coded by kind (`implies` blue, `depends_on` amber, `conflicts_with` red, `part_of` green). Continuous outward dash flow always reads focus → neighbor. Hop-1 edges are bright; hop-2 edges are dim.
 - **Click a hop-1 node** → graph shifts in two phases. Phase 1: every node tweens to its new position so the clicked node ends up at centre. Phase 2: now-out-of-range nodes fade out, newly-in-range nodes fade in. Total ≈ 1 s.
-- **Wormholes panel** (bottom-left): portals to **the weakest topic globally**, the **most-recent topic in each of 3 other domains**, and the **most-recent in 2 other repos**. One-click jumps anywhere in the PKG.
+- **Wormholes panel** (top-center, as horizontal pills): portals to **the weakest topic globally**, the **most-recent topic in each of 3 other domains**, and the **most-recent in 2 other projects**. The pill matching your current focus is shown inverted as a "you are here" marker. One-click jumps anywhere in the PKG; a `?` pill expands a popover explaining each colour.
 - **Search** (top-left): typeahead → click a hit to warp.
 - **Back button** appears once you've warped, with a `jumped Nx` counter.
-- **Planning mode** (in the Wormholes panel): dims known topics, highlights unreviewed neighbors as "what's next".
+- **Single click** on any node opens its detail panel; **double click** warps focus to it. The detail panel is translucent (backdrop-blurred) so the wormhole stays visible.
+- **Planning mode** (in the same pill bar): dims known topics, highlights unreviewed neighbors as "what's next".
 - **Spaceship 🚀 cursor** over the canvas.
 
 **Detail panel** (slides in from the right when you click any node):
@@ -2740,29 +2742,6 @@ This is your knowledge graph for one project, one week in. Each edge is a relati
 After backfilling **home-bank**, four more topics appear in the Data domain: CSV parsing, transaction categorisation, Pandas DataFrame operations, and double-entry bookkeeping. They carry commit dates from October 2025 — Rocky knows exactly how long ago you last touched that code.
 ''';
 
-const kArchitecture = r'''
-# Architecture decisions
-
-The major design choices behind Rocky's alpha (and the planned voice integration) are captured as **ADRs** — Architecture Decision Records, one per file, in [`docs/decisions/`](https://github.com/NVME-git/rocky/tree/main/docs/decisions) on the repo. They use the [Michael Nygard format](https://github.com/joelparkerhenderson/architecture-decision-record): context (why this even came up), decision (what we chose), consequences (good and bad).
-
-| # | Title | Status |
-|---|---|---|
-| 0001 | [Rich-context pipeline](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0001-rich-context-pipeline.md) — explore + post-commit queue + session-end | Accepted |
-| 0002 | [Layer-1 dedup + question bank with rotation](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0002-dedup-and-question-bank.md) | Accepted |
-| 0003 | [LLM resilience](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0003-llm-resilience.md) — timeouts, retries, lenient JSON parsing | Accepted |
-| 0004 | [Config layout, ROCKY_HOME, privacy.strict](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0004-config-paths-and-privacy.md) | Accepted |
-| 0005 | [Rocky IQ score + sidebar UI redesign](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0005-rocky-iq-and-ui.md) | Accepted |
-| 0006 | [Voice architecture](https://github.com/NVME-git/rocky/blob/main/docs/decisions/0006-voice-architecture.md) — whisper.cpp default, push-to-talk only | Proposed |
-
-Read these if you want to know **why** Rocky is shaped the way it is — the rest of the docs cover **what** it does.
-
-## What constitutes a new ADR?
-
-Anything where the answer to *"why did we do it this way?"* is non-obvious six months later. New cross-cutting features get an ADR; bug fixes and refactors don't.
-
-When a decision is reversed, the new ADR **supersedes** the old one — never edit the historical file.
-''';
-
 const kVoice = r'''
 # Voice (alpha — push-to-talk)
 
@@ -2822,123 +2801,6 @@ provider = "off"
 Mic button stops working immediately, no rebuild needed.
 ''';
 
-const kRoadmap = r'''
-# Roadmap
-
-These features are planned or under active consideration. They are tracked in [BACKLOG.md](https://github.com/NVME-git/rocky/blob/main/BACKLOG.md) in the repository.
-
----
-
-## Teaching quality
-
-### Struggle score affects stability
-
-Rocky currently marks a topic as "understood" regardless of how much scaffolding was needed to get there. A topic answered immediately should earn higher stability than one that required three follow-ups and two clues.
-
-**Planned change:** Track a struggle score per review — follow-up count, clue requests, simplification requests. Weight stability gain inversely: a clean first-attempt answer builds stability faster than a scaffolded one.
-
----
-
-### AI-source tagging
-
-A topic can enter your PKG two ways: from your own code (a diff you wrote, a commit you made) or from an AI-assisted prompt (Rocky saw the topic mentioned in something you asked Claude to build). These are not the same thing. The first comes with struggle and context; the second might come with neither.
-
-**Planned change:** Tag each topic with its origin — `own_code` or `ai_prompt`. Topics tagged `ai_prompt` are quizzed more aggressively. `rocky ls` and `rocky stats` surface them as a distinct category: topics you know about but may never have had to reason through independently.
-
----
-
-### Independence score
-
-A second axis alongside recall: what fraction of this topic's appearances came from your own diffs vs. AI-generated code?
-
-**Planned change:** Track per-topic encounter sources. In `rocky stats`, show a new category — "AI-dependent" — for topics with high recall but low independent-code encounters. These are the risk areas: you could ship them confidently and be lost if the AI gets them wrong.
-
----
-
-### Hard mode
-
-Rocky provides clues, explanations, and question simplification to help when you're stuck. These are useful — but used too freely, they let you navigate a quiz session without ever sitting with genuine uncertainty.
-
-**Planned change:** `rocky quiz --hard` disables `[c]` clue, `[?]` explain, and `[s]` simpler for the session. Configurable permanently in `.rocky.toml`:
-
-```toml
-[ui]
-hard_mode = true
-```
-
-You either answer from what you actually know, or you skip and admit the gap.
-
----
-
-### Debugging-focused question kind
-
-Rocky's Socratic questions ask about implications and consequences. That covers a lot — but the most durable engineering skill is debugging: given something broken, why did it break and how would you find it?
-
-**Planned change:** A new question kind generated at backfill and diff time alongside the canonical question: *given this code change, what would a production bug look like and what would the stack trace tell you?* Distinct from the implication question. Targets the skill AI is least likely to replace.
-
----
-
-### Pre-task gap framing
-
-When you run `rocky "task description"`, Rocky currently tells you what you know and quizzes you on gaps. The framing could be sharper: these aren't just gaps — they are specifically the topics you are about to ask AI to handle for you.
-
-**Planned change:** For each gap topic in a pre-task session, Rocky labels it as an AI-risk: *"You have a gap on Lua scripting in Redis. This is something AI will likely write for you. Here is the question you should be able to answer before trusting what it produces."* Rocky becomes an explicit check on AI output, not just a learning tool.
-
----
-
-## Workflow integration
-
-### Rocky as a required PR check
-
-A GitHub Actions workflow that makes Rocky a required status check on pull requests. Before a PR can merge, Rocky analyses the diff, identifies the topics introduced, and checks whether the author has those topics in their PKG above a configurable recall threshold.
-
-**Planned design:**
-
-```yaml
-# .github/workflows/rocky-check.yml
-on: [pull_request]
-
-jobs:
-  rocky:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Rocky knowledge check
-        uses: NVME-git/rocky-action@v1
-        with:
-          min_recall: 0.6
-          pkg_url: ${{ secrets.ROCKY_PKG_URL }}   # your private PKG repo
-```
-
-Rocky fetches your PKG, runs the diff against the PR, and reports which topics are below threshold. The check passes when all introduced topics are either known or explicitly marked as accepted gaps.
-
-**GitHub stacked PRs:** When using stacked PRs (where each PR builds on the previous), the Rocky check can be scoped per-layer — each PR must demonstrate understanding of only the topics *it* introduces, not the entire stack. This scales the requirement to the size of the change.
-
-**Configuration in `.rocky.toml`:**
-
-```toml
-[pr_check]
-enabled = true
-min_recall = 0.6   # topics below this threshold block merge
-allow_bypass = false        # if true, author can override with a reason
-notify_reviewer = true      # post a comment showing topic scores
-```
-
----
-
-## Graph enrichment
-
-### Scheduled enrichment passes
-
-As Rocky adds new node fields (canonical clue, debugging questions, independence score), existing nodes need to be retroactively enriched. Currently this requires manual commands (`rocky backfill --fill-clues`).
-
-**Planned change:** A background scheduler that detects missing fields and runs enrichment silently — so quiz time is always fast and the PKG stays current without manual intervention.
-
----
-
-*All items above are tracked in [BACKLOG.md](https://github.com/NVME-git/rocky/blob/main/BACKLOG.md). If you have ideas or want to contribute, open an issue.*
-''';
-
 const kReferences = r'''
 # References & Research
 
@@ -2962,7 +2824,7 @@ Mahoney's sharpest observation: AI tools give learners *confidence* without nece
 
 This is a new form of tutorial hell. The old version meant watching someone else solve problems without ever solving them yourself. The AI version means having problems solved *for* you, in code that runs, ships, and disappears into your codebase — leaving no trace of the struggle that would have built real understanding.
 
-Rocky's response to this is the core of its design: every topic must pass a Socratic question grounded in consequences, not definitions. But Mahoney's point pushes further — the source of a topic's entry into the PKG matters as much as whether you can answer a question about it. A topic you encountered in your own debugging is different from a topic you saw in AI-generated code. **[AI-source tagging](roadmap)** is the planned feature that makes this distinction explicit.
+Rocky's response to this is the core of its design: every topic must pass a Socratic question grounded in consequences, not definitions. But Mahoney's point pushes further — the source of a topic's entry into the PKG matters as much as whether you can answer a question about it. A topic you encountered in your own debugging is different from a topic you saw in AI-generated code. **[AI-source tagging](https://github.com/NVME-git/rocky/blob/main/BACKLOG.md)** is the planned feature that makes this distinction explicit.
 
 ---
 
@@ -2970,7 +2832,7 @@ Rocky's response to this is the core of its design: every topic must pass a Socr
 
 Mahoney expresses concern that students who rely on AI miss the grind of debugging — the hours spent staring at a problem with no help coming. That struggle isn't just inefficiency; it builds the resilience and pattern recognition that makes a developer effective under pressure.
 
-This maps directly to Rocky's scaffolding options — clues, explanations, simplification. These are useful when genuinely stuck, but used reflexively they become an escape from the productive discomfort that creates competence. **[Hard mode](roadmap)** is the planned response: a configuration that removes the escape routes, forcing genuine engagement or an honest skip.
+This maps directly to Rocky's scaffolding options — clues, explanations, simplification. These are useful when genuinely stuck, but used reflexively they become an escape from the productive discomfort that creates competence. **[Hard mode](https://github.com/NVME-git/rocky/blob/main/BACKLOG.md)** is the planned response: a configuration that removes the escape routes, forcing genuine engagement or an honest skip.
 
 ---
 
@@ -2978,7 +2840,7 @@ This maps directly to Rocky's scaffolding options — clues, explanations, simpl
 
 When asked which skills AI won't replace, Mahoney's answer is immediate: problem-solving and debugging. Not because AI can't debug — it can — but because the *judgment* to know when an AI's debug is wrong requires the same forensic instincts that only come from having debugged things yourself.
 
-Rocky's current question format asks about implications and consequences. **[Debugging-focused questions](roadmap)** extend this into forensic territory: given this code change, what would a production failure look like? What would the stack trace tell you? These questions can't be answered by pattern-matching on documentation — they require the kind of thinking Mahoney identifies as durable.
+Rocky's current question format asks about implications and consequences. **[Debugging-focused questions](https://github.com/NVME-git/rocky/blob/main/BACKLOG.md)** extend this into forensic territory: given this code change, what would a production failure look like? What would the stack trace tell you? These questions can't be answered by pattern-matching on documentation — they require the kind of thinking Mahoney identifies as durable.
 
 ---
 
@@ -2986,7 +2848,7 @@ Rocky's current question format asks about implications and consequences. **[Deb
 
 Mahoney describes his own AI workflow: use the tool to iterate on a *plan* first, refuse to let it generate code until the plan is solid. This disciplines the collaboration — the developer stays in the decision seat, and the AI handles execution within defined constraints.
 
-Rocky's pre-task mode (`rocky "task description"`) already reviews what you know before work begins. **[Pre-task gap framing](roadmap)** makes the AI-risk dimension explicit: for each gap topic, Rocky tells you *this is something AI will likely write for you — here is the question you should be able to answer before trusting the output*. The pre-task session becomes a readiness check for supervised AI use, not just a general review.
+Rocky's pre-task mode (`rocky "task description"`) already reviews what you know before work begins. **[Pre-task gap framing](https://github.com/NVME-git/rocky/blob/main/BACKLOG.md)** makes the AI-risk dimension explicit: for each gap topic, Rocky tells you *this is something AI will likely write for you — here is the question you should be able to answer before trusting the output*. The pre-task session becomes a readiness check for supervised AI use, not just a general review.
 
 ---
 
@@ -3004,7 +2866,7 @@ One idea that emerged from this discussion: if AI is handling more and more of t
 
 The conventional answer is code review. But code review is good at catching logic errors, not at detecting whether the author could reason through the code without the AI that wrote it.
 
-Rocky's PR check (**[planned feature](roadmap)**) addresses this at the workflow level: before a PR can merge, Rocky verifies the author's PKG shows adequate recall on the topics introduced. Paired with GitHub's stacked PRs feature — where PRs build on each other in a reviewable stack — this creates a layer-by-layer knowledge check: each PR in the stack must demonstrate understanding of only what it introduces.
+Rocky's PR check (**[planned feature](https://github.com/NVME-git/rocky/blob/main/BACKLOG.md)**) addresses this at the workflow level: before a PR can merge, Rocky verifies the author's PKG shows adequate recall on the topics introduced. Paired with GitHub's stacked PRs feature — where PRs build on each other in a reviewable stack — this creates a layer-by-layer knowledge check: each PR in the stack must demonstrate understanding of only what it introduces.
 
 This doesn't slow down shipping. It makes the assumption behind shipping — *"the author knows what this does"* — verifiable.
 

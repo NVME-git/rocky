@@ -123,8 +123,6 @@ final List<DocSection> kSections = [
   const DocSection('Sync & Backup', Icons.sync, kSync),
   const DocSection('Demo Usecase', Icons.timeline, kWalkthrough),
   const DocSection('Voice', Icons.mic_rounded, kVoice),
-  const DocSection('Architecture decisions', Icons.architecture, kArchitecture),
-  const DocSection('Roadmap', Icons.map_outlined, kRoadmap),
   const DocSection('References', Icons.menu_book_outlined, kReferences),
 ];
 
