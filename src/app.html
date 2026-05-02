@@ -31,9 +31,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #tab-dashboard{overflow-y:auto;padding:24px}
 .iq-row{display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap}
 .iq-row .iq-half{flex:1;min-width:280px;margin-bottom:0}
-.iq-trend{font-size:11px;color:#7c9ef3;font-weight:400;letter-spacing:0;text-transform:none;margin-left:6px}
+.atrophy-banner .label{margin-bottom:2px}
+.iq-trend{display:block;font-size:11px;color:#7c9ef3;font-weight:400;letter-spacing:0;text-transform:none;margin-bottom:6px}
 .iq-trend.up{color:#1d9e75}
 .iq-trend.down{color:#e74c3c}
+.iq-spark{display:block;margin-top:8px;width:100%;height:32px;overflow:visible}
+.iq-spark .iq-spark-line{fill:none;stroke-width:1.5}
+.iq-spark .iq-spark-area{stroke:none;opacity:.18}
+.iq-spark .iq-spark-dot{stroke:#0f1117;stroke-width:1.5}
+.iq-spark .iq-spark-empty{font-size:9px;fill:#555e7a}
 .atrophy-banner{background:linear-gradient(135deg,#1a1d27,#0f1629);border:1px solid #2d3148;border-radius:10px;padding:18px 24px;margin-bottom:18px;display:flex;align-items:center;gap:18px}
 .atrophy-banner .label{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#555e7a;margin-bottom:6px}
 .atrophy-banner .score-value{font-size:30px;font-weight:700;color:#F59E0B;line-height:1}
@@ -416,6 +422,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #quiz-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:none;align-items:center;justify-content:center}
 #quiz-overlay.visible{display:flex}
 #quiz-modal{background:#1a1d27;border:1px solid #2d3148;border-radius:12px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:14px}
+
+/* flip card inside the quiz modal — front: question + answer UI; back: revealed answer + eval result */
+.qm-flip{perspective:1400px;position:relative}
+.qm-flip-inner{display:grid;transition:transform .55s;transform-style:preserve-3d}
+.qm-flip.flipped .qm-flip-inner{transform:rotateY(180deg)}
+.qm-face{grid-area:1/1;backface-visibility:hidden;-webkit-backface-visibility:hidden;display:flex;flex-direction:column;gap:12px;border-radius:8px}
+.qm-face-back{transform:rotateY(180deg);background:rgba(20,26,46,.55);border:1px solid rgba(45,49,72,.6);padding:14px}
+.qm-answer-label{font-size:10px;color:#7c9ef3;text-transform:uppercase;letter-spacing:.6px}
+.qm-canonical{font-size:13px;color:#cfd6e8;line-height:1.5;background:rgba(30,35,64,.55);padding:10px 12px;border-radius:6px}
+.qm-eval-status{font-size:12px;color:#7c9ef3;font-style:italic;margin-top:4px}
+.qm-eval-status.error{color:#e74c3c;font-style:normal}
+.qm-eval-status.done{color:#1d9e75;font-style:normal;font-weight:600}
 .qm-progress-bar{height:3px;background:#1e2340;border-radius:2px;overflow:hidden}
 .qm-progress-fill{height:100%;background:#7c9ef3;border-radius:2px;transition:width .3s}
 .qm-meta{font-size:11px;color:#555e7a;display:flex;gap:10px}
@@ -517,18 +535,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="atrophy-banner iq-half">
       <div>
         <div class="label">Rocky IQ</div>
+        <div class="iq-trend" id="atrophy-trend">—</div>
         <div class="score-value" id="atrophy-value">—</div>
         <div class="score-meta" id="atrophy-meta">how well you are retaining recent material</div>
       </div>
       <div class="score-bar"><div class="score-fill" id="atrophy-fill" style="width:0"></div></div>
+      <svg class="iq-spark" id="atrophy-spark" preserveAspectRatio="none"></svg>
     </div>
     <div class="atrophy-banner iq-half" id="prompt-iq-banner" title="Click for recent prompts" style="cursor:default">
       <div>
-        <div class="label">PromptIQ <span class="iq-trend" id="prompt-iq-trend">—</span></div>
+        <div class="label">PromptIQ</div>
+        <div class="iq-trend" id="prompt-iq-trend">—</div>
         <div class="score-value" id="prompt-iq-value">—</div>
         <div class="score-meta" id="prompt-iq-meta">how well you direct your AI agents</div>
       </div>
       <div class="score-bar"><div class="score-fill" id="prompt-iq-fill" style="width:0;background:linear-gradient(90deg,#e74c3c,#e6a817 40%,#7c9ef3 80%)"></div></div>
+      <svg class="iq-spark" id="prompt-iq-spark" preserveAspectRatio="none"></svg>
     </div>
   </div>
   <div class="dash-grid">
@@ -593,6 +615,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <option value="due">Due (recall &lt; 70%)</option>
       <option value="critical">Critical (recall &lt; 40%)</option>
     </select>
+    <label style="font-size:11px;color:#555e7a">Project</label>
+    <select id="queue-project" onchange="renderQueue()">
+      <option value="">All projects</option>
+    </select>
     <span class="qt-count" id="queue-count">— topics</span>
     <button onclick="quizFromQueue()">Quiz top 5</button>
   </div>
@@ -601,6 +627,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- SESSIONS TAB -->
 <div id="tab-sessions" class="tab-content">
+  <div class="queue-toolbar">
+    <label style="font-size:11px;color:#555e7a">Project</label>
+    <select id="sessions-project" onchange="renderSessions()">
+      <option value="">All projects</option>
+    </select>
+    <span class="qt-count" id="sessions-count"></span>
+  </div>
   <div id="sessions-body"></div>
 </div>
 
@@ -630,7 +663,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <h4>What these pills do</h4>
       <div class="help-row"><span class="help-dot" style="background:#e74c3c"></span><span><b>Weakest</b> — your lowest-recall topic. Warp here to drill it.</span></div>
       <div class="help-row"><span class="help-dot" style="background:#3498db"></span><span><b>Domain</b> — jump to the most-recent topic in another knowledge area.</span></div>
-      <div class="help-row"><span class="help-dot" style="background:#9b59b6"></span><span><b>Project</b> — jump to the most-recent topic in another repo.</span></div>
+      <div class="help-row"><span class="help-dot" style="background:#9b59b6"></span><span><b>Project</b> — jump to the most-recent topic in another project.</span></div>
       <div class="help-row" style="margin-top:8px;border-top:1px solid #2d3148;padding-top:8px"><span><b>Active pill</b> = the area you're currently in. Click another to warp.</span></div>
       <div class="help-row"><span><b>Planning</b> dims known nodes so unreviewed neighbors stand out.</span></div>
     </div>
@@ -744,33 +777,46 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="quiz-body">
       <div class="qm-progress-bar"><div class="qm-progress-fill" id="qm-progress"></div></div>
       <div class="qm-meta" id="qm-meta"></div>
-      <p class="qm-question" id="qm-question"></p>
-      <button class="qm-clue-toggle" id="clue-toggle" onclick="toggleClue()">Show clue</button>
-      <div class="qm-clue" id="qm-clue"></div>
-      <div id="llm-section">
-        <div class="qm-answer-row">
-          <textarea class="qm-textarea" id="llm-answer" placeholder="Write your answer… or hold the mic to speak" oninput="clearAnswerError()"></textarea>
-          <button type="button" class="qm-mic-btn" id="mic-btn"
-                  title="Hold to record · release to transcribe"
-                  onmousedown="startMic(event)" onmouseup="stopMic(event)"
-                  onmouseleave="stopMic(event)"
-                  ontouchstart="startMic(event)" ontouchend="stopMic(event)">
-            <span class="mic-icon">🎤</span>
-          </button>
+      <div class="qm-flip" id="qm-flip">
+        <div class="qm-flip-inner">
+          <!-- FRONT: question + answer UI -->
+          <div class="qm-face qm-face-front">
+            <p class="qm-question" id="qm-question"></p>
+            <button class="qm-clue-toggle" id="clue-toggle" onclick="toggleClue()">Show clue</button>
+            <div class="qm-clue" id="qm-clue"></div>
+            <div id="llm-section">
+              <div class="qm-answer-row">
+                <textarea class="qm-textarea" id="llm-answer" placeholder="Write your answer… or hold the mic to speak" oninput="clearAnswerError()"></textarea>
+                <button type="button" class="qm-mic-btn" id="mic-btn"
+                        title="Hold to record · release to transcribe"
+                        onmousedown="startMic(event)" onmouseup="stopMic(event)"
+                        onmouseleave="stopMic(event)"
+                        ontouchstart="startMic(event)" ontouchend="stopMic(event)">
+                  <span class="mic-icon">🎤</span>
+                </button>
+              </div>
+              <div class="qm-mic-hint" id="mic-hint"></div>
+              <div class="qm-empty-hint" id="answer-empty-hint">Type or speak an answer first — or pick a self-assessment below.</div>
+              <button class="qm-submit-btn" id="llm-submit" onclick="submitLLM()">Submit answer</button>
+            </div>
+            <div class="qm-or-divider" id="assess-divider">or grade yourself</div>
+            <div class="qm-assess-row" id="assess-row">
+              <button class="qm-assess-btn" data-score="0.15" onclick="selfAssess(0.15)"><span class="score-label">✗</span>Don't know</button>
+              <button class="qm-assess-btn" data-score="0.5" onclick="selfAssess(0.5)"><span class="score-label">~</span>Partly</button>
+              <button class="qm-assess-btn" data-score="0.85" onclick="selfAssess(0.85)"><span class="score-label">✓</span>Know it</button>
+              <button class="qm-assess-btn" data-score="1.0" onclick="selfAssess(1.0)"><span class="score-label">★</span>Mastered</button>
+            </div>
+          </div>
+          <!-- BACK: revealed answer + LLM evaluation -->
+          <div class="qm-face qm-face-back">
+            <div class="qm-eval-status" id="qm-eval-status">Evaluating your answer…</div>
+            <div class="qm-answer-label">Reference answer</div>
+            <div class="qm-canonical" id="qm-canonical">—</div>
+            <div class="qm-feedback" id="llm-feedback" style="display:none"></div>
+            <div class="qm-followup" id="llm-followup" style="display:none"></div>
+            <button class="qm-next-btn" id="llm-next" onclick="nextQuestion()">Next →</button>
+          </div>
         </div>
-        <div class="qm-mic-hint" id="mic-hint"></div>
-        <div class="qm-empty-hint" id="answer-empty-hint">Type or speak an answer first — or pick a self-assessment below.</div>
-        <button class="qm-submit-btn" id="llm-submit" onclick="submitLLM()">Submit answer</button>
-        <div class="qm-feedback" id="llm-feedback" style="display:none"></div>
-        <div class="qm-followup" id="llm-followup" style="display:none"></div>
-        <button class="qm-next-btn" id="llm-next" onclick="nextQuestion()">Next →</button>
-      </div>
-      <div class="qm-or-divider" id="assess-divider">or grade yourself</div>
-      <div class="qm-assess-row" id="assess-row">
-        <button class="qm-assess-btn" data-score="0.15" onclick="selfAssess(0.15)"><span class="score-label">✗</span>Don't know</button>
-        <button class="qm-assess-btn" data-score="0.5" onclick="selfAssess(0.5)"><span class="score-label">~</span>Partly</button>
-        <button class="qm-assess-btn" data-score="0.85" onclick="selfAssess(0.85)"><span class="score-label">✓</span>Know it</button>
-        <button class="qm-assess-btn" data-score="1.0" onclick="selfAssess(1.0)"><span class="score-label">★</span>Mastered</button>
       </div>
     </div>
     <div id="quiz-summary">
@@ -791,7 +837,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="bd-reasons">
       <label class="bd-reason"><input type="radio" name="bd-reason" value="not relevant" checked> Not relevant</label>
       <label class="bd-reason"><input type="radio" name="bd-reason" value="too vague"> Too vague</label>
-      <label class="bd-reason"><input type="radio" name="bd-reason" value="references repo specifics"> References repo specifics</label>
+      <label class="bd-reason"><input type="radio" name="bd-reason" value="references project specifics"> References project specifics</label>
       <label class="bd-reason"><input type="radio" name="bd-reason" value="other"> Other (please tell us)</label>
     </div>
     <textarea id="bd-other-text" placeholder="What was wrong with this question?"></textarea>
@@ -2111,7 +2157,7 @@ function openDetailPanel(n) {
 
   const projectsLine = (n.repos && n.repos.length > 1)
     ? `<p class="panel-label">Projects</p><p class="panel-value" style="font-size:11px">${n.repos.join(', ')}</p>`
-    : `<p class="panel-label">Repo</p><p class="panel-value">${n.repo||'—'}</p>`;
+    : `<p class="panel-label">Project</p><p class="panel-value">${n.repo||'—'}</p>`;
   const bankHeader = `<p class="panel-label" style="display:flex;align-items:center;justify-content:space-between">
       <span>Question Bank ${n.question_bank ? `(${n.question_bank.length})` : ''}</span>
       <button class="bank-gen-btn" data-node-id="${escapeHtml(n.id)}" onclick="bankGenerate(event, this)" title="Use the LLM to generate more questions for this topic">+ Generate</button>
@@ -2563,14 +2609,20 @@ function showQuizQuestion() {
     divider.style.display = 'none';
   }
 
-  // Reset answer section
+  // Reset front face
   document.getElementById('llm-answer').value='';
   document.getElementById('llm-submit').textContent='Submit answer';
   document.getElementById('llm-submit').disabled=false;
+  clearAnswerError();
+
+  // Reset back face
+  document.getElementById('qm-flip').classList.remove('flipped');
+  document.getElementById('qm-canonical').textContent = q.answer || '(no canonical answer recorded — Rocky\'s feedback below is the reference)';
+  document.getElementById('qm-eval-status').textContent = 'Evaluating your answer…';
+  document.getElementById('qm-eval-status').className = 'qm-eval-status';
   document.getElementById('llm-feedback').style.display='none';
   document.getElementById('llm-followup').style.display='none';
   document.getElementById('llm-next').classList.remove('visible');
-  clearAnswerError();
 
   document.getElementById('quiz-body').style.display='flex';
   document.getElementById('quiz-body').style.flexDirection='column';
@@ -2594,19 +2646,25 @@ async function selfAssess(score) {
   quizState.scores.push(score);
   quizState.totalScore += score;
 
-  await fetch('/api/quiz/assess', {
+  // Flip card and show recorded score on the back face. POST in the background.
+  document.getElementById('qm-flip').classList.add('flipped');
+  const status = document.getElementById('qm-eval-status');
+  status.textContent = `Recorded · ${scoreLabel(score)}`;
+  status.className = 'qm-eval-status done';
+  document.getElementById('llm-next').classList.add('visible');
+
+  fetch('/api/quiz/assess', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({node_id:q.node_id, score, question:q.question})
-  });
-
-  nextQuestion();
+  }).catch(() => {});
 }
 
 async function submitLLM() {
   const ta = document.getElementById('llm-answer');
   const answer = ta.value.trim();
   if (!answer) {
-    ta.classList.remove('error'); // restart shake animation
+    // No answer = no attempt. Shake and prompt; don't record.
+    ta.classList.remove('error');
     void ta.offsetWidth;
     ta.classList.add('error');
     document.getElementById('answer-empty-hint').classList.add('visible');
@@ -2617,16 +2675,25 @@ async function submitLLM() {
   document.getElementById('llm-submit').disabled=true;
   document.getElementById('llm-submit').textContent='Evaluating…';
 
+  // Flip to back so user can read the canonical answer while LLM grades them.
+  document.getElementById('qm-flip').classList.add('flipped');
+  const status = document.getElementById('qm-eval-status');
+  status.textContent = 'Evaluating your answer…';
+  status.className = 'qm-eval-status';
+
   const q = quizState.questions[quizState.current];
   try {
     const resp = await fetch('/api/quiz/evaluate', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({node_id:q.node_id, question:q.question, answer})
     });
+    if (!resp.ok) throw new Error('eval ' + resp.status);
     const data = await resp.json();
     quizState.scores.push(data.score);
     quizState.totalScore += data.score;
 
+    status.textContent = `${scoreLabel(data.score)} · auto-recorded`;
+    status.className = 'qm-eval-status done';
     const fb = document.getElementById('llm-feedback');
     fb.textContent = data.feedback;
     fb.style.display='block';
@@ -2637,9 +2704,11 @@ async function submitLLM() {
     }
     document.getElementById('llm-next').classList.add('visible');
   } catch(e) {
+    status.textContent = 'Evaluation failed — try again or grade yourself.';
+    status.className = 'qm-eval-status error';
     document.getElementById('llm-submit').disabled=false;
-    document.getElementById('llm-submit').textContent='Submit';
-    alert('Evaluation failed');
+    document.getElementById('llm-submit').textContent='Submit answer';
+    document.getElementById('qm-flip').classList.remove('flipped');
   }
 }
 
@@ -2678,13 +2747,72 @@ document.getElementById('quiz-overlay').addEventListener('click', e => {
 // ══════════════════════════════════════════════════════════
 // DASHBOARD TAB
 // ══════════════════════════════════════════════════════════
+function drawIqSparkline(svg, rawValues, color) {
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const values = (rawValues || []).map(v => v == null ? null : Number(v));
+  const valid = values.filter(v => v != null && Number.isFinite(v));
+  if (valid.length < 2) {
+    const t = svgEl('text', { x: 4, y: 18, class: 'iq-spark-empty' });
+    t.textContent = valid.length === 0 ? 'no history yet — keep using Rocky' : 'collecting data…';
+    svg.appendChild(t);
+    return;
+  }
+  const W = svg.clientWidth || 280, H = svg.clientHeight || 32;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const PADX = 2, PADY = 4;
+  const lo = 0, hi = 100; // IQ is always 0..100 — keep axis stable so changes are comparable
+  const xs = values.length;
+  const xAt = (i) => PADX + (xs <= 1 ? 0 : (W - 2 * PADX) * (i / (xs - 1)));
+  const yAt = (v) => H - PADY - (H - 2 * PADY) * ((v - lo) / (hi - lo));
+
+  // Build segments — split on null gaps so the line doesn't fake-bridge missing days.
+  const segs = [];
+  let cur = [];
+  values.forEach((v, i) => {
+    if (v == null || !Number.isFinite(v)) {
+      if (cur.length) { segs.push(cur); cur = []; }
+    } else {
+      cur.push([xAt(i), yAt(v)]);
+    }
+  });
+  if (cur.length) segs.push(cur);
+
+  // Filled area under the longest contiguous run, for visual weight.
+  const longest = segs.reduce((a, b) => b.length > a.length ? b : a, []);
+  if (longest.length >= 2) {
+    const area = longest.map(([x, y], i) => (i === 0 ? `M${x},${H - PADY} L${x},${y}` : `L${x},${y}`)).join(' ')
+      + ` L${longest[longest.length - 1][0]},${H - PADY} Z`;
+    const a = svgEl('path', { d: area, class: 'iq-spark-area', fill: color });
+    svg.appendChild(a);
+  }
+
+  // Stroke each segment.
+  for (const seg of segs) {
+    if (seg.length < 2) continue;
+    const d = seg.map(([x, y], i) => (i === 0 ? `M${x},${y}` : `L${x},${y}`)).join(' ');
+    const path = svgEl('path', { d, class: 'iq-spark-line', stroke: color });
+    svg.appendChild(path);
+  }
+
+  // Latest-value dot, for emphasis.
+  const lastIdx = values.length - 1;
+  if (values[lastIdx] != null && Number.isFinite(values[lastIdx])) {
+    const dot = svgEl('circle', {
+      cx: xAt(lastIdx), cy: yAt(values[lastIdx]), r: 3,
+      fill: color, class: 'iq-spark-dot'
+    });
+    svg.appendChild(dot);
+  }
+}
+
 function renderDashboard() {
   if (!DATA) return;
 
   // Rocky IQ — inverse of atrophy. 100% = recent material fully retained;
   // 0% = recent material decayed. Easier to root for "go up" than "go down".
-  const atrophy = Number(DATA.atrophyScore || 0);
-  const iq = Math.max(0, Math.min(100, Math.round((1 - atrophy) * 100)));
+  const iq = Number.isFinite(DATA.rockyIq) ? DATA.rockyIq
+           : Math.max(0, Math.min(100, Math.round((1 - Number(DATA.atrophyScore || 0)) * 100)));
   document.getElementById('atrophy-value').textContent = iq + '%';
   document.getElementById('atrophy-fill').style.width = Math.max(2, iq) + '%';
   const meta = iq >= 80 ? 'sharp — recent material is being retained'
@@ -2693,7 +2821,16 @@ function renderDashboard() {
              : 'fading — recent material is decaying fast, quiz now to recover';
   document.getElementById('atrophy-meta').textContent = meta;
 
-  // PromptIQ — fetched lazily from /api/prompt-iq.
+  const rDelta = Number(DATA.rockyIqDelta || 0);
+  const rTrendEl = document.getElementById('atrophy-trend');
+  if (rDelta > 0)      { rTrendEl.textContent = '↑ ' + rDelta + ' this week'; rTrendEl.className = 'iq-trend up'; }
+  else if (rDelta < 0) { rTrendEl.textContent = '↓ ' + (-rDelta) + ' this week'; rTrendEl.className = 'iq-trend down'; }
+  else                 { rTrendEl.textContent = '— this week';                  rTrendEl.className = 'iq-trend'; }
+
+  drawIqSparkline(document.getElementById('atrophy-spark'), (DATA.iqHistory || []).map(s => s.rocky_iq), '#7c9ef3');
+  drawIqSparkline(document.getElementById('prompt-iq-spark'), (DATA.iqHistory || []).map(s => s.prompt_iq), '#e6a817');
+
+  // PromptIQ — fetched lazily from /api/prompt-iq for the current value + delta.
   fetch('/api/prompt-iq').then(r => r.ok ? r.json() : null).then(p => {
     if (!p) return;
     const v = Math.max(0, Math.min(100, p.current || 0));
@@ -2791,14 +2928,36 @@ function quizOne(nodeId, topic) {
 // ══════════════════════════════════════════════════════════
 // REVIEW QUEUE TAB
 // ══════════════════════════════════════════════════════════
+function projectsInData() {
+  if (!DATA) return [];
+  const set = new Set();
+  for (const n of DATA.nodes) {
+    if (n.kind === 'domain' || n.kind === 'user') continue;
+    if (n.repo) set.add(n.repo);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function fillProjectSelect(selectEl) {
+  if (!selectEl) return;
+  const current = selectEl.value;
+  const projects = projectsInData();
+  selectEl.innerHTML = '<option value="">All projects</option>' +
+    projects.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  if (projects.includes(current)) selectEl.value = current;
+}
+
 function renderQueue() {
   if (!DATA) return;
+  fillProjectSelect(document.getElementById('queue-project'));
   const sortBy = document.getElementById('queue-sort').value;
   const filter = document.getElementById('queue-filter').value;
+  const project = document.getElementById('queue-project').value;
 
   let nodes = DATA.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
   if (filter === 'due')      nodes = nodes.filter(n => n.recall_now < 0.7);
   if (filter === 'critical') nodes = nodes.filter(n => n.recall_now < 0.4);
+  if (project)               nodes = nodes.filter(n => (n.repo || '') === project);
 
   if (sortBy === 'recall')      nodes.sort((a, b) => a.recall_now - b.recall_now);
   else if (sortBy === 'recent') nodes.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
@@ -2837,9 +2996,11 @@ function quizFromQueue() {
   if (!DATA) return;
   const sortBy = document.getElementById('queue-sort').value;
   const filter = document.getElementById('queue-filter').value;
+  const project = document.getElementById('queue-project').value;
   let nodes = DATA.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
   if (filter === 'due')      nodes = nodes.filter(n => n.recall_now < 0.7);
   if (filter === 'critical') nodes = nodes.filter(n => n.recall_now < 0.4);
+  if (project)               nodes = nodes.filter(n => (n.repo || '') === project);
   if (sortBy === 'recall')   nodes.sort((a, b) => a.recall_now - b.recall_now);
   const ids = nodes.slice(0, 5).map(n => n.id);
   if (ids.length) startQuizNodes(ids);
@@ -2859,23 +3020,48 @@ async function loadSessions() {
   } catch (e) { console.error('Failed to load sessions:', e); }
 }
 
+function fillSessionsProjectSelect() {
+  const sel = document.getElementById('sessions-project');
+  if (!sel || !SESSIONS) return;
+  const current = sel.value;
+  const set = new Set();
+  for (const day of SESSIONS) {
+    for (const t of day.topics || []) {
+      if (t.repo) set.add(t.repo);
+    }
+  }
+  const projects = [...set].sort((a, b) => a.localeCompare(b));
+  sel.innerHTML = '<option value="">All projects</option>' +
+    projects.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  if (projects.includes(current)) sel.value = current;
+}
+
 function renderSessions() {
   const body = document.getElementById('sessions-body');
+  const countEl = document.getElementById('sessions-count');
   body.innerHTML = '';
+  fillSessionsProjectSelect();
   if (!SESSIONS || SESSIONS.length === 0) {
     body.innerHTML = '<div class="empty-msg">No sessions yet — make a commit, then run rocky session-end.</div>';
+    if (countEl) countEl.textContent = '';
     return;
   }
+  const project = document.getElementById('sessions-project').value;
+  let totalShown = 0, daysShown = 0;
   for (const day of SESSIONS) {
+    const topics = (day.topics || []).filter(t => !project || (t.repo || '') === project);
+    if (topics.length === 0) continue;
+    daysShown++;
+    totalShown += topics.length;
     const wrap = document.createElement('div');
     wrap.className = 'session-day';
     const date = document.createElement('div');
     date.className = 'session-date';
-    date.innerHTML = `${escapeHtml(formatDate(day.date))} <span class="sd-count">${day.count} topic${day.count===1?'':'s'}</span>`;
+    date.innerHTML = `${escapeHtml(formatDate(day.date))} <span class="sd-count">${topics.length} topic${topics.length===1?'':'s'}</span>`;
     wrap.appendChild(date);
     const grid = document.createElement('div');
     grid.className = 'session-topics';
-    for (const t of day.topics || []) {
+    for (const t of topics) {
       const chip = document.createElement('div');
       chip.className = 'session-chip';
       chip.onclick = () => quizOne(t.id, t.topic);
@@ -2886,6 +3072,14 @@ function renderSessions() {
     }
     wrap.appendChild(grid);
     body.appendChild(wrap);
+  }
+  if (countEl) {
+    countEl.textContent = project
+      ? `${totalShown} topic${totalShown===1?'':'s'} across ${daysShown} day${daysShown===1?'':'s'}`
+      : '';
+  }
+  if (totalShown === 0) {
+    body.innerHTML = `<div class="empty-msg">No sessions for "${escapeHtml(project)}".</div>`;
   }
 }
 

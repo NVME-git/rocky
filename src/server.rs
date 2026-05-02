@@ -235,6 +235,7 @@ struct QuizQuestion {
     domain: String,
     description: String,
     question: String,
+    answer: String,
     clue: String,
     has_canonical: bool,
 }
@@ -268,6 +269,7 @@ async fn quiz_start(
                     domain: node.domain.clone(),
                     description: node.description.clone(),
                     question,
+                    answer: node.canonical_answer.clone(),
                     clue: node.canonical_clue.clone(),
                     has_canonical: !node.canonical_question.is_empty(),
                 });
@@ -649,6 +651,21 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
     let due_for_review = due_for_review_list(db, &topic_nodes, 8);
     let recently_added = recently_added_list(&topic_nodes, 8);
 
+    // Take a daily snapshot of both IQs for trend tracking. Idempotent —
+    // the latest call within a day overwrites the same row.
+    let rocky_iq = ((1.0 - atrophy) * 100.0).round().clamp(0.0, 100.0) as i64;
+    let prompt_iq_now = promptiq::current_iq().ok().map(|r| r.current);
+    let _ = db.record_iq_snapshot(rocky_iq, prompt_iq_now);
+    let iq_history = db.recent_iq_snapshots(30).unwrap_or_default();
+    // Week-over-week delta for Rocky IQ — current vs the snapshot ~7 days ago
+    // (or the oldest available, whichever is later).
+    let rocky_iq_delta: i64 = if iq_history.len() >= 2 {
+        let cur = iq_history.last().map(|s| s.rocky_iq).unwrap_or(rocky_iq);
+        let baseline_idx = iq_history.len().saturating_sub(8);
+        let baseline = iq_history[baseline_idx].rocky_iq;
+        cur - baseline
+    } else { 0 };
+
     Ok(json!({
         "userName": user_name,
         "domains": ["Language","Database","Auth","API","Frontend","DevOps","Architecture","Performance","Security","Testing","Tooling","Data","Other"],
@@ -660,6 +677,9 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
         "summaries": repo_summaries,
         // Dashboard tab
         "atrophyScore": atrophy,
+        "rockyIq": rocky_iq,
+        "rockyIqDelta": rocky_iq_delta,
+        "iqHistory": iq_history,
         "domainHealth": domain_health,
         "dueForReview": due_for_review,
         "recentlyAdded": recently_added,

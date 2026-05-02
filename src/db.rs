@@ -147,6 +147,12 @@ CREATE TABLE IF NOT EXISTS pending_diffs (
     queued_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS pending_diffs_project ON pending_diffs(project_path);
+
+CREATE TABLE IF NOT EXISTS iq_snapshots (
+    date      TEXT PRIMARY KEY,
+    rocky_iq  INTEGER NOT NULL,
+    prompt_iq INTEGER
+);
 ";
 
 #[derive(Clone)]
@@ -1104,9 +1110,49 @@ impl Db {
             .collect();
         Ok(reviews)
     }
+
+    /// Idempotently record today's IQ snapshot. The latest call within a day wins.
+    pub fn record_iq_snapshot(&self, rocky_iq: i64, prompt_iq: Option<i64>) -> Result<()> {
+        let conn = self.connect()?;
+        let today = Self::today();
+        conn.execute(
+            "INSERT INTO iq_snapshots (date, rocky_iq, prompt_iq) VALUES (?1, ?2, ?3) \
+             ON CONFLICT(date) DO UPDATE SET rocky_iq = excluded.rocky_iq, prompt_iq = excluded.prompt_iq",
+            params![today, rocky_iq, prompt_iq],
+        )?;
+        Ok(())
+    }
+
+    /// Read the last `days` daily snapshots, oldest-first.
+    pub fn recent_iq_snapshots(&self, days: i64) -> Result<Vec<IqSnapshot>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT date, rocky_iq, prompt_iq FROM iq_snapshots \
+             ORDER BY date DESC LIMIT ?1"
+        )?;
+        let mut rows: Vec<IqSnapshot> = stmt
+            .query_map(params![days], |row| {
+                Ok(IqSnapshot {
+                    date: row.get(0)?,
+                    rocky_iq: row.get(1)?,
+                    prompt_iq: row.get(2)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        rows.reverse(); // oldest-first for charting
+        Ok(rows)
+    }
 }
 
 // ── value structs for new tables ─────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IqSnapshot {
+    pub date: String,
+    pub rocky_iq: i64,
+    pub prompt_iq: Option<i64>,
+}
 
 #[derive(Debug, Clone)]
 pub struct ProjectContext {
