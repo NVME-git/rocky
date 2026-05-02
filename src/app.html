@@ -103,6 +103,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #planning-toggle.active{background:#1e2340;border-color:#9b59b6;color:#c39bd3}
 #planning-toggle input{accent-color:#9b59b6;cursor:pointer}
 
+/* ── feedback tab ── */
+#tab-feedback{overflow-y:auto;padding:32px;justify-content:center}
+.fb-wrap{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:14px;width:100%}
+.fb-head h2{font-size:18px;font-weight:600;color:#e2e8f0;margin:0 0 8px}
+.fb-head p{font-size:12px;color:#8892a4;line-height:1.6;margin:0}
+.fb-head code{background:#1e2340;padding:1px 6px;border-radius:4px;color:#7c9ef3;font-family:ui-monospace,monospace;font-size:11px}
+#feedback-textarea{width:100%;min-height:300px;background:#1a1d27;border:1px solid #2d3148;border-radius:8px;color:#e2e8f0;font-size:13px;line-height:1.5;padding:14px;resize:vertical;outline:none;font-family:ui-monospace,monospace;transition:border-color .15s}
+#feedback-textarea:focus{border-color:#7c9ef3}
+.fb-actions{display:flex;gap:8px;flex-wrap:wrap}
+.fb-btn{padding:8px 16px;border-radius:6px;border:1px solid #3d4468;background:#1e2340;color:#a4adc4;cursor:pointer;font-size:12px;font-family:inherit;transition:all .15s;letter-spacing:.3px}
+.fb-btn:hover{border-color:#7c9ef3;color:#e2e8f0}
+.fb-btn:disabled{opacity:.5;cursor:default}
+.fb-save:hover{background:#1d2a1f;border-color:#2ecc71;color:#2ecc71}
+.fb-copy:hover{background:#22253a;border-color:#7c9ef3;color:#7c9ef3}
+.fb-share{background:#2a3260;color:#7c9ef3;border-color:#3d4468;font-weight:600}
+.fb-share:hover{background:#344080;color:#e2e8f0}
+.fb-mic{width:38px;height:38px;padding:0;border-radius:50%;font-size:16px;display:flex;align-items:center;justify-content:center;-webkit-user-select:none;user-select:none}
+.fb-mic.recording{background:#3a1e1e;border-color:#e74c3c;color:#e74c3c;animation:mic-pulse 1s infinite}
+.fb-mic.transcribing{background:#1e2a40;border-color:#7c9ef3;color:#7c9ef3}
+.fb-mic-hint{font-size:11px;color:#7c9ef3;font-style:italic;min-height:14px}
+.fb-mic-hint.error{color:#e74c3c;font-style:normal}
+.fb-status{font-size:11px;color:#7c9ef3;min-height:14px}
+.fb-status.error{color:#e74c3c}
+.fb-status.success{color:#2ecc71}
+
 /* ── tab content ── */
 .tab-content{display:none;flex:1;overflow:hidden}
 .tab-content.active{display:flex;flex-direction:column}
@@ -155,7 +180,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   radial-gradient(1.2px 1.2px at 8% 56%,#fff 50%,transparent 51%);
   background-repeat:repeat;background-size:600px 600px;opacity:.18;pointer-events:none}
 
-#wormhole-svg{flex:1;display:block;position:relative;z-index:1;transition:opacity .35s,transform .35s}
+#wormhole-svg{flex:1;display:block;position:relative;z-index:1;transition:opacity .35s;text-rendering:geometricPrecision;shape-rendering:geometricPrecision}
+#wormhole-svg text{text-rendering:geometricPrecision}
 
 /* top bar: search + warp history */
 #map-top{position:absolute;top:12px;left:12px;z-index:20;display:flex;flex-direction:column;gap:6px;pointer-events:none}
@@ -178,17 +204,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .warp-back:hover{border-color:#7c9ef3}
 .warp-trail{font-size:10px;color:#555e7a}
 
-/* wormhole panel — bottom-left so it doesn't overlay the right-side detail panel */
-#wormhole-panel{position:absolute;bottom:12px;left:12px;width:180px;background:rgba(26,29,39,.92);border:1px solid #2d3148;border-radius:8px;padding:10px 10px 12px;z-index:15;backdrop-filter:blur(4px)}
-.wp-h{font-weight:700;font-size:12px;color:#c4cde0;margin:0 0 1px 2px}
-.wp-sub-h{font-size:10px;color:#555e7a;margin:0 0 9px 2px;text-transform:uppercase;letter-spacing:.6px}
-#wormhole-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
-.wormhole-portal{display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:#1a1d27;border:1px solid #2d3148;border-left:3px solid #3d4468;border-radius:4px;padding:6px 8px;cursor:pointer;transition:all .12s;text-align:left;width:100%;color:#e2e8f0}
-.wormhole-portal:hover{background:#232740;transform:translateX(-2px)}
-.wormhole-portal.danger{border-left-color:#e74c3c}
-.wormhole-portal .wp-icon{font-size:12px;margin-right:4px;color:#8892a4}
-.wormhole-portal .wp-label{font-size:11px;font-weight:600;line-height:1.2;word-break:break-word}
-.wormhole-portal .wp-sub{font-size:9px;color:#555e7a;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+/* wormhole filter bar — top-center horizontal pills */
+#wormhole-panel{position:absolute;top:12px;left:50%;transform:translateX(-50%);max-width:calc(100% - 540px);background:rgba(26,29,39,.92);border:1px solid #2d3148;border-radius:8px;padding:6px 8px;z-index:15;backdrop-filter:blur(4px);display:flex;align-items:center;gap:8px}
+#wormhole-list{display:flex;flex-direction:row;align-items:center;gap:6px;flex-wrap:wrap}
+.wormhole-portal{display:inline-flex;align-items:center;gap:6px;background:#1a1d27;border:1px solid #2d3148;border-radius:14px;padding:4px 10px;cursor:pointer;transition:background .12s,border-color .12s,color .12s;text-align:left;color:#e2e8f0;line-height:1;--portal-color:#3d4468}
+.wormhole-portal:hover{background:#232740;border-color:var(--portal-color)}
+.wormhole-portal .wp-dot{width:7px;height:7px;border-radius:50%;background:var(--portal-color);flex-shrink:0}
+.wormhole-portal .wp-label{font-size:11px;font-weight:600}
+.wormhole-portal .wp-sub{font-size:9px;color:#6b7594;text-transform:uppercase;letter-spacing:.4px}
+.wormhole-portal.active{background:var(--portal-color);border-color:var(--portal-color);color:#0f1117}
+.wormhole-portal.active .wp-dot{background:#0f1117}
+.wormhole-portal.active .wp-sub{color:rgba(15,17,23,.7)}
+.wormhole-portal.danger{--portal-color:#e74c3c}
+#wormhole-panel .wp-divider{width:1px;height:18px;background:#2d3148;flex-shrink:0}
+#wormhole-help{background:#1a1d27;border:1px solid #2d3148;color:#7c9ef3;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:inherit;padding:0}
+#wormhole-help:hover{border-color:#7c9ef3;background:#1e2340}
+#wormhole-help-popover{position:absolute;top:42px;right:0;width:260px;background:#1a1d27;border:1px solid #2d3148;border-radius:8px;padding:12px 14px;font-size:11px;color:#a4adc4;line-height:1.5;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:20}
+#wormhole-help-popover.visible{display:block}
+#wormhole-help-popover h4{font-size:11px;color:#c4cde0;margin:0 0 6px;text-transform:uppercase;letter-spacing:.5px}
+#wormhole-help-popover .help-row{display:flex;align-items:center;gap:6px;margin:4px 0}
+#wormhole-help-popover .help-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+#planning-toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#8892a4;cursor:pointer;padding:4px 8px;border-radius:14px;border:1px solid transparent;white-space:nowrap}
+#planning-toggle:hover{background:#1e2340;color:#e2e8f0}
+#planning-toggle input{accent-color:#7c9ef3;cursor:pointer}
 
 /* wormhole node visuals */
 .warp-node{cursor:pointer;opacity:0;animation:warp-node-in .7s cubic-bezier(.18,.89,.32,1.28) forwards}
@@ -286,7 +324,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .saga-edge-fade{stroke-opacity:.18}
 
 /* ── panels ── */
-#taxonomy-panel,#detail-panel{position:absolute;top:0;bottom:0;background:#1a1d27;border:1px solid #2d3148;overflow-y:auto;font-size:12px;z-index:10;transition:transform .2s}
+#taxonomy-panel,#detail-panel{position:absolute;top:0;bottom:0;background:rgba(20,23,33,.55);border:1px solid rgba(45,49,72,.5);backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%);overflow-y:auto;font-size:12px;z-index:10;transition:transform .2s}
 #taxonomy-panel{left:0;width:220px;padding:12px;transform:translateX(-100%)}
 #taxonomy-panel.open{transform:translateX(0)}
 #detail-panel{right:0;width:280px;padding:14px;transform:translateX(100%)}
@@ -300,6 +338,63 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .r-fill{height:100%;border-radius:3px;transition:width .4s}
 .panel-quiz-btn{width:100%;margin-top:12px;padding:7px;border-radius:6px;border:none;background:#2a3260;color:#7c9ef3;font-weight:600;font-size:12px;cursor:pointer;transition:background .15s}
 .panel-quiz-btn:hover{background:#344080}
+
+/* question-bank flashcards */
+.bank-flip{perspective:800px;margin-top:8px;cursor:pointer;position:relative}
+.bank-x{position:absolute;top:4px;right:4px;width:18px;height:18px;border:none;background:rgba(15,17,23,.65);color:#8892a4;border-radius:50%;font-size:13px;line-height:1;cursor:pointer;z-index:5;display:flex;align-items:center;justify-content:center;padding:0;font-family:inherit;transition:background .12s,color .12s}
+.bank-x:hover{background:#e74c3c;color:#fff}
+.bank-mic{position:absolute;bottom:6px;right:6px;width:30px;height:30px;border:1px solid #3d4468;background:rgba(30,35,64,.78);color:#7c9ef3;border-radius:50%;font-size:14px;line-height:1;cursor:pointer;z-index:5;display:flex;align-items:center;justify-content:center;padding:0;font-family:inherit;-webkit-user-select:none;user-select:none;transition:all .12s}
+.bank-mic:hover{border-color:#7c9ef3;background:#1e2340}
+.bank-mic.recording{background:#3a1e1e;border-color:#e74c3c;color:#e74c3c;animation:mic-pulse 1s infinite}
+.bank-mic.transcribing{background:#1e2a40;border-color:#7c9ef3;color:#7c9ef3}
+.bank-mic-hint{position:absolute;bottom:6px;left:8px;right:42px;font-size:9px;color:#7c9ef3;line-height:1.2;font-style:italic;pointer-events:none}
+.bank-mic-hint.error{color:#e74c3c;font-style:normal}
+.bank-eval{margin-top:8px;padding:8px;border-radius:5px;background:rgba(124,158,243,.08);border:1px solid rgba(124,158,243,.2);font-size:10px;color:#a4adc4;line-height:1.4}
+.bank-eval-score{font-weight:600;color:#7c9ef3;margin-bottom:4px;font-size:11px}
+.bank-q{padding-bottom:32px}  /* room for mic button */
+.bank-gen-btn{background:rgba(42,50,96,.6);color:#7c9ef3;border:1px solid rgba(124,158,243,.3);border-radius:14px;padding:3px 10px;cursor:pointer;font-size:10px;font-family:inherit;letter-spacing:.3px;transition:all .12s}
+.bank-gen-btn:hover{background:#2a3260;border-color:#7c9ef3}
+.bank-gen-btn:disabled{opacity:.5;cursor:default}
+
+/* delete dialog */
+#bank-delete-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;display:none;align-items:center;justify-content:center}
+#bank-delete-overlay.visible{display:flex}
+#bank-delete-modal{background:#1a1d27;border:1px solid #2d3148;border-radius:10px;width:420px;max-width:95vw;padding:22px;display:flex;flex-direction:column;gap:12px}
+#bank-delete-modal h3{font-size:14px;font-weight:700;color:#e2e8f0;margin:0}
+#bank-delete-modal p{font-size:12px;color:#8892a4;margin:0;line-height:1.5}
+.bd-reasons{display:flex;flex-direction:column;gap:6px}
+.bd-reason{display:flex;align-items:center;gap:8px;font-size:12px;color:#cfd6e8;cursor:pointer;padding:6px 8px;border-radius:5px;transition:background .12s}
+.bd-reason:hover{background:#1e2340}
+.bd-reason input{accent-color:#7c9ef3;cursor:pointer}
+#bd-other-text{background:#1e2340;border:1px solid #3d4468;color:#e2e8f0;border-radius:5px;padding:7px 9px;font-size:12px;font-family:inherit;display:none;margin-top:2px;outline:none;resize:vertical;min-height:50px}
+#bd-other-text:focus{border-color:#7c9ef3}
+#bd-other-text.visible{display:block}
+.bd-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
+.bd-cancel{background:transparent;border:1px solid #3d4468;color:#8892a4;border-radius:5px;padding:7px 14px;cursor:pointer;font-family:inherit;font-size:12px}
+.bd-cancel:hover{color:#e2e8f0}
+.bd-confirm{background:#3a1e1e;border:1px solid #e74c3c;color:#e74c3c;border-radius:5px;padding:7px 14px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600}
+.bd-confirm:hover{background:#5a2828}
+.bank-flip-inner{display:grid;transition:transform .5s,opacity .3s;transform-style:preserve-3d;border:1px solid rgba(45,49,72,.7);border-radius:6px;background:rgba(30,35,64,.65)}
+.bank-flip:hover .bank-flip-inner{border-color:#3d4468}
+.bank-flip.flipped .bank-flip-inner{transform:rotateY(180deg)}
+.bank-flip.scored .bank-flip-inner{opacity:.55}
+.bank-face{grid-area:1/1;backface-visibility:hidden;-webkit-backface-visibility:hidden;padding:10px 12px;font-size:11px;line-height:1.45;border-radius:6px}
+.bank-back{transform:rotateY(180deg);background:rgba(20,26,46,.78)}
+.bank-q{color:#cfd6e8}
+.bank-q .bank-hint{display:block;margin-top:6px;font-size:9px;color:#555e7a;text-transform:uppercase;letter-spacing:.5px}
+.bank-a{color:#a4adc4}
+.bank-a-label{font-size:9px;color:#7c9ef3;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.bank-clue{color:#555e7a;font-size:10px;margin-top:6px;font-style:italic}
+.bank-score-row{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(45,49,72,.7)}
+.bank-score-btn{padding:6px 4px;border-radius:5px;border:1px solid #3d4468;background:rgba(30,35,64,.6);color:#8892a4;cursor:pointer;font-size:14px;font-family:inherit;transition:all .12s;line-height:1}
+.bank-score-btn:hover{color:#e2e8f0}
+.bank-score-btn[data-score="0.15"]:hover,.bank-score-btn[data-score="0.15"].selected{border-color:#e74c3c;background:#2a1e1e;color:#e74c3c}
+.bank-score-btn[data-score="0.5"]:hover,.bank-score-btn[data-score="0.5"].selected{border-color:#e67e22;background:#2a2218;color:#e67e22}
+.bank-score-btn[data-score="0.85"]:hover,.bank-score-btn[data-score="0.85"].selected{border-color:#2ecc71;background:#1a2a22;color:#2ecc71}
+.bank-score-btn[data-score="1.0"]:hover,.bank-score-btn[data-score="1.0"].selected{border-color:#3498db;background:#1a2030;color:#3498db}
+.bank-score-btn:disabled{cursor:default}
+.bank-score-feedback{font-size:10px;color:#7c9ef3;margin-top:6px;text-align:center;display:none}
+.bank-score-feedback.visible{display:block}
 
 #tax-list{list-style:none}
 #tax-list li{padding:4px 8px;border-radius:4px;cursor:pointer;color:#8892a4;font-size:12px;display:flex;justify-content:space-between}
@@ -341,11 +436,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .qm-assess-btn[data-score="1.0"]:hover{border-color:#3498db;background:#1a2030}
 .score-label{font-size:18px;display:block;margin-bottom:3px}
 
-/* llm mode */
-#llm-section{display:none;flex-direction:column;gap:8px}
-#llm-section.visible{display:flex}
-.qm-textarea{width:100%;background:#1e2340;border:1px solid #3d4468;border-radius:6px;color:#e2e8f0;font-size:13px;padding:10px;resize:vertical;min-height:80px;outline:none;font-family:inherit}
+/* answer input — always visible when LLM is available */
+#llm-section{display:flex;flex-direction:column;gap:8px}
+#llm-section.hidden{display:none}
+.qm-or-divider{font-size:10px;color:#555e7a;text-transform:uppercase;letter-spacing:.6px;text-align:center;margin:2px 0;display:flex;align-items:center;gap:8px}
+.qm-or-divider::before,.qm-or-divider::after{content:"";flex:1;height:1px;background:#2d3148}
+.qm-textarea{width:100%;background:#1e2340;border:1px solid #3d4468;border-radius:6px;color:#e2e8f0;font-size:13px;padding:10px;resize:vertical;min-height:80px;outline:none;font-family:inherit;transition:border-color .15s}
 .qm-textarea:focus{border-color:#7c9ef3}
+.qm-textarea.error{border-color:#e74c3c;animation:answer-shake .25s}
+@keyframes answer-shake{25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+.qm-empty-hint{font-size:11px;color:#e74c3c;display:none;margin-top:-4px}
+.qm-empty-hint.visible{display:block}
 .qm-answer-row{display:flex;align-items:stretch;gap:8px}
 .qm-answer-row .qm-textarea{flex:1}
 .qm-mic-btn{flex-shrink:0;width:44px;background:#1e2340;border:1px solid #3d4468;border-radius:6px;cursor:pointer;font-size:18px;color:#8892a4;transition:all .12s;-webkit-user-select:none;user-select:none;display:flex;align-items:center;justify-content:center}
@@ -357,19 +458,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .qm-mic-hint{font-size:11px;color:#6b7594;min-height:14px;font-style:italic}
 .qm-mic-hint.error{color:#e74c3c;font-style:normal}
 .qm-mic-hint a{color:#7c9ef3;text-decoration:underline}
-.qm-submit-btn{align-self:flex-end;padding:7px 18px;border-radius:6px;border:none;background:#2a3260;color:#7c9ef3;font-weight:600;cursor:pointer;font-size:13px}
+.qm-submit-btn{width:100%;padding:13px 18px;border-radius:8px;border:none;background:#2a3260;color:#7c9ef3;font-weight:600;cursor:pointer;font-size:14px;letter-spacing:.3px;transition:background .15s,transform .05s;margin-top:2px}
 .qm-submit-btn:hover{background:#344080}
-.qm-submit-btn:disabled{opacity:.5;cursor:default}
+.qm-submit-btn:active{transform:translateY(1px)}
+.qm-submit-btn:disabled{opacity:.5;cursor:default;transform:none}
 .qm-feedback{font-size:13px;color:#a0a8c0;background:#1e2340;padding:10px 12px;border-radius:6px;line-height:1.5}
 .qm-followup{font-size:12px;color:#7c9ef3;font-style:italic;margin-top:4px}
 .qm-next-btn{align-self:flex-end;padding:7px 18px;border-radius:6px;border:none;background:#232740;color:#e2e8f0;font-weight:600;cursor:pointer;font-size:13px;display:none}
 .qm-next-btn.visible{display:block}
 .qm-next-btn:hover{background:#2d3456}
-
-/* llm toggle */
-.qm-mode-row{display:flex;align-items:center;gap:8px;font-size:11px;color:#555e7a}
-.qm-mode-row label{cursor:pointer;display:flex;align-items:center;gap:4px}
-.qm-mode-row input[type=checkbox]{accent-color:#7c9ef3}
 
 /* summary */
 #quiz-summary{display:none;flex-direction:column;gap:12px;align-items:center;text-align:center}
@@ -401,6 +498,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="nav-btn" data-tab="sessions" onclick="switchTab('sessions')"><span class="nav-icon">⊡</span>Sessions</button>
     <button class="nav-btn" data-tab="projects" onclick="switchTab('projects')"><span class="nav-icon">▣</span>Projects</button>
     <button class="nav-btn" id="nav-saga" data-tab="saga" onclick="switchTab('saga')"><span class="nav-icon">✦</span>Saga</button>
+    <button class="nav-btn" data-tab="feedback" onclick="switchTab('feedback')"><span class="nav-icon">✎</span>Feedback</button>
   </div>
   <div class="spacer"></div>
   <div class="stats" id="top-stats">
@@ -519,15 +617,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="warp-history"></div>
   </div>
 
-  <!-- right: wormhole portals -->
+  <!-- top-center: filter pills (warp targets + planning toggle) -->
   <div id="wormhole-panel">
-    <p class="wp-h">Wormholes</p>
-    <p class="wp-sub-h">jump to elsewhere</p>
     <div id="wormhole-list"></div>
+    <span class="wp-divider"></span>
     <label id="planning-toggle" title="Dim nodes you already know well; highlight unreviewed neighbors.">
       <input type="checkbox" id="planning-mode" onchange="togglePlanningMode()">
-      <span>Planning mode</span>
+      <span>Planning</span>
     </label>
+    <button id="wormhole-help" type="button" onclick="toggleWormholeHelp(event)" aria-label="What do these pills mean?">?</button>
+    <div id="wormhole-help-popover">
+      <h4>What these pills do</h4>
+      <div class="help-row"><span class="help-dot" style="background:#e74c3c"></span><span><b>Weakest</b> — your lowest-recall topic. Warp here to drill it.</span></div>
+      <div class="help-row"><span class="help-dot" style="background:#3498db"></span><span><b>Domain</b> — jump to the most-recent topic in another knowledge area.</span></div>
+      <div class="help-row"><span class="help-dot" style="background:#9b59b6"></span><span><b>Project</b> — jump to the most-recent topic in another repo.</span></div>
+      <div class="help-row" style="margin-top:8px;border-top:1px solid #2d3148;padding-top:8px"><span><b>Active pill</b> = the area you're currently in. Click another to warp.</span></div>
+      <div class="help-row"><span><b>Planning</b> dims known nodes so unreviewed neighbors stand out.</span></div>
+    </div>
   </div>
 
   <div id="taxonomy-panel">
@@ -607,6 +713,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </select>
   </div>
 </div>
+
+<!-- FEEDBACK TAB -->
+<div id="tab-feedback" class="tab-content">
+  <div class="fb-wrap">
+    <div class="fb-head">
+      <h2>Feedback</h2>
+      <p>Pop your ideas, gripes, or wishlists in here to help Rocky improve. You can also hold the mic and speak — your transcript gets appended to the end. Saved locally to <code>~/.rocky/FEEDBACK.md</code>.</p>
+    </div>
+    <textarea id="feedback-textarea" placeholder="What's on your mind? What's working? What's not?"></textarea>
+    <div class="fb-mic-hint" id="feedback-mic-hint"></div>
+    <div class="fb-actions">
+      <button class="fb-btn fb-mic" id="feedback-mic-btn"
+        title="Hold to record · release to append to the end"
+        onmousedown="feedbackMicStart(event)" onmouseup="feedbackMicStop(event)"
+        onmouseleave="feedbackMicStop(event)"
+        ontouchstart="feedbackMicStart(event)" ontouchend="feedbackMicStop(event)">🎤</button>
+      <button class="fb-btn fb-save" onclick="feedbackSave()">Save</button>
+      <button class="fb-btn fb-copy" onclick="feedbackCopy()">Copy</button>
+      <button class="fb-btn fb-share" onclick="feedbackShare()">Share with Nabeel</button>
+    </div>
+    <div class="fb-status" id="feedback-status"></div>
+  </div>
+</div>
 </div><!-- /#main-pane -->
 
 <!-- QUIZ OVERLAY -->
@@ -618,18 +747,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <p class="qm-question" id="qm-question"></p>
       <button class="qm-clue-toggle" id="clue-toggle" onclick="toggleClue()">Show clue</button>
       <div class="qm-clue" id="qm-clue"></div>
-      <div class="qm-mode-row" id="mode-row" style="display:none">
-        <label><input type="checkbox" id="llm-toggle" onchange="toggleLLMMode()"> LLM evaluation</label>
-      </div>
-      <div class="qm-assess-row" id="assess-row">
-        <button class="qm-assess-btn" data-score="0.15" onclick="selfAssess(0.15)"><span class="score-label">✗</span>Don't know</button>
-        <button class="qm-assess-btn" data-score="0.5" onclick="selfAssess(0.5)"><span class="score-label">~</span>Partly</button>
-        <button class="qm-assess-btn" data-score="0.85" onclick="selfAssess(0.85)"><span class="score-label">✓</span>Know it</button>
-        <button class="qm-assess-btn" data-score="1.0" onclick="selfAssess(1.0)"><span class="score-label">★</span>Cold recall</button>
-      </div>
       <div id="llm-section">
         <div class="qm-answer-row">
-          <textarea class="qm-textarea" id="llm-answer" placeholder="Write your answer… or hold the mic to speak"></textarea>
+          <textarea class="qm-textarea" id="llm-answer" placeholder="Write your answer… or hold the mic to speak" oninput="clearAnswerError()"></textarea>
           <button type="button" class="qm-mic-btn" id="mic-btn"
                   title="Hold to record · release to transcribe"
                   onmousedown="startMic(event)" onmouseup="stopMic(event)"
@@ -639,10 +759,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
           </button>
         </div>
         <div class="qm-mic-hint" id="mic-hint"></div>
-        <button class="qm-submit-btn" id="llm-submit" onclick="submitLLM()">Submit</button>
+        <div class="qm-empty-hint" id="answer-empty-hint">Type or speak an answer first — or pick a self-assessment below.</div>
+        <button class="qm-submit-btn" id="llm-submit" onclick="submitLLM()">Submit answer</button>
         <div class="qm-feedback" id="llm-feedback" style="display:none"></div>
         <div class="qm-followup" id="llm-followup" style="display:none"></div>
         <button class="qm-next-btn" id="llm-next" onclick="nextQuestion()">Next →</button>
+      </div>
+      <div class="qm-or-divider" id="assess-divider">or grade yourself</div>
+      <div class="qm-assess-row" id="assess-row">
+        <button class="qm-assess-btn" data-score="0.15" onclick="selfAssess(0.15)"><span class="score-label">✗</span>Don't know</button>
+        <button class="qm-assess-btn" data-score="0.5" onclick="selfAssess(0.5)"><span class="score-label">~</span>Partly</button>
+        <button class="qm-assess-btn" data-score="0.85" onclick="selfAssess(0.85)"><span class="score-label">✓</span>Know it</button>
+        <button class="qm-assess-btn" data-score="1.0" onclick="selfAssess(1.0)"><span class="score-label">★</span>Mastered</button>
       </div>
     </div>
     <div id="quiz-summary">
@@ -654,6 +782,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <div id="tooltip"></div>
+
+<!-- DELETE-CARD CONFIRMATION DIALOG -->
+<div id="bank-delete-overlay">
+  <div id="bank-delete-modal">
+    <h3>Remove this question?</h3>
+    <p>The question is deleted from your bank. Tell us why so Rocky can do better next time — only your reason is saved, never the question text.</p>
+    <div class="bd-reasons">
+      <label class="bd-reason"><input type="radio" name="bd-reason" value="not relevant" checked> Not relevant</label>
+      <label class="bd-reason"><input type="radio" name="bd-reason" value="too vague"> Too vague</label>
+      <label class="bd-reason"><input type="radio" name="bd-reason" value="references repo specifics"> References repo specifics</label>
+      <label class="bd-reason"><input type="radio" name="bd-reason" value="other"> Other (please tell us)</label>
+    </div>
+    <textarea id="bd-other-text" placeholder="What was wrong with this question?"></textarea>
+    <div class="bd-actions">
+      <button class="bd-cancel" onclick="bankDeleteClose()">Cancel</button>
+      <button class="bd-confirm" id="bd-confirm-btn" onclick="bankDeleteConfirm()">Remove</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ══════════════════════════════════════════════════════════
@@ -754,6 +901,8 @@ function switchTab(name) {
     renderProjects();
   } else if (name === 'saga') {
     requestAnimationFrame(() => requestAnimationFrame(initSaga));
+  } else if (name === 'feedback') {
+    loadFeedback();
   }
   // Stop any animation when leaving Saga.
   if (name !== 'saga') stopSagaAnimation();
@@ -1132,7 +1281,7 @@ function computeScene(centerId) {
   const H = (svg && svg.clientHeight) || 600;
   const cx = W / 2, cy = H / 2;
   const R1 = Math.min(W, H) * 0.22;
-  const R2 = Math.min(W, H) * 0.42;
+  const R2 = Math.min(W, H) * 0.32;
 
   const positions = {};
   positions[centerId] = { x: cx, y: cy, tier: 0 };
@@ -1339,16 +1488,23 @@ function drawSceneNode(svg, n, pos, animDelay, opts) {
     }
   }
 
-  // Click affordance: only hop-1 nodes warp. Focus → opens detail panel.
-  // Hop-2 (peripheral) nodes also open detail but don't warp — they're
-  // "preview only", visual context for what's nearby.
-  g.style.cursor = (tier === 2) ? 'default' : 'pointer';
+  // Single click → open detail panel · double click → warp focus + open details.
+  g.style.cursor = 'pointer';
+  let clickTimer = null;
   g.addEventListener('click', (ev) => {
     ev.stopPropagation();
     if (ev.shiftKey) { toggleSelect(n.id); renderScene(currentScene); return; }
-    if (isFocus) selectGraphNode(n.id);
-    else if (tier === 1) warpTo(n.id);
-    else selectGraphNode(n.id);  // tier 2 → detail panel only
+    if (clickTimer) return; // 2nd click of a double — let dblclick handle it
+    clickTimer = setTimeout(() => {
+      clickTimer = null;
+      selectGraphNode(n.id);
+    }, 220);
+  });
+  g.addEventListener('dblclick', (ev) => {
+    ev.stopPropagation();
+    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+    if (!isFocus) warpTo(n.id);
+    selectGraphNode(n.id);
   });
   g.addEventListener('mouseover', () => showNodeTooltip(n, null));
   g.addEventListener('mouseout', hideTip);
@@ -1358,13 +1514,14 @@ function drawSceneNode(svg, n, pos, animDelay, opts) {
 
 // Smooth-shift from currentScene to a new scene centered on newId.
 //
-//   common, same-tier:  position-tween
-//   common, tier-changed: depart + arrive (cleanest visual handoff)
-//   departing only:      fade out + remove
-//   arriving only:       fade in (delayed) + persist
-//   common edges:        endpoints follow tweened node positions
-//   departing edges:     fade out
-//   arriving edges:      fade in (delayed)
+//   PHASE 1 — PAN:    every visible node translates by the same delta so the
+//                     clicked node ends up at the centre. All survivors keep
+//                     their relative positions during this slide. Arriving
+//                     hop-2 nodes (not in the old scene) stay hidden.
+//   PHASE 2 — SETTLE: arriving nodes fade in at their canonical positions;
+//                     out-of-2-hop departers fade out where they landed; common
+//                     nodes drift from their post-pan spots to the new
+//                     canonical ring positions; edges follow throughout.
 function shiftToFocus(newId) {
   if (warpAnimating) return;
   warpAnimating = true;
@@ -1413,9 +1570,8 @@ function shiftToFocus(newId) {
   }
   for (const [k, e] of newE) if (!oldE.has(k)) edgeArriving.push({ key: k, edge: e });
 
-  // Render arrivers with opacity 0 (they're in the DOM during the shift but invisible).
-  // For tier-changed nodes, the OLD element stays (we mark it via data-tier match) and a
-  // NEW element with the new tier is added — old fades out, new fades in.
+  // Pre-render arrivers at their canonical (new-scene) positions, invisible.
+  // They're in the DOM throughout but only become visible during phase 2.
   for (const id of arriving) {
     drawSceneNode(svg, newScene.nodes[id], newScene.positions[id], 0, { startInvisible: true });
   }
@@ -1423,24 +1579,22 @@ function shiftToFocus(newId) {
     addSceneEdge(svg, newScene, ae.edge, { startInvisible: true });
   }
 
-  // Two-phase animation:
-  //   Phase 1 (shift):  graph slides — clicked node moves to centre, common
-  //                     nodes ease to their new positions, edges follow.
-  //                     Departing stay visible at the old positions so the
-  //                     graph still feels coherent during the slide; arriving
-  //                     stay hidden until phase 2.
-  //   Phase 2 (fade):   movers are settled; departing fade out, arriving
-  //                     (now-in-view 2-hop) fade in.
-  const PHASE1_DUR = 600;
-  const PHASE2_DUR = 400;
+  // Pan delta: how far must we slide everything so the clicked node ends up at
+  // the new scene's centre? If newId wasn't in the old scene (e.g. search hit),
+  // pan delta is zero — phase 1 is a no-op and we go straight to settling.
+  const oldFocusP = oldScene.positions[newId];
+  const newFocusP = newScene.positions[newId];
+  const dx = oldFocusP ? (newFocusP.x - oldFocusP.x) : 0;
+  const dy = oldFocusP ? (newFocusP.y - oldFocusP.y) : 0;
+
+  const PHASE1_DUR = 550; // pan
+  const PHASE2_DUR = 550; // settle + fade
   const TOTAL = PHASE1_DUR + PHASE2_DUR;
   const start = performance.now();
 
-  // Cache element lookups (queries cost time; do once at start).
   const moverEls = movers.map(id => ({ id, el: svg.querySelector(`g.warp-node[data-id="${cssEscape(id)}"]`) }));
   const departingEls = departing.map(id => {
     const all = svg.querySelectorAll(`g.warp-node[data-id="${cssEscape(id)}"]`);
-    // For tier-changed: pick the one whose data-tier matches the OLD tier.
     const match = [...all].find(el => parseInt(el.getAttribute('data-tier')) === oldScene.positions[id].tier);
     return { id, el: match };
   });
@@ -1453,16 +1607,21 @@ function shiftToFocus(newId) {
   const edgeDepartingEls = edgeDeparting.map(de => ({ ...de, el: svg.querySelector(`line[data-edge-id="${de.key}"]`) }));
   const edgeArrivingEls = edgeArriving.map(ae => ({ ...ae, el: svg.querySelector(`line[data-edge-id="${ae.key}"]`) }));
 
-  // For any node id, return its position at the current shift progress eased1.
-  // If it's only in old scene, the position is locked at oldScene; only in new,
-  // locked at newScene; in both, linearly interpolated.
-  function endpointPos(id, eased1) {
+  // Position of any node at (eased1, eased2):
+  //   movers:    pan by delta * eased1; then drift from (oldP+delta) to newP by eased2.
+  //   departers: pan by delta * eased1; freeze at (oldP+delta) in phase 2.
+  //   arrivers:  always at newP (canonical).
+  function endpointPos(id, eased1, eased2) {
     const oldP = oldScene.positions[id];
     const newP = newScene.positions[id];
     if (oldP && newP) {
-      return [oldP.x + (newP.x - oldP.x) * eased1, oldP.y + (newP.y - oldP.y) * eased1];
+      const px = oldP.x + dx * eased1;
+      const py = oldP.y + dy * eased1;
+      const panEndX = oldP.x + dx;
+      const panEndY = oldP.y + dy;
+      return [px + (newP.x - panEndX) * eased2, py + (newP.y - panEndY) * eased2];
     }
-    if (oldP) return [oldP.x, oldP.y];
+    if (oldP) return [oldP.x + dx * eased1, oldP.y + dy * eased1];
     if (newP) return [newP.x, newP.y];
     return null;
   }
@@ -1483,29 +1642,31 @@ function shiftToFocus(newId) {
       return;
     }
 
-    // Mover node positions tween in phase 1, lock in phase 2 (eased1=1).
     for (const m of moverEls) {
       if (!m.el) continue;
-      const oldP = oldScene.positions[m.id];
-      const newP = newScene.positions[m.id];
-      const x = oldP.x + (newP.x - oldP.x) * eased1;
-      const y = oldP.y + (newP.y - oldP.y) * eased1;
-      m.el.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)})`);
+      const p = endpointPos(m.id, eased1, eased2);
+      if (p) m.el.setAttribute('transform', `translate(${p[0].toFixed(2)},${p[1].toFixed(2)})`);
     }
-    // Update ALL edge endpoints — including departing/arriving — so any edge
-    // attached to a mover follows its position smoothly during phase 1.
+    for (const d of departingEls) {
+      if (!d.el) continue;
+      const p = endpointPos(d.id, eased1, eased2);
+      if (p) d.el.setAttribute('transform', `translate(${p[0].toFixed(2)},${p[1].toFixed(2)})`);
+      d.el.style.opacity = String(1 - eased2);
+    }
+    for (const a of arrivingEls) if (a.el) a.el.style.opacity = String(eased2);
+
     for (const em of edgeMoverEls) {
       if (!em.el) continue;
-      const a = endpointPos(em.oldEdge.source, eased1);
-      const b = endpointPos(em.oldEdge.target, eased1);
+      const a = endpointPos(em.oldEdge.source, eased1, eased2);
+      const b = endpointPos(em.oldEdge.target, eased1, eased2);
       if (!a || !b) continue;
       em.el.setAttribute('x1', a[0].toFixed(2)); em.el.setAttribute('y1', a[1].toFixed(2));
       em.el.setAttribute('x2', b[0].toFixed(2)); em.el.setAttribute('y2', b[1].toFixed(2));
     }
     for (const de of edgeDepartingEls) {
       if (!de.el) continue;
-      const a = endpointPos(de.edge.source, eased1);
-      const b = endpointPos(de.edge.target, eased1);
+      const a = endpointPos(de.edge.source, eased1, eased2);
+      const b = endpointPos(de.edge.target, eased1, eased2);
       if (a && b) {
         de.el.setAttribute('x1', a[0].toFixed(2)); de.el.setAttribute('y1', a[1].toFixed(2));
         de.el.setAttribute('x2', b[0].toFixed(2)); de.el.setAttribute('y2', b[1].toFixed(2));
@@ -1514,18 +1675,14 @@ function shiftToFocus(newId) {
     }
     for (const ae of edgeArrivingEls) {
       if (!ae.el) continue;
-      const a = endpointPos(ae.edge.source, eased1);
-      const b = endpointPos(ae.edge.target, eased1);
+      const a = endpointPos(ae.edge.source, eased1, eased2);
+      const b = endpointPos(ae.edge.target, eased1, eased2);
       if (a && b) {
         ae.el.setAttribute('x1', a[0].toFixed(2)); ae.el.setAttribute('y1', a[1].toFixed(2));
         ae.el.setAttribute('x2', b[0].toFixed(2)); ae.el.setAttribute('y2', b[1].toFixed(2));
       }
       ae.el.style.opacity = String(eased2);
     }
-    // Departing nodes: visible during phase 1, fade in phase 2.
-    for (const d of departingEls) if (d.el) d.el.style.opacity = String(1 - eased2);
-    // Arriving nodes: hidden during phase 1, fade in during phase 2.
-    for (const a of arrivingEls) if (a.el) a.el.style.opacity = String(eased2);
 
     requestAnimationFrame(tick);
   }
@@ -1737,17 +1894,34 @@ function buildWormholePanel() {
   list.innerHTML = '';
   const portals = computePortals();
   if (portals.length === 0) {
-    list.innerHTML = '<div style="font-size:10px;color:#555e7a;padding:4px 2px">no other regions yet</div>';
+    list.innerHTML = '<div style="font-size:10px;color:#555e7a;padding:0 4px">no other regions yet</div>';
     return;
   }
   for (const p of portals) {
     const btn = document.createElement('button');
-    btn.className = 'wormhole-portal' + (p.kind === 'danger' ? ' danger' : '');
-    btn.style.borderLeftColor = p.color || '#3d4468';
-    btn.innerHTML = `<span><span class="wp-icon">${p.icon}</span><span class="wp-label">${escapeHtml(p.label)}</span></span><span class="wp-sub">${escapeHtml(p.sub)}</span>`;
+    btn.className = 'wormhole-portal' + (p.kind === 'danger' ? ' danger' : '') + (p.active ? ' active' : '');
+    if (p.color) btn.style.setProperty('--portal-color', p.color);
+    btn.title = p.active ? `You're here · ${p.sub}` : `Warp to ${p.label} · ${p.sub}`;
+    btn.innerHTML = `<span class="wp-dot"></span><span class="wp-label">${escapeHtml(p.label)}</span><span class="wp-sub">${escapeHtml(p.sub)}</span>`;
     btn.onclick = () => warpTo(p.targetId);
     list.appendChild(btn);
   }
+}
+
+function toggleWormholeHelp(ev) {
+  if (ev) ev.stopPropagation();
+  const pop = document.getElementById('wormhole-help-popover');
+  if (!pop) return;
+  const showing = pop.classList.toggle('visible');
+  if (showing) {
+    setTimeout(() => {
+      document.addEventListener('click', closeWormholeHelp, { once: true });
+    }, 0);
+  }
+}
+function closeWormholeHelp() {
+  const pop = document.getElementById('wormhole-help-popover');
+  if (pop) pop.classList.remove('visible');
 }
 
 function escapeHtml(s) {
@@ -1770,43 +1944,56 @@ function computePortals() {
     });
   }
 
-  // 2. Top 3 domains other than current
+  // 2. Top domains — include the current focus's domain so it can be marked active.
   const byDomain = {};
   for (const n of others) {
     if (!n.domain) continue;
     (byDomain[n.domain] ||= []).push(n);
   }
+  // If the current focus belongs to a domain, ensure that domain is in the bucket
+  // even if it has no other topics (so the user always sees a "you are here" pill).
+  if (focus?.domain && !byDomain[focus.domain]) byDomain[focus.domain] = [focus];
   const domains = Object.entries(byDomain)
-    .filter(([d]) => d !== focus?.domain)
-    .sort((a, b) => b[1].length - a[1].length)
-    .slice(0, 3);
+    .sort((a, b) => {
+      // Current domain first, then by topic count
+      if (a[0] === focus?.domain) return -1;
+      if (b[0] === focus?.domain) return 1;
+      return b[1].length - a[1].length;
+    })
+    .slice(0, 4);
   for (const [d, items] of domains) {
     items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
     portals.push({
       kind: 'domain', icon: '◆', label: d,
-      sub: `${items.length} topics`,
+      sub: `${items.length} topic${items.length === 1 ? '' : 's'}`,
       color: DOMAIN_COLORS[d] || '#3d4468',
-      targetId: items[0].id
+      targetId: items[0].id,
+      active: d === focus?.domain
     });
   }
 
-  // 3. Top 2 projects other than current
+  // 3. Top projects — include current focus's repo so it can be marked active.
   const byRepo = {};
   for (const n of others) {
     if (!n.repo) continue;
     (byRepo[n.repo] ||= []).push(n);
   }
+  if (focus?.repo && !byRepo[focus.repo]) byRepo[focus.repo] = [focus];
   const repos = Object.entries(byRepo)
-    .filter(([r]) => r !== focus?.repo)
-    .sort((a, b) => b[1].length - a[1].length)
-    .slice(0, 2);
+    .sort((a, b) => {
+      if (a[0] === focus?.repo) return -1;
+      if (b[0] === focus?.repo) return 1;
+      return b[1].length - a[1].length;
+    })
+    .slice(0, 3);
   for (const [r, items] of repos) {
     items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
     portals.push({
       kind: 'repo', icon: '▣', label: r,
-      sub: `${items.length} topics`,
+      sub: `${items.length} topic${items.length === 1 ? '' : 's'}`,
       color: '#9b59b6',
-      targetId: items[0].id
+      targetId: items[0].id,
+      active: r === focus?.repo
     });
   }
 
@@ -1925,10 +2112,41 @@ function openDetailPanel(n) {
   const projectsLine = (n.repos && n.repos.length > 1)
     ? `<p class="panel-label">Projects</p><p class="panel-value" style="font-size:11px">${n.repos.join(', ')}</p>`
     : `<p class="panel-label">Repo</p><p class="panel-value">${n.repo||'—'}</p>`;
+  const bankHeader = `<p class="panel-label" style="display:flex;align-items:center;justify-content:space-between">
+      <span>Question Bank ${n.question_bank ? `(${n.question_bank.length})` : ''}</span>
+      <button class="bank-gen-btn" data-node-id="${escapeHtml(n.id)}" onclick="bankGenerate(event, this)" title="Use the LLM to generate more questions for this topic">+ Generate</button>
+    </p>`;
   const bankHTML = (n.question_bank && n.question_bank.length)
-    ? `<p class="panel-label">Question Bank (${n.question_bank.length})</p>` +
-      n.question_bank.map(q => `<div style="border-top:1px solid #1e2340;margin-top:6px;padding-top:6px;font-size:11px"><div style="color:#cfd6e8">Q: ${q.question}</div><div style="color:#8892a4;margin-top:2px">A: ${q.answer}</div>${q.clue ? `<div style="color:#555e7a;margin-top:2px">Clue: ${q.clue}</div>` : ''}</div>`).join('')
-    : '';
+    ? bankHeader +
+      n.question_bank.map((q, idx) => `<div class="bank-flip" onclick="this.classList.toggle('flipped')">
+        <button class="bank-x" title="Remove this question (with optional reason)" onclick="bankDeleteOpen(event, this)" data-node-id="${escapeHtml(n.id)}" data-q-idx="${idx}">×</button>
+        <div class="bank-flip-inner">
+          <div class="bank-face bank-q">
+            ${escapeHtml(q.question)}
+            <span class="bank-hint">tap to reveal · or hold mic and speak your answer</span>
+            <button class="bank-mic" title="Hold to record your spoken answer · release to flip + score"
+              data-node-id="${escapeHtml(n.id)}" data-q-idx="${idx}"
+              onmousedown="bankMicStart(event, this)" onmouseup="bankMicStop(event, this)"
+              onmouseleave="bankMicStop(event, this)"
+              ontouchstart="bankMicStart(event, this)" ontouchend="bankMicStop(event, this)"
+              onclick="event.stopPropagation()">🎤</button>
+          </div>
+          <div class="bank-face bank-back">
+            <div class="bank-a-label">Answer</div>
+            <div class="bank-a">${escapeHtml(q.answer)}</div>
+            ${q.clue ? `<div class="bank-clue">${escapeHtml(q.clue)}</div>` : ''}
+            <div class="bank-eval" style="display:none"></div>
+            <div class="bank-score-row">
+              <button class="bank-score-btn" data-score="0.15" data-node-id="${escapeHtml(n.id)}" data-q-idx="${idx}" title="Don't know" onclick="bankScore(event, this)">✗</button>
+              <button class="bank-score-btn" data-score="0.5" data-node-id="${escapeHtml(n.id)}" data-q-idx="${idx}" title="Partly" onclick="bankScore(event, this)">~</button>
+              <button class="bank-score-btn" data-score="0.85" data-node-id="${escapeHtml(n.id)}" data-q-idx="${idx}" title="Know it" onclick="bankScore(event, this)">✓</button>
+              <button class="bank-score-btn" data-score="1.0" data-node-id="${escapeHtml(n.id)}" data-q-idx="${idx}" title="Mastered" onclick="bankScore(event, this)">★</button>
+            </div>
+            <div class="bank-score-feedback"></div>
+          </div>
+        </div>
+      </div>`).join('')
+    : bankHeader + `<p style="font-size:11px;color:#555e7a;margin-top:6px">No questions yet — click <b>+ Generate</b> to create some.</p>`;
   document.getElementById('detail-content').innerHTML = `
     <p class="panel-h">${n.topic}</p>
     <p class="panel-label">Domain</p><p class="panel-value" style="color:${DOMAIN_COLORS[n.domain]||'#8892a4'}">${n.domain||'—'}</p>
@@ -1957,8 +2175,322 @@ function openTaxPanel(n) {
 function closeDetailPanel() { document.getElementById('detail-panel').classList.remove('open'); selectedNode=null; }
 function closeTaxPanel() { document.getElementById('taxonomy-panel').classList.remove('open'); }
 
+// ── Feedback view ──────────────────────────────────────────
+const FEEDBACK_EMAIL = 'me@nabeelvandayar.com';
+
+async function loadFeedback() {
+  const ta = document.getElementById('feedback-textarea');
+  const status = document.getElementById('feedback-status');
+  status.textContent = '';
+  status.className = 'fb-status';
+  try {
+    const r = await fetch('/api/feedback');
+    if (!r.ok) throw new Error('read failed');
+    ta.value = await r.text();
+  } catch (e) {
+    status.classList.add('error');
+    status.textContent = 'Could not load — try again.';
+  }
+}
+
+async function feedbackSave() {
+  const ta = document.getElementById('feedback-textarea');
+  const status = document.getElementById('feedback-status');
+  status.className = 'fb-status';
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: ta.value })
+    });
+    if (!r.ok) throw new Error('save failed');
+    status.classList.add('success');
+    status.textContent = 'Saved to ~/.rocky/FEEDBACK.md';
+    setTimeout(() => { status.textContent = ''; status.className = 'fb-status'; }, 2400);
+  } catch (e) {
+    status.classList.add('error');
+    status.textContent = 'Save failed.';
+  }
+}
+
+async function feedbackCopy() {
+  const ta = document.getElementById('feedback-textarea');
+  const status = document.getElementById('feedback-status');
+  status.className = 'fb-status';
+  try {
+    await navigator.clipboard.writeText(ta.value);
+    status.classList.add('success');
+    status.textContent = 'Copied to clipboard';
+    setTimeout(() => { status.textContent = ''; status.className = 'fb-status'; }, 2000);
+  } catch (e) {
+    // Fallback: select the textarea + execCommand
+    ta.select();
+    try { document.execCommand('copy'); ta.setSelectionRange(0, 0);
+      status.classList.add('success'); status.textContent = 'Copied to clipboard';
+    } catch {
+      status.classList.add('error'); status.textContent = 'Copy failed.';
+    }
+  }
+}
+
+async function feedbackShare() {
+  const ta = document.getElementById('feedback-textarea');
+  const status = document.getElementById('feedback-status');
+  const content = ta.value;
+  status.className = 'fb-status';
+  if (!content.trim()) {
+    status.classList.add('error');
+    status.textContent = 'Nothing to share — write some feedback first.';
+    return;
+  }
+  // mailto: limit varies (~2KB on most clients). If we exceed it, fall back to copy.
+  const subject = 'Rocky feedback';
+  const body = content;
+  const mailto = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  if (mailto.length < 2000) {
+    window.location.href = mailto;
+    status.classList.add('success');
+    status.textContent = `Opening your mail client to ${FEEDBACK_EMAIL}…`;
+    return;
+  }
+  // Too long for mailto — copy and tell the user.
+  try {
+    await navigator.clipboard.writeText(content);
+    window.location.href = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=Pasted%20from%20clipboard%20%E2%80%94%20see%20FEEDBACK.md%20contents%20below.`;
+    status.classList.add('success');
+    status.textContent = `Too long for mailto — copied to clipboard. Paste into the email body.`;
+  } catch (e) {
+    status.classList.add('error');
+    status.textContent = `Could not copy automatically. Use the Copy button, then email ${FEEDBACK_EMAIL}.`;
+  }
+}
+
+async function feedbackMicStart(ev) {
+  const btn = document.getElementById('feedback-mic-btn');
+  const hint = document.getElementById('feedback-mic-hint');
+  await startMic(ev, {
+    btn, hint,
+    onTranscript: (transcript) => {
+      const t = (transcript || '').trim();
+      if (!t) return;
+      const ta = document.getElementById('feedback-textarea');
+      ta.value = (ta.value && !ta.value.endsWith('\n') ? ta.value + '\n\n' : ta.value) + t;
+      ta.scrollTop = ta.scrollHeight;
+    }
+  });
+}
+
+async function feedbackMicStop(ev) {
+  await stopMic(ev);
+}
+
+async function bankGenerate(ev, btn) {
+  ev.stopPropagation();
+  const nodeId = btn.dataset.nodeId;
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  try {
+    const r = await fetch('/api/topic/generate-questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: nodeId })
+    });
+    if (!r.ok) {
+      if (r.status === 503) throw new Error('LLM not available — check your config');
+      throw new Error('generate failed: ' + r.status);
+    }
+    const data = await r.json();
+    btn.textContent = `+ ${data.added || 0} added`;
+    await refreshData();
+    const updated = (DATA?.nodes || []).find(x => x.id === nodeId);
+    if (updated && document.getElementById('detail-panel').classList.contains('open')) {
+      openDetailPanel(updated);
+    }
+  } catch (e) {
+    btn.textContent = 'Failed';
+    btn.disabled = false;
+    setTimeout(() => { btn.textContent = original; }, 1800);
+  }
+}
+
+let bankDeleteCtx = null;
+
+function bankDeleteOpen(ev, btn) {
+  ev.stopPropagation();
+  bankDeleteCtx = {
+    nodeId: btn.dataset.nodeId,
+    qIdx: parseInt(btn.dataset.qIdx, 10),
+  };
+  const overlay = document.getElementById('bank-delete-overlay');
+  overlay.querySelectorAll('input[name="bd-reason"]').forEach(r => { r.checked = r.value === 'not relevant'; });
+  document.getElementById('bd-other-text').value = '';
+  document.getElementById('bd-other-text').classList.remove('visible');
+  overlay.classList.add('visible');
+  // Wire up the radio change handler (idempotent)
+  overlay.querySelectorAll('input[name="bd-reason"]').forEach(r => {
+    r.onchange = () => {
+      const ta = document.getElementById('bd-other-text');
+      if (r.value === 'other' && r.checked) {
+        ta.classList.add('visible');
+        ta.focus();
+      } else if (r.checked) {
+        ta.classList.remove('visible');
+      }
+    };
+  });
+}
+
+function bankDeleteClose() {
+  document.getElementById('bank-delete-overlay').classList.remove('visible');
+  bankDeleteCtx = null;
+}
+
+async function bankDeleteConfirm() {
+  if (!bankDeleteCtx) return;
+  const ctx = bankDeleteCtx;
+  const sel = document.querySelector('input[name="bd-reason"]:checked');
+  let reason = sel ? sel.value : '';
+  if (reason === 'other') {
+    reason = document.getElementById('bd-other-text').value.trim();
+    if (!reason) { document.getElementById('bd-other-text').focus(); return; }
+  }
+  const btn = document.getElementById('bd-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Removing…';
+  try {
+    const r = await fetch('/api/topic/delete-question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: ctx.nodeId, q_idx: ctx.qIdx, reason })
+    });
+    if (!r.ok) throw new Error('delete failed');
+    bankDeleteClose();
+    btn.disabled = false; btn.textContent = 'Remove';
+    await refreshData();
+    const updated = (DATA?.nodes || []).find(x => x.id === ctx.nodeId);
+    if (updated && document.getElementById('detail-panel').classList.contains('open')) {
+      openDetailPanel(updated);
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Try again';
+  }
+}
+
+async function bankMicStart(ev, btn) {
+  ev.stopPropagation();
+  const card = btn.closest('.bank-flip');
+  let hint = card.querySelector('.bank-mic-hint');
+  if (!hint) {
+    hint = document.createElement('div');
+    hint.className = 'bank-mic-hint';
+    card.querySelector('.bank-q').appendChild(hint);
+  }
+  await startMic(ev, { btn, hint });
+}
+
+async function bankMicStop(ev, btn) {
+  ev.stopPropagation();
+  const card = btn.closest('.bank-flip');
+  const nodeId = btn.dataset.nodeId;
+  const qIdx = parseInt(btn.dataset.qIdx, 10);
+  const node = (DATA?.nodes || []).find(n => n.id === nodeId);
+  const q = node?.question_bank?.[qIdx];
+  if (!q) { await stopMic(ev); return; }
+
+  // Override the global onTranscript handler set during startMic for this card.
+  if (micState.opts && micState.opts.btn === btn) {
+    micState.opts.onTranscript = async (transcript) => {
+      const t = (transcript || '').trim();
+      const hint = card.querySelector('.bank-mic-hint');
+      if (!t) {
+        if (hint) { hint.classList.add('error'); hint.textContent = 'Nothing heard — hold the button while speaking.'; }
+        return;
+      }
+      // Flip to back so the user sees the answer while we evaluate
+      card.classList.add('flipped');
+      const evalBox = card.querySelector('.bank-eval');
+      evalBox.style.display = 'block';
+      evalBox.innerHTML = `<div class="bank-eval-score">Evaluating your answer…</div><div>${escapeHtml(t)}</div>`;
+      try {
+        const r = await fetch('/api/quiz/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ node_id: nodeId, question: q.question, answer: t })
+        });
+        if (!r.ok) {
+          if (r.status === 503) {
+            evalBox.innerHTML = `<div class="bank-eval-score" style="color:#e6a817">LLM not available · self-grade below</div><div>${escapeHtml(t)}</div>`;
+          } else {
+            evalBox.innerHTML = `<div class="bank-eval-score" style="color:#e74c3c">Evaluation failed</div><div>${escapeHtml(t)}</div>`;
+          }
+          return;
+        }
+        const data = await r.json();
+        evalBox.innerHTML = `<div class="bank-eval-score">${scoreLabel(data.score)} · auto-recorded</div>
+          <div><b>You:</b> ${escapeHtml(t)}</div>
+          <div style="margin-top:4px"><b>Rocky:</b> ${escapeHtml(data.feedback || '')}</div>`;
+        // The /api/quiz/evaluate endpoint already records the review, so just refresh.
+        await refreshData();
+        const updated = (DATA?.nodes || []).find(x => x.id === nodeId);
+        if (updated && document.getElementById('detail-panel').classList.contains('open')) {
+          // Don't re-open panel mid-eval — would clobber the eval box.
+          // We rely on the next panel open / refresh cycle for the recall update.
+        }
+      } catch (e) {
+        evalBox.innerHTML = `<div class="bank-eval-score" style="color:#e74c3c">Network error</div>`;
+      }
+    };
+  }
+  await stopMic(ev);
+}
+
+async function bankScore(ev, btn) {
+  ev.stopPropagation();
+  const score = parseFloat(btn.dataset.score);
+  const nodeId = btn.dataset.nodeId;
+  const qIdx = parseInt(btn.dataset.qIdx, 10);
+  const card = btn.closest('.bank-flip');
+  const node = (DATA?.nodes || []).find(n => n.id === nodeId);
+  const q = node?.question_bank?.[qIdx];
+  if (!q) return;
+  const buttons = card.querySelectorAll('.bank-score-btn');
+  buttons.forEach(b => b.disabled = true);
+  btn.classList.add('selected');
+  const fb = card.querySelector('.bank-score-feedback');
+  try {
+    const resp = await fetch('/api/quiz/assess', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: nodeId, score, question: q.question })
+    });
+    if (!resp.ok) throw new Error('assess failed');
+    fb.textContent = 'Recorded · ' + scoreLabel(score);
+    fb.classList.add('visible');
+    setTimeout(() => {
+      card.classList.add('scored');
+      card.classList.remove('flipped');
+    }, 700);
+    setTimeout(async () => {
+      await refreshData();
+      // Re-render the detail panel with updated recall/review stats
+      const updated = (DATA?.nodes || []).find(x => x.id === nodeId);
+      if (updated && document.getElementById('detail-panel').classList.contains('open')) {
+        openDetailPanel(updated);
+      }
+    }, 1200);
+  } catch (e) {
+    buttons.forEach(b => b.disabled = false);
+    btn.classList.remove('selected');
+    fb.textContent = 'Failed to record — try again';
+    fb.style.color = '#e74c3c';
+    fb.classList.add('visible');
+  }
+}
+
 function scoreLabel(s) {
-  if (s>=.9) return '★ Cold';
+  if (s>=.9) return '★ Mastered';
   if (s>=.7) return '✓ Known';
   if (s>=.4) return '~ Partly';
   return '✗ Gap';
@@ -2019,19 +2551,26 @@ function showQuizQuestion() {
   document.getElementById('clue-toggle').textContent = 'Show clue';
   document.getElementById('clue-toggle').style.display = q.clue ? 'inline' : 'none';
 
-  // LLM toggle visibility
-  const modeRow = document.getElementById('mode-row');
-  modeRow.style.display = llmAvailable ? 'flex' : 'none';
-  document.getElementById('llm-toggle').checked = quizState.useLLM;
+  // Answer input is always visible when LLM is available; hidden otherwise
+  // (no LLM means there's nothing to evaluate against, so only self-assessment makes sense).
+  const llmSection = document.getElementById('llm-section');
+  const divider = document.getElementById('assess-divider');
+  if (llmAvailable) {
+    llmSection.classList.remove('hidden');
+    divider.style.display = 'flex';
+  } else {
+    llmSection.classList.add('hidden');
+    divider.style.display = 'none';
+  }
 
-  setLLMMode(quizState.useLLM);
-
-  // Reset llm section
+  // Reset answer section
   document.getElementById('llm-answer').value='';
+  document.getElementById('llm-submit').textContent='Submit answer';
+  document.getElementById('llm-submit').disabled=false;
   document.getElementById('llm-feedback').style.display='none';
   document.getElementById('llm-followup').style.display='none';
   document.getElementById('llm-next').classList.remove('visible');
-  document.getElementById('llm-submit').disabled=false;
+  clearAnswerError();
 
   document.getElementById('quiz-body').style.display='flex';
   document.getElementById('quiz-body').style.flexDirection='column';
@@ -2045,15 +2584,9 @@ function toggleClue() {
   document.getElementById('clue-toggle').textContent = showing ? 'Hide clue' : 'Show clue';
 }
 
-function toggleLLMMode() {
-  quizState.useLLM = document.getElementById('llm-toggle').checked;
-  setLLMMode(quizState.useLLM);
-}
-
-function setLLMMode(on) {
-  document.getElementById('assess-row').style.display = on ? 'none' : 'grid';
-  const llm = document.getElementById('llm-section');
-  if (on) llm.classList.add('visible'); else llm.classList.remove('visible');
+function clearAnswerError() {
+  document.getElementById('llm-answer').classList.remove('error');
+  document.getElementById('answer-empty-hint').classList.remove('visible');
 }
 
 async function selfAssess(score) {
@@ -2070,8 +2603,17 @@ async function selfAssess(score) {
 }
 
 async function submitLLM() {
-  const answer = document.getElementById('llm-answer').value.trim();
-  if (!answer) return;
+  const ta = document.getElementById('llm-answer');
+  const answer = ta.value.trim();
+  if (!answer) {
+    ta.classList.remove('error'); // restart shake animation
+    void ta.offsetWidth;
+    ta.classList.add('error');
+    document.getElementById('answer-empty-hint').classList.add('visible');
+    ta.focus();
+    return;
+  }
+  clearAnswerError();
   document.getElementById('llm-submit').disabled=true;
   document.getElementById('llm-submit').textContent='Evaluating…';
 
@@ -3173,28 +3715,29 @@ function applyPlanningStyle() {
 //      Float32 chunks into a buffer until release.
 //   2. mouseup → encode buffer as a 16-bit PCM WAV blob, POST to /api/transcribe.
 //   3. Insert transcript at the textarea cursor.
-let micState = { stream: null, ctx: null, source: null, processor: null, buffers: [], sampleRate: 16000 };
+let micState = { stream: null, ctx: null, source: null, processor: null, buffers: [], sampleRate: 16000, opts: null };
 
-async function startMic(ev) {
+// Optional second arg is an opts object: { btn, hint, onTranscript }. Defaults
+// preserve the original quiz-modal behaviour: target #mic-btn / #mic-hint and
+// insert into #llm-answer textarea.
+async function startMic(ev, opts) {
   if (ev) ev.preventDefault();
-  const btn = document.getElementById('mic-btn');
-  const hint = document.getElementById('mic-hint');
+  opts = opts || {};
+  const btn = opts.btn || document.getElementById('mic-btn');
+  const hint = opts.hint || document.getElementById('mic-hint');
+  if (!btn) return;
   if (btn.classList.contains('recording') || btn.classList.contains('transcribing')) return;
 
-  hint.classList.remove('error');
-  hint.textContent = '';
+  if (hint) { hint.classList.remove('error'); hint.textContent = ''; }
   try {
     micState.stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
     });
   } catch (e) {
-    hint.classList.add('error');
-    hint.textContent = 'Mic blocked — grant microphone permission and try again.';
+    if (hint) { hint.classList.add('error'); hint.textContent = 'Mic blocked — grant microphone permission and try again.'; }
     return;
   }
 
-  // 16 kHz context — many browsers won't honour the constraint exactly, so
-  // we'll resample on the fly during WAV encoding.
   micState.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
   micState.sampleRate = micState.ctx.sampleRate;
   micState.source = micState.ctx.createMediaStreamSource(micState.stream);
@@ -3205,21 +3748,22 @@ async function startMic(ev) {
   };
   micState.source.connect(micState.processor);
   micState.processor.connect(micState.ctx.destination);
+  micState.opts = { btn, hint, onTranscript: opts.onTranscript };
 
   btn.classList.add('recording');
-  hint.textContent = 'Listening… release to transcribe';
+  if (hint) hint.textContent = 'Listening… release to transcribe';
 }
 
 async function stopMic(ev) {
   if (ev) ev.preventDefault();
-  const btn = document.getElementById('mic-btn');
-  const hint = document.getElementById('mic-hint');
-  if (!btn.classList.contains('recording')) return;
+  const opts = micState.opts || {};
+  const btn = opts.btn || document.getElementById('mic-btn');
+  const hint = opts.hint || document.getElementById('mic-hint');
+  if (!btn || !btn.classList.contains('recording')) return;
   btn.classList.remove('recording');
   btn.classList.add('transcribing');
-  hint.textContent = 'Transcribing…';
+  if (hint) hint.textContent = 'Transcribing…';
 
-  // Tear down the audio graph but keep the captured buffers.
   try { micState.processor.disconnect(); } catch {}
   try { micState.source.disconnect(); } catch {}
   try { micState.stream.getTracks().forEach(t => t.stop()); } catch {}
@@ -3230,8 +3774,7 @@ async function stopMic(ev) {
 
   if (wav.byteLength <= 44) {
     btn.classList.remove('transcribing');
-    hint.classList.add('error');
-    hint.textContent = 'Nothing recorded — hold the button while speaking.';
+    if (hint) { hint.classList.add('error'); hint.textContent = 'Nothing recorded — hold the button while speaking.'; }
     return;
   }
 
@@ -3243,22 +3786,26 @@ async function stopMic(ev) {
     });
     if (!r.ok) {
       const body = await r.text();
-      hint.classList.add('error');
+      if (hint) hint.classList.add('error');
       if (r.status === 502) {
-        hint.innerHTML = 'whisper-cli not installed. Run <code>scripts/install-whisper.sh</code> from the repo to set it up.';
+        if (hint) hint.innerHTML = 'whisper-cli not installed. Run <code>scripts/install-whisper.sh</code> from the repo to set it up.';
       } else if (r.status === 503) {
-        hint.innerHTML = 'Voice is disabled in your config. See <a href="https://github.com/NVME-git/rocky/blob/main/docs/decisions/0006-voice-architecture.md" target="_blank" rel="noopener">setup docs</a>.';
-      } else {
+        if (hint) hint.innerHTML = 'Voice is disabled in your config. See <a href="https://github.com/NVME-git/rocky/blob/main/docs/decisions/0006-voice-architecture.md" target="_blank" rel="noopener">setup docs</a>.';
+      } else if (hint) {
         hint.textContent = `Transcribe failed (${r.status}): ${body.slice(0, 160)}`;
       }
       return;
     }
     const data = await r.json();
-    insertAtCursor(document.getElementById('llm-answer'), data.transcript || '');
-    hint.textContent = '';
+    const transcript = data.transcript || '';
+    if (opts.onTranscript) {
+      opts.onTranscript(transcript);
+    } else {
+      insertAtCursor(document.getElementById('llm-answer'), transcript);
+    }
+    if (hint) hint.textContent = '';
   } catch (e) {
-    hint.classList.add('error');
-    hint.textContent = 'Network error — is `rocky view` still running?';
+    if (hint) { hint.classList.add('error'); hint.textContent = 'Network error — is `rocky view` still running?'; }
   } finally {
     btn.classList.remove('transcribing');
   }

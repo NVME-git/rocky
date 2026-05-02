@@ -51,6 +51,10 @@ pub fn run(db: &Db, cfg: &Config) -> Result<()> {
             .route("/api/quiz/evaluate", post(quiz_evaluate))
             .route("/api/transcribe", post(transcribe))
             .route("/api/prompt-iq", get(get_prompt_iq))
+            .route("/api/topic/delete-question", post(delete_bank_question))
+            .route("/api/topic/generate-questions", post(generate_bank_questions))
+            .route("/api/feedback", get(read_feedback).post(write_feedback))
+            .route("/api/feedback/append", post(append_feedback))
             .layer(CorsLayer::permissive())
             .with_state(state);
 
@@ -766,4 +770,146 @@ fn build_sessions_json(db: &Db) -> Result<Value> {
         })
     }).collect();
     Ok(json!({ "sessions": entries }))
+}
+
+// ── Question-bank edits ──────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct DeleteQuestionReq {
+    node_id: String,
+    q_idx: usize,
+    reason: String,
+}
+
+async fn delete_bank_question(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<DeleteQuestionReq>,
+) -> Result<Json<Value>, StatusCode> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        let node = db.get_node_by_id(&req.node_id)?
+            .ok_or_else(|| anyhow::anyhow!("node not found"))?;
+        let mut bank = node.question_bank.clone();
+        if req.q_idx < bank.len() {
+            bank.remove(req.q_idx);
+            db.set_question_bank(&node.topic, &bank)?;
+        }
+        let reason = req.reason.trim();
+        if !reason.is_empty() {
+            append_feedback_entry(&format!("[card-deleted] {reason}"))?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+struct GenerateQuestionsReq {
+    node_id: String,
+}
+
+async fn generate_bank_questions(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<GenerateQuestionsReq>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.teacher.is_none() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let state2 = state.clone();
+    let added = tokio::task::spawn_blocking(move || -> Result<usize> {
+        let db = &state2.db;
+        let teacher = state2.teacher.as_ref().unwrap();
+        let node = db.get_node_by_id(&req.node_id)?
+            .ok_or_else(|| anyhow::anyhow!("node not found"))?;
+        // Build peer context from this node's edges so the new questions are
+        // grounded in actual graph connections, not just isolated description.
+        let mut peer_context = String::new();
+        if let Ok(edges) = db.get_edges_for_node(&node.id) {
+            for edge in edges.iter().take(8) {
+                let peer_id = if edge.source_id == node.id { &edge.target_id } else { &edge.source_id };
+                if let Ok(Some(peer)) = db.get_node(peer_id) {
+                    peer_context.push_str(&format!(
+                        "- {} ({}): {}\n",
+                        peer.topic, edge.kind.as_str(), peer.description
+                    ));
+                }
+            }
+        }
+        let diff_excerpt = node.contexts.join("\n");
+        let new_qs = teacher.generate_question_bank(
+            &node.topic,
+            &node.description,
+            &peer_context,
+            "",
+            &diff_excerpt,
+        )?;
+        if new_qs.is_empty() { return Ok(0); }
+        let mut bank = node.question_bank.clone();
+        let added = new_qs.len();
+        for q in new_qs {
+            if !bank.iter().any(|b| b.question == q.question) {
+                bank.push(q);
+            }
+        }
+        db.set_question_bank(&node.topic, &bank)?;
+        Ok(added)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true, "added": added })))
+}
+
+// ── Feedback file ────────────────────────────────────────────────────────────
+
+fn append_feedback_entry(line: &str) -> Result<()> {
+    use std::io::Write;
+    let path = crate::config::feedback_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let stamp = chrono::Local::now().format("%Y-%m-%d %H:%M");
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
+    writeln!(f, "- {stamp} · {line}")?;
+    Ok(())
+}
+
+async fn read_feedback() -> Result<String, StatusCode> {
+    let path = crate::config::feedback_path();
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+#[derive(Deserialize)]
+struct WriteFeedbackReq {
+    content: String,
+}
+
+async fn write_feedback(Json(req): Json<WriteFeedbackReq>) -> Result<Json<Value>, StatusCode> {
+    let path = crate::config::feedback_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+    std::fs::write(&path, req.content).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+struct AppendFeedbackReq {
+    text: String,
+}
+
+async fn append_feedback(Json(req): Json<AppendFeedbackReq>) -> Result<Json<Value>, StatusCode> {
+    let text = req.text.trim();
+    if text.is_empty() {
+        return Ok(Json(json!({ "ok": true, "skipped": true })));
+    }
+    append_feedback_entry(text).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
 }

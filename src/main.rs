@@ -35,7 +35,7 @@ const MAX_QUESTIONS: u32 = 3;
     after_help = "\
 Commands by purpose:
 
-  USER             stats · quiz · view · diff · dedupe · explore
+  USER             stats · quiz · view · diff · dedupe · explore · feedback
   READ & INSPECT   list · inspect · edges · queue · logs · prompt-iq · config
   SKILL            topic · add-topic · add-question · delete-topic · set-domain
                    · review · due · context · checkpoint · prompt · prompt-eval · prompts
@@ -76,6 +76,9 @@ enum Cmd {
     },
     /// Open the interactive knowledge graph + Saga in the browser
     View,
+    /// Edit ~/.rocky/FEEDBACK.md in $EDITOR — append your thoughts on Rocky.
+    /// The same file is shown in the web view's Feedback tab.
+    Feedback,
     /// Analyze a git diff and quiz on topics found in the code changes
     Diff {
         /// Git ref to diff against HEAD (e.g. HEAD~1, main). Defaults to last commit.
@@ -644,6 +647,9 @@ fn run() -> Result<()> {
         }
         Some(Cmd::View) => {
             server::run(&db, &cfg)?;
+        }
+        Some(Cmd::Feedback) => {
+            run_feedback()?;
         }
         Some(Cmd::Backfill { all_authors, limit, fill_clues, fill_question_bank }) => {
             run_backfill(&db, &make_teacher(&cfg)?, &cfg, all_authors, limit, fill_clues, fill_question_bank)?;
@@ -1757,13 +1763,15 @@ fn run_socratic_loop(
         println!("{}{} {display_q}", format!("Q{questions_asked}.").bold(), source_label);
 
         let hint_line = if cli_voice.is_some() {
-            "   [s] simpler  [h] harder  [c] clue  [?] explain it  [x] delete  or type / [Enter] to record:"
+            "   🎤 recording — [Enter] to stop  ·  [s] simpler  [h] harder  [c] clue  [?] explain  [x] delete  (override after stop)"
         } else {
             "   [s] simpler  [h] harder  [c] clue  [?] explain it  [x] delete  or type your answer:"
         };
         println!("{}", hint_line.dimmed());
-        print!("   > ");
-        io::stdout().flush()?;
+        if cli_voice.is_none() {
+            print!("   > ");
+            io::stdout().flush()?;
+        }
 
         let answer: String = read_answer_cli(cli_voice)?;
         if answer.starts_with('\x00') {
@@ -3255,6 +3263,30 @@ fn uninstall_opencode_skills() -> Result<Vec<(bool, String)>> {
 
 // ── post-commit queue command ────────────────────────────────────────────────
 
+fn run_feedback() -> Result<()> {
+    let path = config::feedback_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    if !path.exists() {
+        std::fs::write(
+            &path,
+            "# Rocky Feedback\n\n_What's working, what isn't, and what you wish it did. Each entry is just a Markdown bullet — keep it raw, no need to be polished._\n\n",
+        )?;
+    }
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "nano".into());
+    println!("  Opening {} in {} …", path.display().to_string().dimmed(), editor.dimmed());
+    let status = std::process::Command::new(&editor).arg(&path).status()?;
+    if !status.success() {
+        eprintln!("  {} editor exited with non-zero status", "!".truecolor(239, 159, 39));
+    } else {
+        println!("  {} feedback saved to {}", "✓".truecolor(29, 158, 117), path.display());
+    }
+    Ok(())
+}
+
 fn run_post_commit(db: &Db) -> Result<()> {
     let project_path = std::env::current_dir()?
         .canonicalize()?
@@ -3586,48 +3618,57 @@ fn pick_least_asked(
 
 // ── Voice CLI helper ──────────────────────────────────────────────────────────
 
-/// Read an answer from stdin. In voice mode, an empty line triggers mic recording.
+/// Read an answer from stdin. In voice mode, recording starts immediately and
+/// Enter both stops the mic and submits the transcript; the user can type a
+/// command (s/h/c/?/x) or full answer at the override prompt instead.
 /// Returns the answer text, or a string starting with `\x00` to signal EOF/skip.
 fn read_answer_cli(cli_voice: Option<&voice::CliVoice>) -> Result<String> {
+    if let Some(v) = cli_voice {
+        match v.record_and_transcribe() {
+            Ok(transcript) if !transcript.is_empty() => {
+                println!("{}", format!("   Heard: \"{}\"", transcript).truecolor(167, 139, 250));
+                println!("{}", "   [Enter] to submit  ·  type a command or full answer to override:".dimmed());
+                print!("   > ");
+                io::stdout().flush()?;
+                let mut confirm = String::new();
+                match io::stdin().read_line(&mut confirm) {
+                    Err(_) | Ok(0) => return Ok("\x00eof".into()),
+                    Ok(_) => {}
+                }
+                let override_text = confirm.trim().to_string();
+                return Ok(if override_text.is_empty() { transcript } else { override_text });
+            }
+            Ok(_) => {
+                println!("{}", "   (Nothing heard — type your answer or [Enter] to skip.)".dimmed());
+                print!("   > ");
+                io::stdout().flush()?;
+                let mut line = String::new();
+                match io::stdin().read_line(&mut line) {
+                    Err(_) | Ok(0) => return Ok("\x00eof".into()),
+                    Ok(_) => {}
+                }
+                return Ok(line.trim().to_string());
+            }
+            Err(e) => {
+                println!("{}", format!("   Recording failed: {e} — type your answer instead:").truecolor(226, 75, 74));
+                print!("   > ");
+                io::stdout().flush()?;
+                let mut fallback = String::new();
+                match io::stdin().read_line(&mut fallback) {
+                    Err(_) | Ok(0) => return Ok("\x00eof".into()),
+                    Ok(_) => {}
+                }
+                return Ok(fallback.trim().to_string());
+            }
+        }
+    }
+
     let mut line = String::new();
     match io::stdin().read_line(&mut line) {
         Err(_) | Ok(0) => return Ok("\x00eof".into()),
         Ok(_) => {}
     }
-    let input = line.trim().to_string();
-
-    // In voice mode, empty Enter → record mic until Enter pressed again
-    if input.is_empty() {
-        if let Some(v) = cli_voice {
-            println!("{}", "   🎤 Recording... press Enter to stop.".truecolor(6, 182, 212));
-            match v.record_and_transcribe() {
-                Ok(transcript) if !transcript.is_empty() => {
-                    println!("{}", format!("   Heard: \"{}\"", transcript).truecolor(167, 139, 250));
-                    println!("{}", "   Press Enter to submit, or type to override:".dimmed());
-                    print!("   > ");
-                    io::stdout().flush()?;
-                    let mut confirm = String::new();
-                    io::stdin().read_line(&mut confirm)?;
-                    let override_text = confirm.trim().to_string();
-                    return Ok(if override_text.is_empty() { transcript } else { override_text });
-                }
-                Ok(_) => {
-                    println!("{}", "   (Nothing heard — treating as skip)".dimmed());
-                    return Ok(String::new());
-                }
-                Err(e) => {
-                    println!("{}", format!("   Recording failed: {e} — type your answer instead:").truecolor(226, 75, 74));
-                    print!("   > ");
-                    io::stdout().flush()?;
-                    let mut fallback = String::new();
-                    io::stdin().read_line(&mut fallback)?;
-                    return Ok(fallback.trim().to_string());
-                }
-            }
-        }
-    }
-
-    Ok(input)
+    Ok(line.trim().to_string())
 }
 
 // ── rocky dedupe ──────────────────────────────────────────────────────────────

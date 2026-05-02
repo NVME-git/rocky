@@ -233,6 +233,11 @@ fn dirs() -> PathBuf {
         .join(".rocky")
 }
 
+/// User feedback file: ~/.rocky/FEEDBACK.md (or $ROCKY_HOME/FEEDBACK.md).
+pub fn feedback_path() -> PathBuf {
+    dirs().join("FEEDBACK.md")
+}
+
 /// Config directory: ~/.config/rocky/
 fn config_dir() -> PathBuf {
     dirs::config_dir()
