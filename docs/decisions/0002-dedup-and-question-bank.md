@@ -33,3 +33,9 @@ Two independent problems shared a fix:
 
 **Migration:**
 - `rocky backfill --fill-question-bank` regenerates banks for legacy nodes that pre-date this work.
+
+## Update (2026-05-03)
+
+- **Layer-1 is now agent-side, not server-side.** ADR [0007](0007-skill-only-extraction-and-promptiq.md) moved topic extraction onto the `rocky-checkpoint` skill. The skill reads `rocky list --json` for the global topic list and is instructed to reuse the existing name when a new finding is semantically equivalent — same dedup contract as before, just from the agent loaded with full session context instead of from a Rust-side LLM call. The original implementation, `Teacher::extract_topics_with_dedup`, has been removed as dead code.
+- **Layer-2 shipped** as `rocky dedupe`, using `topic_jaccard` (word-set Jaccard ≥ 0.5) plus a substring fallback for the `Auth` ↔ `Authentication` shape (`main.rs:topic_jaccard`, `is_candidate_pair`).
+- **Layer-3 is on the backlog.** Lexical similarity misses true synonyms with no shared root (`DB` ↔ `Database`, `Pooling` ↔ `Pool`) and pure semantic equivalents (`Connection Pool Sizing` ↔ `How many DB connections is too many?`). The next evolution is embedding-based semantic dedup — embed name+description with a local model, store the vector alongside the node, merge on cosine > ~0.85, fall back to the LLM only for the ambiguous middle band. Tracked in [BACKLOG.md](../../BACKLOG.md#embedding-based-semantic-dedup-planned). When that lands it will likely warrant its own ADR superseding the dedup portions of this one.

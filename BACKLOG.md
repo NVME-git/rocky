@@ -74,6 +74,24 @@ A background scheduler that runs enrichment passes over the PKG when new feature
 generating missing fields (clues, cross-concept edges, debugging questions) without requiring
 manual intervention. Goal: quiz time is always fast because all pre-computation happened offline.
 
+### Embedding-based semantic dedup `[planned]`
+Replace today's lexical dedup (slugified node id + `topic_jaccard` token-set similarity in
+`rocky dedupe`) with vector similarity. Embed each topic's name + description with a small local
+model (e.g. Ollama `nomic-embed-text`, ~270 MB), store the vector alongside the node, and on add
+look up nearest neighbours; merge if cosine > ~0.85. The LLM is reserved as a tiebreaker for
+ambiguous mid-band cases instead of being the primary dedup mechanism.
+
+**Why move past Jaccard:** the current heuristic is order-insensitive and catches "Bank Question"
+↔ "Question Bank" cleanly, but misses true synonyms with no shared root — `Auth` vs
+`Authentication`, `DB` vs `Database`, `Pooling` vs `Pool`. The substring fallback in
+`is_candidate_pair` papers over a few of those, but anything where the wording diverges entirely
+(`Connection Pool Sizing` ↔ `How many DB connections is too many?`) still slips through. Cosine
+on sentence embeddings collapses both surface-form and semantic variants, deterministically.
+
+**Tradeoff:** adds an embedding model dependency (~100-300 MB depending on choice) and a `vector`
+column on `nodes`. Worth it once the PKG grows past a few thousand topics, where false-negative
+duplicates start fragmenting review effort. See ADR 0002 for the dedup history.
+
 ---
 
 ## References
