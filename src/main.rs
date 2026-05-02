@@ -1564,7 +1564,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                         &topic_info.domain,
                         &topic_info.description,
                         task,
-                        None, "", None,
+                        None, &repo, None,
                     )?;
                     session.record_quiz()?;
                     quizzed += 1;
@@ -1954,6 +1954,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
     print_header();
     p.print_rocky(false);
 
+    let repo = detect_repo_name();
     let matches = db.search_nodes(query)?;
     if matches.is_empty() {
         println!("\n  {} No topics found matching \"{}\".", "✗".truecolor(226, 75, 74), query);
@@ -2029,7 +2030,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
             description: node.description.clone(),
         };
         let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
-        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
+        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, &repo, None, cli_voice)?;
         if completed {
             session.record_quiz()?;
         }
@@ -2049,6 +2050,8 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
 fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Personality, hours: u32, edge_reuse: &config::EdgeReuse, cli_voice: Option<&voice::CliVoice>) -> Result<()> {
     print_header();
     p.print_rocky(false);
+
+    let repo = detect_repo_name();
 
     // Streak
     if let Ok(streak) = session.update_streak() {
@@ -2126,7 +2129,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 domain: String::new(),
                 description: description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, &repo, None, cli_voice)?;
             if completed {
                 session.record_quiz()?;
                 // Remove from queue now that it has been properly reviewed
@@ -2161,7 +2164,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             let reminder = teacher.generate_reminder(topic, node, context)?;
             println!("\n  {} {reminder}\n", "Rocky:".truecolor(239, 159, 39).bold());
             db.add_or_update(
-                topic, 0.5, &node.kind, &node.domain, &node.description, context, None, "", None,
+                topic, 0.5, &node.kind, &node.domain, &node.description, context, None, &repo, None,
             )?;
             session.record_quiz()?;
         } else {
@@ -2173,7 +2176,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             domain: node.domain.clone(),
                 description: node.description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, &repo, None, cli_voice)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -2192,7 +2195,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             .collect();
 
         for topic_info in new_from_prompts {
-            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse, "", None, cli_voice)?;
+            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse, &repo, None, cli_voice)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -2402,6 +2405,7 @@ fn run_diff(
     } else {
         commit_msg.lines().next().unwrap_or("last commit").to_string()
     };
+    let repo = detect_repo_name();
 
     println!("\n{} {label}\n", "Diff:".bold());
     println!("{}", "Analyzing code changes...".dimmed());
@@ -2474,7 +2478,7 @@ fn run_diff(
                         &topic_info.domain,
                         &topic_info.description,
                         &label,
-                        None, "", None,
+                        None, &repo, None,
                     )?;
                     session.record_quiz()?;
                     quizzed += 1;
@@ -2487,7 +2491,7 @@ fn run_diff(
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse, "", None, None)?;
+                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse, &repo, None, None)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
