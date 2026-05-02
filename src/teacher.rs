@@ -618,67 +618,6 @@ Return ONLY valid JSON of this exact shape:
         Ok(bank.questions)
     }
 
-    /// Extract topics from a diff with awareness of existing topics in the graph.
-    /// If a new topic is semantically equivalent to an existing one, the LLM is
-    /// instructed to return the EXACT existing topic name — no separate dedup pass needed.
-    pub fn extract_topics_with_dedup(
-        &self,
-        commit_msg: &str,
-        diff: &str,
-        existing_topics: &[(String, String)], // (topic, domain)
-        project_context: &str,
-    ) -> Result<Vec<TopicInfo>> {
-        let system = r#"You are a technical knowledge analyst reviewing a git diff.
-Extract the distinct technical topics a developer needs to genuinely understand based on this diff.
-
-Focus on:
-- Libraries, frameworks, or APIs introduced or heavily used
-- Patterns or architectural decisions visible in the code
-- Non-obvious implementation details that could cause bugs if misunderstood
-
-Ignore trivial changes (renaming, formatting, comments) and pure boilerplate.
-
-CRITICAL — Deduplication:
-You will be given a list of topics that already exist in the developer's knowledge graph.
-If a topic from this diff is semantically equivalent to one in that list (same concept, just
-different wording), return the EXACT existing topic name unchanged. Only create a new topic
-when the concept is genuinely distinct from all existing ones.
-
-Return ONLY valid JSON: a list of objects with keys:
-- "topic": exact topic name (reuse existing if equivalent; otherwise 2-5 word new name)
-- "kind": one of "concept", "pattern", "implementation"
-- "domain": one of "Language", "Database", "Auth", "API", "Frontend", "DevOps", "Architecture", "Performance", "Security", "Testing", "Tooling", "Data", "Other"
-- "description": one specific sentence explaining what this topic is and why it matters in THIS codebase
-
-Return 2-6 topics maximum."#;
-
-        let mut user = String::new();
-        if !project_context.is_empty() {
-            user.push_str(&format!("Project context:\n{project_context}\n\n"));
-        }
-        if !existing_topics.is_empty() {
-            user.push_str("Existing topics in this developer's graph (reuse these names if semantically equivalent):\n");
-            for (t, d) in existing_topics.iter().take(200) {
-                user.push_str(&format!("- {t} ({d})\n"));
-            }
-            user.push('\n');
-        }
-        let diff_excerpt = if diff.len() > 4000 {
-            let mut end = 4000;
-            while !diff.is_char_boundary(end) && end > 0 {
-                end -= 1;
-            }
-            &diff[..end]
-        } else {
-            diff
-        };
-        user.push_str(&format!("Commit: {commit_msg}\n\nDiff:\n{diff_excerpt}"));
-
-        let raw = self.ask_with_overrides(system, &user, None, 1536)?;
-        let cleaned = strip_code_fence(&raw);
-        parse_topics_lenient(cleaned)
-    }
-
     /// Generate implication edges between a newly added topic and existing PKG nodes.
     /// Returns up to 4 edges. Fails silently — never blocks the quiz flow.
     pub fn generate_edges(
