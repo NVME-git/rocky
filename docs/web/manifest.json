@@ -1,0 +1,34 @@
+{
+    "name": "Rocky",
+    "short_name": "Rocky",
+    "description": "Rocky — A CLI that keeps your technical knowledge sharp while AI agents handle the work.",
+    "start_url": "/rocky/",
+    "display": "standalone",
+    "background_color": "#0A0E1A",
+    "theme_color": "#F59E0B",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
