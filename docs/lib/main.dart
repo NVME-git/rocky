@@ -115,7 +115,6 @@ final List<DocSection> kSections = [
   const DocSection('What is Rocky?', Icons.auto_awesome, kIntroduction),
   const DocSection('Installation', Icons.download_rounded, kInstallation),
   const DocSection('Quick Start', Icons.rocket_launch, kQuickstart),
-  const DocSection('Rich-Context Pipeline', Icons.bolt, kRichContext),
   const DocSection('Commands', Icons.terminal, kCommands),
   const DocSection('Configuration', Icons.settings, kConfiguration),
   const DocSection('How It Works', Icons.account_tree, kHowItWorks),

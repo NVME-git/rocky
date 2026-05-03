@@ -465,138 +465,6 @@ Rocky uses a memory model similar to Anki (spaced repetition). Topics you know w
 By default, Rocky runs a maximum of 3 quizzes per day via automatic triggers (git hook, Claude Code hook), with a 2-hour gap between them. Manual `rocky quiz` calls always run — no limits.
 ''';
 
-const kRichContext = r'''
-# Rich-Context Pipeline
-
-Rocky doesn't extract topics one commit at a time. It batches diffs across a whole working session, pairs them with the Claude Code transcript and a cached project summary, and produces **rich nodes with a question bank** (~4 implication-grounded Q+A+clue triples each) — driven by an agent already sitting in your editor.
-
-![Dashboard](screenshots/rocky-dashboard.png)
-
-| Stage | What happens | Where |
-|---|---|---|
-| `rocky explore` | Reads CLAUDE.md / README / docs / recent commits and synthesises a **project context** summary cached at `~/.rocky/summaries/<repo>.txt` | Run once per project, again after major shape changes |
-| `rocky post-commit` (queue mode) | Silently appends the latest commit's diff to a per-project queue. **No LLM call.** | Wired by `rocky install claude-all` |
-| `/rocky-checkpoint` (Claude skill) | Drains the diff queue, reads the active session's transcript, and writes nodes + question banks straight into the PKG. Uses the **global** dedup list — same topic across two projects becomes one node with `repos[]` accumulating. | Invoked inside Claude Code, end of a session |
-| `/rocky-quiz` (Claude skill) | Picks the weakest topics by `recall_now`, asks from the canonical question bank, records scores back to FSRS. | Invoked inside Claude Code any time |
-
-The motivation: a single commit message like *"feat: rotate refresh tokens"* is too thin a context to ground good questions in. By batching at session end, the extractor has the project summary, the actual diffs, **and** the agent's reasoning trail. And by running inside Claude Code itself rather than shelling out to a local Ollama on every Stop event, the per-turn latency drops to zero — the heavy step only happens when you ask for it.
-
-> The legacy Stop-hook → Ollama path still ships and is opt-in via `rocky install stop`. It runs after every Claude turn and is useful if you don't keep a Claude session open the whole day. The skill-driven default is faster and produces sharper extraction because it sees the full transcript at once.
-
-## Try it on a throwaway repo
-
-The repo ships a tutorial / smoke-test script that walks the whole flow without touching your real PKG:
-
-```bash
-$ ollama serve &                     # in another terminal
-$ scripts/tutorial.sh --noninteractive
-```
-
-It creates `~/.rocky-tutorial/`, isolates Rocky to it via the `ROCKY_HOME` env var, makes a fake auth-service repo, and walks every step end-to-end. A typical run finishes with output like:
-
-```
-▶ 6a. Inspect the first topic in detail
-
-  ◆ JWT
-  Encounters: 2
-
-  Description: JSON Web Tokens (JWTs) are used for stateless authentication
-  sessions, ensuring that token revocation can only be performed on refresh.
-
-  Question bank: (4 questions)
-
-  1. What happens if a user tries to access the service using an expired
-     refresh token after rotating it?
-  2. What are the implications of not rotating refresh tokens on every use?
-  3. How does this JWT-based authentication system interact with Redis?
-  4. What would change if Redis were not available for storing refresh tokens?
-```
-
-Notice the question style: every question forces reasoning about **trade-offs and consequences**, never recall of a definition. That's the rich-context pipeline doing its job.
-
-## Inspecting what was generated
-
-```bash
-rocky list --since today              # what was added in the last 24h
-rocky inspect "<topic>"               # full detail: contexts, source commits,
-                                      # canonical Q&A, question bank, asked counts
-rocky explore --show                  # print the stored project context
-```
-
-Or open the **web view** with `rocky view` — six tabs share the same data so you can switch between high-level overview, a focused review queue, and a cinematic timelapse of how your knowledge grew.
-
-### Knowledge Map (Wormhole)
-A 2-hop neighborhood centred on one topic. The whole PKG is never on screen at once — you see the **focus** at center, its **direct neighbors** (hop-1) in an inner ring, and **their neighbors** (hop-2) faintly in an outer ring (capped at ~28 nodes total, so memory stays bounded no matter how big your PKG grows).
-
-- **Click any hop-1 node** → the entire graph shifts so that node moves to the centre. Then nodes more than two hops away fade out and the new 2-hop ring fades in. About 1 second end-to-end.
-- **Hop-2 nodes are previews only** — colour-coded but unlabelled and not clickable for warp; clicking opens the detail panel without travelling.
-- **Edges radiate outward** from the focus with continuous dashes flowing along the line, so you always see direction. Hop-1 edges are bright; hop-2 edges are dim, pushing them visually behind the active neighborhood.
-- **Single click** opens the detail panel for the clicked node. **Double click** warps focus there. The detail panel is translucent (frosted glass) so the wormhole stays visible behind it.
-- **Wormholes panel** (top-center, as a row of pills) holds portals to elsewhere: the weakest topic globally, the most-recent topic in other domains, and the most-recent in other projects. The pill matching your current focus is rendered inverted as a "you are here" marker. One-click jumps anywhere in the PKG; a `?` pill explains what each colour means.
-- **Spaceship 🚀 cursor** over the canvas — on brand.
-- **Planning mode** toggle (in the same pill bar) dims topics you already know well and highlights unreviewed neighbors as "what's next".
-
-When you click a project card on the **Projects** tab, the map switches to a **project hub view**: project name at center, domain hubs around it, three most-recent topics per domain on the outer ring. Click a topic to warp into the wormhole at that node.
-
-![Knowledge Map](screenshots/rocky-map.png)
-
-### Saga (cinematic timelapse)
-A play / pause / scrub view of how your knowledge grew. The explorer (your git user name) sits at the centre; new topics drift outward in their domain's angular sector as the playhead advances. Active topics (last 6 months from the playhead) are bright and named; older topics fade to dots and form glowing nebulae around their domain arm.
-
-- **Continuous warp streaks** radiate from the explorer to convey forward motion through time.
-- **Domain HUD** labels float at each arm's perimeter, fading in as that domain accumulates topics.
-- **Topic name flashes** drift outward radially when a new topic appears, then dissolve — names are ephemera, the cloud is the point.
-- **Running counters** (top-centre): current date, totals for topics / domains / projects / encounters.
-- **End-card** appears at the end with totals + a Replay button.
-- **Share dropdown** exports the current view as an SVG, a 2× PNG, or a full timelapse GIF (1080² @ 15 fps, ~8s).
-
-### Review Queue
-A sortable, filterable table of every topic. Sort by recall, recency, review count, or alphabetical. Filter to *due* or *critical*, and narrow further by project. Click any row to start a quiz on that topic, or hit "Quiz top 5" to start a session against the lowest-recall items in the current view.
-
-![Review Queue](screenshots/rocky-queue.png)
-
-### Sessions
-Every topic Rocky has ever generated, grouped by the day it was added, with a project filter at the top. Encounter counts (×N badges) show where the cross-project dedup hit — the same topic surfacing across multiple commits.
-
-![Sessions](screenshots/rocky-sessions.png)
-
-### Projects
-Per-repository health, cross-project flow chord diagram, and a domain-mix donut. The **knowledge timeline** below toggles between *by project* and *by domain* so you can see whether your auth/database/frontend work is balanced over time. Clicking a project card opens the project hub in the Knowledge Map (see above).
-
-![Projects](screenshots/rocky-projects.png)
-
-## Cross-project dedup
-
-When the checkpoint skill extracts topics, it's fed the **global** topic list (across every project Rocky knows about) and asked to reuse exact names where a new finding is semantically equivalent. The result: a topic like *Token Rotation* lives as one node with a `repos[]` array that accumulates as the same idea reappears in another codebase.
-
-```
-▸ refactor: surface is_rotated helper for refresh token reuse checks
-  ◇ Token Rotation (existing — encounter +1, repos: [taskify, home-bank])
-
-Done. 0 new topic(s), 1 encounter update(s).
-```
-
-The web UI's **Projects** panel for a topic shows everywhere it's appeared. Layer-2 (LLM-assisted merge of long-tail near-duplicates) is on the roadmap.
-
-## Backfilling legacy nodes
-
-If you have nodes from before the question bank existed:
-
-```bash
-rocky backfill --fill-question-bank   # generates 4-Q banks for nodes missing them
-rocky backfill --fill-clues           # fills missing canonical clues
-```
-
-## Privacy mode
-
-```toml
-[privacy]
-strict = true
-```
-
-With `privacy.strict = true`, Rocky refuses any non-local LLM provider — diffs and code never leave the machine, even if you accidentally configure Claude. The CLI errors with a clear message instead of sending data.
-''';
-
 const kCommands = r'''
 # Commands
 
@@ -1483,6 +1351,87 @@ If you want pieces:
 
 const kHowItWorks = r'''
 # How Rocky Works
+
+## The pipeline at a glance
+
+Rocky doesn't extract topics one commit at a time. It batches diffs across a whole working session, pairs them with the Claude Code transcript and a cached project summary, and produces **rich nodes with a question bank** (~4 implication-grounded Q+A+clue triples each) — driven by an agent already sitting in your editor.
+
+![Dashboard](screenshots/rocky-dashboard.png)
+
+| Stage | What happens | Where |
+|---|---|---|
+| `rocky explore` | Reads CLAUDE.md / README / docs / recent commits and synthesises a **project context** summary cached at `~/.rocky/summaries/<repo>.txt` | Run once per project, again after major shape changes |
+| `rocky post-commit` (queue mode) | Silently appends the latest commit's diff to a per-project queue. **No LLM call.** | Wired by `rocky install claude-all` |
+| `/rocky-checkpoint` (Claude skill) | Drains the diff queue, reads the active session's transcript, and writes nodes + question banks straight into the PKG. Uses the **global** dedup list — same topic across two projects becomes one node with `repos[]` accumulating. | Invoked inside Claude Code, end of a session |
+| `/rocky-quiz` (Claude skill) | Picks the weakest topics by `recall_now`, asks from the canonical question bank, records scores back to FSRS. | Invoked inside Claude Code any time |
+
+The motivation: a single commit message like *"feat: rotate refresh tokens"* is too thin a context to ground good questions in. By batching at session end, the extractor has the project summary, the actual diffs, **and** the agent's reasoning trail. And by running inside Claude Code itself rather than shelling out to a local Ollama on every Stop event, the per-turn latency drops to zero — the heavy step only happens when you ask for it.
+
+> The legacy Stop-hook → Ollama path still ships and is opt-in via `rocky install stop`. It runs after every Claude turn and is useful if you don't keep a Claude session open the whole day. The skill-driven default is faster and produces sharper extraction because it sees the full transcript at once.
+
+### Try it on a throwaway repo
+
+The repo ships a tutorial / smoke-test script that walks the whole flow without touching your real PKG:
+
+```bash
+$ ollama serve &                     # in another terminal
+$ scripts/tutorial.sh --noninteractive
+```
+
+It creates `~/.rocky-tutorial/`, isolates Rocky to it via the `ROCKY_HOME` env var, makes a fake auth-service repo, and walks every step end-to-end. A typical run finishes with output like:
+
+```
+▶ 6a. Inspect the first topic in detail
+
+  ◆ JWT
+  Encounters: 2
+
+  Description: JSON Web Tokens (JWTs) are used for stateless authentication
+  sessions, ensuring that token revocation can only be performed on refresh.
+
+  Question bank: (4 questions)
+
+  1. What happens if a user tries to access the service using an expired
+     refresh token after rotating it?
+  2. What are the implications of not rotating refresh tokens on every use?
+  3. How does this JWT-based authentication system interact with Redis?
+  4. What would change if Redis were not available for storing refresh tokens?
+```
+
+Notice the question style: every question forces reasoning about **trade-offs and consequences**, never recall of a definition. That's the rich-context pipeline doing its job.
+
+### Inspecting what was generated
+
+```bash
+rocky list --since today              # what was added in the last 24h
+rocky inspect "<topic>"               # full detail: contexts, source commits,
+                                      # canonical Q&A, question bank, asked counts
+rocky explore --show                  # print the stored project context
+```
+
+Or open the **web view** with `rocky view` — six tabs share the same data so you can switch between high-level overview, a focused review queue, and a cinematic timelapse of how your knowledge grew. Each tab is documented in detail under [`rocky view`](#) in the Commands section; the screenshots below show what they look like with a small demo PKG loaded.
+
+![Knowledge Map](screenshots/rocky-map.png)
+![Review Queue](screenshots/rocky-queue.png)
+![Sessions](screenshots/rocky-sessions.png)
+![Projects](screenshots/rocky-projects.png)
+
+### Cross-project dedup
+
+When the checkpoint skill extracts topics, it's fed the **global** topic list (across every project Rocky knows about) and asked to reuse exact names where a new finding is semantically equivalent. The result: a topic like *Token Rotation* lives as one node with a `repos[]` array that accumulates as the same idea reappears in another codebase.
+
+```
+▸ refactor: surface is_rotated helper for refresh token reuse checks
+  ◇ Token Rotation (existing — encounter +1, repos: [taskify, home-bank])
+
+Done. 0 new topic(s), 1 encounter update(s).
+```
+
+The web UI's **Project** field on a topic shows everywhere it's appeared. Layer-2 (semantic dedup via embeddings + cosine, beyond today's lexical Jaccard) is on the [backlog](https://github.com/NVME-git/rocky/blob/main/BACKLOG.md).
+
+---
+
+## The five operating modes
 
 Rocky has five modes of operation, each with different rules about when it quizzes you and what limits apply.
 
