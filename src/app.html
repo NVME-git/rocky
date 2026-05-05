@@ -242,6 +242,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .warp-halo{animation:halo-pulse 2.4s ease-in-out infinite}
 @keyframes halo-pulse{0%,100%{opacity:.12}50%{opacity:.28}}
 @keyframes warp-node-in{0%{opacity:0}100%{opacity:1}}
+/* Per-node bob — applied to an inner <g> so the outer node's position transform is preserved. */
+.warp-bob{animation:warp-bob 3.2s ease-in-out infinite;will-change:transform}
+@keyframes warp-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 
 /* Edges fade in once, then dashes flow continuously outward (focus → neighbor)
    to read as energy/connection traveling along the wormhole link. */
@@ -1403,6 +1406,16 @@ function svgEl(name, attrs) {
   return el;
 }
 
+// Wrap node visuals in an inner <g class="warp-bob"> so they bob independently of
+// the outer <g>'s position transform. Random delay + duration desyncs nodes.
+function bobInner(parent) {
+  const inner = svgEl('g', { class: 'warp-bob' });
+  inner.style.animationDelay = (-Math.random() * 3.2).toFixed(2) + 's';
+  inner.style.animationDuration = (2.6 + Math.random() * 1.6).toFixed(2) + 's';
+  parent.appendChild(inner);
+  return inner;
+}
+
 function nodeColorFor(n) {
   return CLASS_COLORS[n.classification || 'gap'] || '#607d8b';
 }
@@ -1499,14 +1512,23 @@ function drawSceneNode(svg, n, pos, animDelay, opts) {
   if (animDelay) g.style.animationDelay = animDelay + 's';
   if (opts.startInvisible) g.style.opacity = '0';
 
+  // Inner bob group — all visuals attach here so they bob together.
+  const inner = bobInner(g);
+
+  // Halo: focus keeps the original two-ring treatment; hop-1 / hop-2 get a
+  // single softer halo proportional to their radius.
   if (isFocus) {
-    g.appendChild(svgEl('circle', { r: r + 14, fill: col, opacity: 0.18, class: 'warp-halo' }));
-    g.appendChild(svgEl('circle', { r: r + 6, fill: 'none', stroke: col, 'stroke-opacity': 0.35, 'stroke-width': 1 }));
+    inner.appendChild(svgEl('circle', { r: r + 14, fill: col, opacity: 0.18, class: 'warp-halo' }));
+    inner.appendChild(svgEl('circle', { r: r + 6, fill: 'none', stroke: col, 'stroke-opacity': 0.35, 'stroke-width': 1 }));
+  } else {
+    const haloR = tier === 1 ? r + 9 : r + 5;
+    const haloOp = tier === 1 ? 0.22 : 0.28;
+    inner.appendChild(svgEl('circle', { r: haloR, fill: col, opacity: haloOp, class: 'warp-halo' }));
   }
   if (selectedSet.has(n.id)) {
-    g.appendChild(svgEl('circle', { r: r + 4, fill: 'none', stroke: '#f39c12', 'stroke-width': 2, 'stroke-opacity': 0.7 }));
+    inner.appendChild(svgEl('circle', { r: r + 4, fill: 'none', stroke: '#f39c12', 'stroke-width': 2, 'stroke-opacity': 0.7 }));
   }
-  g.appendChild(svgEl('circle', {
+  inner.appendChild(svgEl('circle', {
     r, fill: col,
     opacity: tier === 0 ? 0.95 : tier === 1 ? 0.85 : 0.7,
     stroke: '#fff', 'stroke-opacity': isFocus ? 0.7 : 0.25,
@@ -1524,13 +1546,13 @@ function drawSceneNode(svg, n, pos, animDelay, opts) {
     });
     const max = isFocus ? 32 : 20;
     text.textContent = (n.topic || '').length > max ? n.topic.slice(0, max - 1) + '…' : n.topic;
-    g.appendChild(text);
+    inner.appendChild(text);
     if (isFocus) {
       const sub = svgEl('text', {
         y: r + 28, 'text-anchor': 'middle', 'font-size': 10, fill: '#555e7a'
       });
       sub.textContent = `${n.domain || '—'} · ${Math.round((n.recall_now || 0) * 100)}% recall`;
-      g.appendChild(sub);
+      inner.appendChild(sub);
     }
   }
 
@@ -1846,14 +1868,15 @@ function drawProjectHub(svg, repo, x, y) {
     class: 'warp-node focus',
     'data-id': '__project__'
   });
-  g.appendChild(svgEl('circle', { r: 38, fill: '#7c9ef3', opacity: 0.15, class: 'warp-halo' }));
-  g.appendChild(svgEl('circle', { r: 28, fill: '#1e2340', stroke: '#7c9ef3', 'stroke-width': 2, 'stroke-opacity': 0.55 }));
+  const inner = bobInner(g);
+  inner.appendChild(svgEl('circle', { r: 38, fill: '#7c9ef3', opacity: 0.15, class: 'warp-halo' }));
+  inner.appendChild(svgEl('circle', { r: 28, fill: '#1e2340', stroke: '#7c9ef3', 'stroke-width': 2, 'stroke-opacity': 0.55 }));
   const t = svgEl('text', { y: 4, 'text-anchor': 'middle', 'font-size': 12, fill: '#cfd6e8', 'font-weight': 600 });
   t.textContent = (repo || '').length > 20 ? (repo || '').slice(0, 19) + '…' : repo;
-  g.appendChild(t);
+  inner.appendChild(t);
   const sub = svgEl('text', { y: 46, 'text-anchor': 'middle', 'font-size': 9, fill: '#7c9ef3', 'letter-spacing': 1.5 });
   sub.textContent = 'PROJECT';
-  g.appendChild(sub);
+  inner.appendChild(sub);
   svg.appendChild(g);
 }
 
@@ -1865,16 +1888,18 @@ function drawDomainHub(svg, domain, x, y, topics, fullCount, animDelay) {
     'data-id': '__domain__:' + domain
   });
   if (animDelay) g.style.animationDelay = animDelay + 's';
-  g.appendChild(svgEl('circle', { r: 14, fill: col, opacity: 0.85, stroke: '#fff', 'stroke-opacity': 0.3, 'stroke-width': 1 }));
+  const inner = bobInner(g);
+  inner.appendChild(svgEl('circle', { r: 23, fill: col, opacity: 0.22, class: 'warp-halo' }));
+  inner.appendChild(svgEl('circle', { r: 14, fill: col, opacity: 0.85, stroke: '#fff', 'stroke-opacity': 0.3, 'stroke-width': 1 }));
   const t = svgEl('text', {
     y: -22, 'text-anchor': 'middle', 'font-size': 9, fill: col, 'letter-spacing': 1.5,
     style: 'text-transform:uppercase;font-weight:600'
   });
   t.textContent = domain;
-  g.appendChild(t);
+  inner.appendChild(t);
   const cnt = svgEl('text', { y: 4, 'text-anchor': 'middle', 'font-size': 9, fill: '#0a0c14', 'font-weight': 700 });
   cnt.textContent = String(fullCount);
-  g.appendChild(cnt);
+  inner.appendChild(cnt);
   if (topics && topics.length) {
     g.style.cursor = 'pointer';
     g.addEventListener('click', (ev) => {
@@ -1899,11 +1924,13 @@ function drawProjectTopic(svg, n, x, y, animDelay) {
     'data-id': n.id
   });
   if (animDelay) g.style.animationDelay = animDelay + 's';
-  g.appendChild(svgEl('circle', { r: 10, fill: col, opacity: 0.9, stroke: '#fff', 'stroke-opacity': 0.25, 'stroke-width': 1 }));
+  const inner = bobInner(g);
+  inner.appendChild(svgEl('circle', { r: 18, fill: col, opacity: 0.22, class: 'warp-halo' }));
+  inner.appendChild(svgEl('circle', { r: 10, fill: col, opacity: 0.9, stroke: '#fff', 'stroke-opacity': 0.25, 'stroke-width': 1 }));
   const t = svgEl('text', { y: 24, 'text-anchor': 'middle', 'font-size': 10, fill: '#a4adc4' });
   const max = 22;
   t.textContent = (n.topic || '').length > max ? n.topic.slice(0, max - 1) + '…' : n.topic;
-  g.appendChild(t);
+  inner.appendChild(t);
   g.style.cursor = 'pointer';
   g.addEventListener('click', (ev) => {
     ev.stopPropagation();
