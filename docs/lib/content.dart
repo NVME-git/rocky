@@ -292,17 +292,18 @@ If you use Claude Code, Rocky installs two **skills** the agent invokes directly
 ```bash
 rocky install claude-all     # the full integration: skills + prompt log + git queue
 # or, more granularly:
-rocky install skills         # just the two skills, into ~/.claude/skills/
+rocky install skills         # just the skills, into ~/.claude/skills/
 rocky install claude         # just the prompt-logging hook
 rocky install stop           # legacy Stop-hook → Ollama path (opt-in only)
 ```
 
-`claude-all` is what most people want. It drops `rocky-checkpoint` and `rocky-quiz` into `~/.claude/skills/`, enables prompt logging so the skills can see your session transcript, and rewires the git hook so commits queue diffs (which the checkpoint skill drains) instead of running their own LLM call.
+`claude-all` is what most people want. It drops `rocky-checkpoint`, `rocky-quiz`, `rocky-backfill`, and `rocky-promptiq-rescore` into `~/.claude/skills/`, enables prompt logging so the skills can see your session transcript, and rewires the git hook so commits queue diffs (which the checkpoint skill drains) instead of running their own LLM call.
 
 From any Claude Code session you can then run:
 
-- `/rocky-checkpoint` — end-of-session: read recent diffs + transcript, extract topics with question banks, merge into the PKG (using the global dedup list so the same idea across projects becomes one node with multiple `repos[]`).
+- `/rocky-checkpoint` — end-of-session: read recent diffs + transcript, extract topics with **generic question banks** (no repo-specific identifiers), merge into the PKG (using the global dedup list so the same idea across projects becomes one node with multiple `repos[]`).
 - `/rocky-quiz` — Socratic review inside the Claude session, picking from the canonical question bank.
+- `/rocky-backfill` — one-shot seeder for projects that already had history when Rocky was installed. Same extract-and-question loop as `/rocky-checkpoint`, sourced from `rocky checkpoint history` instead of the post-commit queue.
 
 The legacy `rocky install stop` is still there if you want auto-extraction on every Claude turn via Ollama, but it's no longer wired by `claude-all` — the per-turn latency was a real complaint.
 
@@ -653,16 +654,16 @@ rocky uninstall claude-all
 
 This wires:
 
-- The two skills (`/rocky-checkpoint`, `/rocky-quiz`) into `~/.claude/skills/`
+- The skills (`/rocky-checkpoint`, `/rocky-quiz`, `/rocky-backfill`, `/rocky-promptiq-rescore`) into `~/.claude/skills/`
 - The Claude Code prompt-logging hook into `~/.claude/settings.json` (so the skills can see your transcript)
 - The git post-commit hook in **queue mode** — commits append diffs to a per-project queue instead of running their own LLM call. The checkpoint skill drains the queue.
 
-After install, work normally. End of session: type `/rocky-checkpoint` in Claude Code to extract topics, or `/rocky-quiz` any time to drill the weakest. Each skill operates on the global PKG, so the same topic surfaced in two projects becomes one node with `repos[]` accumulating.
+After install, work normally. End of session: type `/rocky-checkpoint` in Claude Code to extract topics, `/rocky-quiz` any time to drill the weakest, or `/rocky-backfill` once when adopting Rocky on a project with existing history. Each skill operates on the global PKG, so the same topic surfaced in two projects becomes one node with `repos[]` accumulating.
 
 ### Sub-targets (when you want pieces, not the bundle)
 
 ```bash
-rocky install skills    # just the two skills, no hook changes
+rocky install skills    # just the skills, no hook changes
 rocky install claude    # just the prompt-logging hook (legacy)
 rocky install stop      # legacy: Stop hook → Ollama auto-extraction every Claude turn
 rocky uninstall skills | claude | stop
@@ -1084,12 +1085,16 @@ rocky context
 
 ### `rocky checkpoint`
 
-Two subcommands the `/rocky-checkpoint` skill uses, but you can call them too:
+Three subcommands the `/rocky-checkpoint` and `/rocky-backfill` skills use, but you can call them directly too:
 
 ```bash
-rocky checkpoint diff   # JSON dump of queued post-commit diffs (read-only)
-rocky checkpoint mark   # drain the queue for this project (call after extraction succeeds)
+rocky checkpoint diff                       # JSON dump of queued post-commit diffs (read-only)
+rocky checkpoint mark                       # drain the queue for this project (call after extraction succeeds)
+rocky checkpoint history --limit 50         # JSON dump of recent commits (newest first) for agent-driven backfill
+rocky checkpoint history --limit 200 --all-authors   # include collaborators' commits
 ```
+
+`history` returns the same envelope shape as `diff` — `commits[]` with `sha`, `subject`, `message`, `diff` — so the same skill iteration works for both. It is read-only and never touches the post-commit queue.
 
 ### `rocky due`
 
@@ -1322,13 +1327,13 @@ rocky install claude-all
 rocky uninstall claude-all
 ```
 
-After install, type `/rocky-checkpoint` in any Claude session to extract topics into the PKG, or `/rocky-quiz` to drill the weakest. Both skills operate on the global PKG (cross-project dedup via `repos[]`).
+After install, type `/rocky-checkpoint` in any Claude session to extract topics into the PKG, `/rocky-quiz` to drill the weakest, or `/rocky-backfill` to seed the PKG from a project's existing git history with generic question banks. All three skills operate on the global PKG (cross-project dedup via `repos[]`).
 
 If you want pieces:
 
 | Command | What it installs |
 |---|---|
-| `rocky install skills` | Just `~/.claude/skills/{rocky-checkpoint,rocky-quiz}/SKILL.md` |
+| `rocky install skills` | `~/.claude/skills/{rocky-checkpoint,rocky-quiz,rocky-backfill,rocky-promptiq-rescore}/SKILL.md` |
 | `rocky install claude` | Just the prompt-logging entry in `~/.claude/settings.json` |
 | `rocky install stop`   | Legacy: Stop hook → Ollama auto-extract on every Claude turn |
 
@@ -1362,8 +1367,9 @@ Rocky doesn't extract topics one commit at a time. It batches diffs across a who
 |---|---|---|
 | `rocky explore` | Reads CLAUDE.md / README / docs / recent commits and synthesises a **project context** summary cached at `~/.rocky/summaries/<repo>.txt` | Run once per project, again after major shape changes |
 | `rocky post-commit` (queue mode) | Silently appends the latest commit's diff to a per-project queue. **No LLM call.** | Wired by `rocky install claude-all` |
-| `/rocky-checkpoint` (Claude skill) | Drains the diff queue, reads the active session's transcript, and writes nodes + question banks straight into the PKG. Uses the **global** dedup list — same topic across two projects becomes one node with `repos[]` accumulating. | Invoked inside Claude Code, end of a session |
+| `/rocky-checkpoint` (Claude skill) | Drains the diff queue, reads the active session's transcript, and writes nodes + **generic question banks** straight into the PKG. Stripped of repo-specific identifiers so the same question still works when the topic resurfaces in a different project. Uses the **global** dedup list — same topic across two projects becomes one node with `repos[]` accumulating. | Invoked inside Claude Code, end of a session |
 | `/rocky-quiz` (Claude skill) | Picks the weakest topics by `recall_now`, asks from the canonical question bank, records scores back to FSRS. | Invoked inside Claude Code any time |
+| `/rocky-backfill` (Claude skill) | Seeds the PKG from a project's existing git history. Same extract-and-question loop as `/rocky-checkpoint` but driven by `rocky checkpoint history` instead of the post-commit queue, so it works on repos installed *after* the commits happened. | Invoked once per repo when adopting Rocky on an existing project |
 
 The motivation: a single commit message like *"feat: rotate refresh tokens"* is too thin a context to ground good questions in. By batching at session end, the extractor has the project summary, the actual diffs, **and** the agent's reasoning trail. And by running inside Claude Code itself rather than shelling out to a local Ollama on every Stop event, the per-turn latency drops to zero — the heavy step only happens when you ask for it.
 
@@ -1482,9 +1488,9 @@ After every `git commit`, Rocky analyses the diff for topics that appeared in yo
 
 ---
 
-## Scenario 3: Claude Code skills (`/rocky-checkpoint`, `/rocky-quiz`)
+## Scenario 3: Claude Code skills (`/rocky-checkpoint`, `/rocky-quiz`, `/rocky-backfill`)
 
-The default integration after `rocky install claude-all`. The agent itself does extraction and quizzing — no separate Ollama process, no per-turn latency.
+The default integration after `rocky install claude-all`. The agent itself does extraction, quizzing, and backfill — no separate Ollama process, no per-turn latency.
 
 **Capture flow (background):**
 
@@ -1495,7 +1501,7 @@ The default integration after `rocky install claude-all`. The agent itself does 
 
 1. You type `/rocky-checkpoint` in the Claude session
 2. The skill calls `rocky context` (project summary), `rocky list --json` (global topic list for dedup), `rocky checkpoint diff` (queued diffs)
-3. Claude reads the session transcript itself, extracts topics, generates question banks
+3. Claude reads the session transcript itself, extracts topics, generates **generic question banks** (1–3 questions per topic, with repo-specific identifiers redacted so the same question makes sense in any future project)
 4. For each topic: `rocky add-topic` (or update an existing canonical name with `repos[]` accumulating cross-project), then `rocky add-question` for each Q+A+clue
 5. `rocky checkpoint mark` drains the queue
 
@@ -1504,6 +1510,14 @@ The default integration after `rocky install claude-all`. The agent itself does 
 1. You type `/rocky-quiz` in the Claude session (or run `rocky quiz` from the terminal)
 2. The skill calls `rocky due` to pick the lowest-recall topics
 3. For each: `rocky topic <name>` to fetch the question bank, asks via the standard `[s/h/c/?/x]` menu, calls `rocky review` to record the score
+
+**Backfill flow (one-shot, after adopting Rocky on an existing project):**
+
+1. You type `/rocky-backfill` in the Claude session
+2. The skill asks how many commits to scan (default 50, newest first) and whether to include collaborators
+3. It calls `rocky checkpoint history --limit N [--all-authors]` to read the commits, then runs the same extract-and-question loop as `/rocky-checkpoint` — global dedup, generic questions, the lot. No queue to drain because nothing was queued.
+
+The headless `rocky backfill` command remains for when you want bulk seeding without an agent in the loop. Trade-off: faster and cheaper per commit, but the questions are grounded in the diff alone — they retain more repo-specific phrasing than the agent-generated ones. A common workflow is `rocky backfill --limit 500` for bulk first-pass, then `/rocky-backfill --limit 50` over recent commits where question quality matters most.
 
 The legacy Stop hook still ships and runs `rocky session-end` after every Claude turn (auto-extracts via Ollama). It's opt-in via `rocky install stop`.
 

@@ -252,6 +252,9 @@ ROCKY_HOME=~/.rocky-tutorial/data XDG_CONFIG_HOME=~/.rocky-tutorial/config rocky
 | `rocky post-commit` | Silent queue mode for the git post-commit hook |
 | `rocky backfill --fill-question-bank` | Generate question banks for legacy nodes |
 | `rocky backfill --fill-clues` | Generate missing clues for nodes with canonical Q&A |
+| `rocky checkpoint diff` | JSON dump of queued post-commit diffs (used by `/rocky-checkpoint`) |
+| `rocky checkpoint history --limit N` | JSON dump of recent commits (used by `/rocky-backfill`) |
+| `rocky checkpoint mark` | Drain the post-commit queue for this project |
 | `rocky install` | Install git post-commit hook (default) |
 | `rocky install claude` | Install Claude Code Stop hook (runs `session-end`) |
 | `rocky install claude all` | Install both Stop hook and prompt logger |

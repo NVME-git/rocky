@@ -377,6 +377,16 @@ enum CheckpointAction {
     Diff,
     /// Drain the queue for this project (call after extraction succeeds).
     Mark,
+    /// Print recent commits + diffs as JSON for agent-driven backfill.
+    /// Read-only — does not interact with the post-commit queue.
+    History {
+        /// Maximum number of commits to emit (newest first).
+        #[arg(long, default_value = "50")]
+        limit: usize,
+        /// Include commits from all authors (default: current git user only).
+        #[arg(long)]
+        all_authors: bool,
+    },
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -592,6 +602,9 @@ fn run() -> Result<()> {
         Some(Cmd::Checkpoint { action }) => match action {
             CheckpointAction::Diff => emit_checkpoint_diff_json(&db)?,
             CheckpointAction::Mark => run_checkpoint_mark(&db)?,
+            CheckpointAction::History { limit, all_authors } => {
+                emit_checkpoint_history_json(limit, all_authors)?
+            }
         },
         Some(Cmd::Due { limit }) => emit_due_json(&db, limit)?,
         Some(Cmd::Topic { name }) => emit_topic_json(&db, &name)?,
@@ -626,7 +639,7 @@ fn run() -> Result<()> {
                 cfg.daily_budget,
                 cfg.min_gap_minutes,
             );
-            run_diff(&db, &teacher, &session, &p, git_ref.as_deref(), staged, &cfg.edge_reuse)?;
+            run_diff(&db, &teacher, &session, &p, git_ref.as_deref(), staged, &cfg.edge_reuse, &cfg)?;
             auto_sync(&db, &cfg);
         }
         Some(Cmd::Hook) => unreachable!(),
@@ -1577,7 +1590,7 @@ fn run_task(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse, &repo, commit_dt, None)?;
+                        run_socratic_loop(db, teacher, topic_info, task, &known_topic_names, p, edge_reuse, &repo, commit_dt, None, None)?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -1634,11 +1647,28 @@ fn run_socratic_loop(
     repo: &str,
     node_date: Option<chrono::NaiveDate>,
     cli_voice: Option<&voice::CliVoice>,
+    pregenerated_qa: Option<&(String, String, String)>,
 ) -> Result<(bool, bool)> {
     let topic = &topic_info.topic;
     println!("\n{} New topic — {topic}", "Rocky:".truecolor(6, 182, 212).bold());
     println!("{}", format!("  {}", topic_info.description).dimmed());
     println!();
+
+    // Persist a pre-generated canonical Q+A+clue once we know the node was actually
+    // added — keeps the "skip queues silently" contract intact while ensuring
+    // post-commit topics don't end up with empty canonical_question fields.
+    // Won't overwrite an existing canonical_question (preserves manually curated Q&A).
+    let save_pregenerated = |db: &Db, topic: &str| {
+        if let Some((q, a, clue)) = pregenerated_qa {
+            if q.is_empty() { return; }
+            let already_set = db.get_node(topic).ok().flatten()
+                .map(|n| !n.canonical_question.is_empty())
+                .unwrap_or(false);
+            if !already_set {
+                db.set_canonical_qa(topic, q, a, clue).ok();
+            }
+        }
+    };
 
     let mut total_score = 0.0f64;
     let mut questions_asked = 0u32;
@@ -1725,23 +1755,44 @@ fn run_socratic_loop(
                 break 'q n.canonical_question.clone();
             }
         }
+        // Prefer the diff-grounded pre-generated question over a fresh LLM call —
+        // it's already richer in context and we'll persist it as canonical below.
+        if let Some((q, _, _)) = pregenerated_qa {
+            if !q.is_empty() {
+                break 'q q.clone();
+            }
+        }
         teacher.generate_question(topic, &topic_info.description, task, known_topics, 1, Difficulty::Normal)?
     };
 
     // Track whether the initial question was canonical (pre-generated from diff)
-    let is_canonical = db.get_node(topic).ok()
+    let pregen_q_matches = pregenerated_qa
+        .map(|(q, _, _)| !q.is_empty() && q == &question)
+        .unwrap_or(false);
+    let is_canonical = pregen_q_matches || db.get_node(topic).ok()
         .flatten()
         .map(|n| !n.canonical_question.is_empty() && n.canonical_question == question)
         .unwrap_or(false);
 
-    // Load canonical answer and clue for use as evaluator reference and hint
-    let (canonical_answer, canonical_clue): (Option<String>, Option<String>) = db.get_node(topic).ok()
-        .flatten()
-        .map(|n| (
-            if n.canonical_answer.is_empty() { None } else { Some(n.canonical_answer) },
-            if n.canonical_clue.is_empty() { None } else { Some(n.canonical_clue) },
-        ))
-        .unwrap_or((None, None));
+    // Load canonical answer and clue for use as evaluator reference and hint.
+    // Prefer the pregenerated triple (richer diff context) over whatever the DB
+    // has so the evaluator and the [c] clue path can use it before the node is
+    // persisted.
+    let (canonical_answer, canonical_clue): (Option<String>, Option<String>) =
+        if let Some((_, a, clue)) = pregenerated_qa {
+            (
+                if a.is_empty() { None } else { Some(a.clone()) },
+                if clue.is_empty() { None } else { Some(clue.clone()) },
+            )
+        } else {
+            db.get_node(topic).ok()
+                .flatten()
+                .map(|n| (
+                    if n.canonical_answer.is_empty() { None } else { Some(n.canonical_answer) },
+                    if n.canonical_clue.is_empty() { None } else { Some(n.canonical_clue) },
+                ))
+                .unwrap_or((None, None))
+        };
 
     // Track current difficulty for adaptive re-generation
     let mut current_difficulty = Difficulty::Normal;
@@ -1874,6 +1925,7 @@ fn run_socratic_loop(
                 task,
                 node_date, repo, node_date,
             )?;
+            save_pregenerated(db, topic);
             db.add_review(&Db::node_id_static(topic), &question, "", &explanation, 0.2).ok();
             return Ok((true, true));
         }
@@ -1901,6 +1953,7 @@ fn run_socratic_loop(
                 task,
                 node_date, repo, node_date,
             )?;
+            save_pregenerated(db, topic);
             db.add_review(&Db::node_id_static(topic), &question, &answer, &result.feedback, result.score).ok();
             if let Some(msg) = p.correct() { println!("   {msg}"); }
             else { println!("{}", "   Added to your PKG.".truecolor(29, 158, 117)); }
@@ -1946,6 +1999,7 @@ fn run_socratic_loop(
         task,
         node_date, repo, node_date,
     )?;
+    save_pregenerated(db, topic);
     db.add_review(&Db::node_id_static(topic), &last_question, &last_answer, &explanation, avg_score).ok();
     Ok((true, true))
 }
@@ -2030,7 +2084,7 @@ fn run_quiz_topic(db: &Db, teacher: &Teacher, session: &Session, p: &personality
             description: node.description.clone(),
         };
         let context = node.contexts.first().map(|s| s.as_str()).unwrap_or("manual review");
-        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, &repo, None, cli_voice)?;
+        let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, &repo, None, cli_voice, None)?;
         if completed {
             session.record_quiz()?;
         }
@@ -2129,7 +2183,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
                 domain: String::new(),
                 description: description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, &repo, None, cli_voice)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, &repo, None, cli_voice, None)?;
             if completed {
                 session.record_quiz()?;
                 // Remove from queue now that it has been properly reviewed
@@ -2176,7 +2230,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             domain: node.domain.clone(),
                 description: node.description.clone(),
             };
-            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, &repo, None, cli_voice)?;
+            let (completed, _) = run_socratic_loop(db, teacher, &topic_info, context, &known_topic_names, p, edge_reuse, &repo, None, cli_voice, None)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -2195,7 +2249,7 @@ fn run_quiz(db: &Db, teacher: &Teacher, session: &Session, p: &personality::Pers
             .collect();
 
         for topic_info in new_from_prompts {
-            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse, &repo, None, cli_voice)?;
+            let (completed, _) = run_socratic_loop(db, teacher, topic_info, combined, &known_topic_names, p, edge_reuse, &repo, None, cli_voice, None)?;
             if completed {
                 session.record_quiz()?;
             }
@@ -2394,6 +2448,7 @@ fn run_diff(
     git_ref: Option<&str>,
     staged: bool,
     edge_reuse: &config::EdgeReuse,
+    cfg: &Config,
 ) -> Result<()> {
     print_header();
 
@@ -2406,6 +2461,7 @@ fn run_diff(
         commit_msg.lines().next().unwrap_or("last commit").to_string()
     };
     let repo = detect_repo_name();
+    let project_summary = load_or_create_project_summary(&cfg.rocky_dir, &repo, teacher);
 
     println!("\n{} {label}\n", "Diff:".bold());
     println!("{}", "Analyzing code changes...".dimmed());
@@ -2490,8 +2546,14 @@ fn run_diff(
             _ => {
                 new_count += 1;
                 if quiz_allowed && quizzed < budget {
+                    // Pre-generate canonical Q+A+clue from the diff so this topic
+                    // ends up with a stored canonical_question once the loop adds it.
+                    // Failure is silent — the loop falls back to a live LLM call.
+                    let pregen = teacher.generate_question_and_answer(
+                        topic, &topic_info.description, &commit_msg, &diff, &project_summary,
+                    ).ok();
                     let (completed, node_added) =
-                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse, &repo, None, None)?;
+                        run_socratic_loop(db, teacher, topic_info, &label, &known_topic_names, p, edge_reuse, &repo, None, None, pregen.as_ref())?;
                     if completed {
                         session.record_quiz()?;
                         quizzed += 1;
@@ -2979,6 +3041,75 @@ fn run_checkpoint_mark(db: &Db) -> Result<()> {
     Ok(())
 }
 
+/// Emit recent git commits + diffs as JSON for agent-driven backfill.
+/// Mirrors the envelope shape used by `emit_checkpoint_diff_json` so the
+/// /rocky-backfill skill can reuse the same iteration shape as /rocky-checkpoint.
+fn emit_checkpoint_history_json(limit: usize, all_authors: bool) -> Result<()> {
+    use std::process::Command;
+    let project_path = project_path_str()?;
+
+    let mut log_args: Vec<String> = vec!["log".into(), "--pretty=format:%H".into()];
+    if !all_authors {
+        let out = Command::new("git").args(["config", "user.email"]).output()?;
+        let email = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if email.is_empty() {
+            anyhow::bail!("could not read git user.email — pass --all-authors to skip filtering");
+        }
+        log_args.push(format!("--author={email}"));
+    }
+    let log_out = Command::new("git").args(&log_args).output()
+        .context("failed to run git log — are you in a git repository?")?;
+    if !log_out.status.success() {
+        anyhow::bail!("git log failed: {}", String::from_utf8_lossy(&log_out.stderr));
+    }
+    let shas: Vec<String> = String::from_utf8_lossy(&log_out.stdout)
+        .lines()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .take(limit)
+        .collect();
+
+    let mut commits: Vec<serde_json::Value> = Vec::with_capacity(shas.len());
+    for sha in &shas {
+        let msg_out = Command::new("git")
+            .args(["log", "-1", "--pretty=%B", sha])
+            .output()?;
+        let commit_msg = String::from_utf8_lossy(&msg_out.stdout).trim().to_string();
+        let subject = commit_msg.lines().next().unwrap_or("").to_string();
+
+        let raw_diff = {
+            let diff_out = Command::new("git")
+                .args(["diff", &format!("{sha}^"), sha, "--"])
+                .output()?;
+            if diff_out.status.success() {
+                String::from_utf8_lossy(&diff_out.stdout).to_string()
+            } else {
+                let show_out = Command::new("git")
+                    .args(["show", "--format=", sha])
+                    .output()?;
+                String::from_utf8_lossy(&show_out.stdout).to_string()
+            }
+        };
+        let diff = truncate_to(raw_diff.trim(), MAX_BACKFILL_DIFF_CHARS).to_string();
+
+        commits.push(serde_json::json!({
+            "sha": sha,
+            "subject": subject,
+            "message": commit_msg,
+            "diff": diff,
+            "queued_at": null,
+        }));
+    }
+
+    let envelope = serde_json::json!({
+        "project_path": project_path,
+        "pending_count": commits.len(),
+        "commits": commits,
+    });
+    println!("{}", serde_json::to_string_pretty(&envelope)?);
+    Ok(())
+}
+
 fn run_add_topic(
     db: &Db,
     name: &str,
@@ -3186,6 +3317,7 @@ fn run_delete_topic(db: &Db, topic_query: &str) -> Result<()> {
 const SKILL_CHECKPOINT: &str = include_str!("../skills/rocky-checkpoint/SKILL.md");
 const SKILL_QUIZ: &str = include_str!("../skills/rocky-quiz/SKILL.md");
 const SKILL_PROMPTIQ_RESCORE: &str = include_str!("../skills/rocky-promptiq-rescore/SKILL.md");
+const SKILL_BACKFILL: &str = include_str!("../skills/rocky-backfill/SKILL.md");
 
 fn claude_skills_dir() -> Result<std::path::PathBuf> {
     let home = dirs::home_dir().context("could not resolve home directory")?;
@@ -3204,6 +3336,7 @@ fn install_claude_skills() -> Result<Vec<(bool, String)>> {
         ("rocky-checkpoint", SKILL_CHECKPOINT),
         ("rocky-quiz", SKILL_QUIZ),
         ("rocky-promptiq-rescore", SKILL_PROMPTIQ_RESCORE),
+        ("rocky-backfill", SKILL_BACKFILL),
     ];
     let mut out = Vec::new();
     for (name, body) in skills {
@@ -3219,7 +3352,7 @@ fn install_claude_skills() -> Result<Vec<(bool, String)>> {
 fn uninstall_claude_skills() -> Result<Vec<(bool, String)>> {
     let base = claude_skills_dir()?;
     let mut out = Vec::new();
-    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq-rescore"] {
+    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq-rescore", "rocky-backfill"] {
         let dir = base.join(name);
         if dir.exists() {
             std::fs::remove_dir_all(&dir)?;
@@ -3238,6 +3371,7 @@ fn install_opencode_skills() -> Result<Vec<(bool, String)>> {
         ("rocky-checkpoint", SKILL_CHECKPOINT),
         ("rocky-quiz", SKILL_QUIZ),
         ("rocky-promptiq-rescore", SKILL_PROMPTIQ_RESCORE),
+        ("rocky-backfill", SKILL_BACKFILL),
     ];
     let mut out = Vec::new();
     for (name, body) in skills {
@@ -3253,7 +3387,7 @@ fn install_opencode_skills() -> Result<Vec<(bool, String)>> {
 fn uninstall_opencode_skills() -> Result<Vec<(bool, String)>> {
     let base = opencode_skills_dir()?;
     let mut out = Vec::new();
-    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq-rescore"] {
+    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq-rescore", "rocky-backfill"] {
         let dir = base.join(name);
         if dir.exists() {
             std::fs::remove_dir_all(&dir)?;

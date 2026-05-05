@@ -87,13 +87,68 @@ Run these steps in order. Stop and report if any step fails.
    The output JSON has `action: "created"` or `action: "merged"` plus
    `recall_now` so you know how the topic stands.
 
-6. **Drain the queue**:
+6. **For each topic just stored, add a generic question bank.** Generate
+   1–3 questions per topic and call `rocky add-question` for each. Skip
+   merged topics whose existing bank already has ≥4 questions
+   (`rocky topic "<name>"` shows current bank size).
+
+   ```bash
+   rocky add-question \
+     --topic "Connection Pool Sizing" \
+     --question "When you size a database connection pool to match request concurrency instead of CPU count, what kinds of failure modes do you start seeing under load?" \
+     --answer "Pools sized to request concurrency oversubscribe the database — once active connections exceed the DB's worker count, queries queue inside Postgres and tail latency spikes. CPU-count sizing keeps the pool below the DB's parallelism ceiling, so backpressure surfaces in the app's connection wait instead of inside the database. Trade-off: you must tolerate brief connection-acquire waits; if your app can't, scale horizontally rather than enlarging the pool." \
+     --clue "Where does the bottleneck move when the pool is larger than what the database can actually run in parallel?"
+   ```
+
+   ### Genericization rules — apply strictly
+
+   The question, answer, and clue must read as if you're asking another
+   developer who has never seen this codebase. Strip:
+
+   - Function, method, class, struct, and variable names from the diff
+     (e.g. `bobInner()`, `warpToFocus`, `runSocraticLoop` → "the wrapper
+     function", "the warp transition", "the quiz loop").
+   - File paths and module names (`src/main.rs:1626` → omit; "the quiz
+     loop" suffices).
+   - Parameter names and field names that are project-local
+     (`pregenerated_qa` → "a pre-generated question/answer pair").
+   - Project-specific terminology that won't survive outside this repo.
+   - Library/framework symbols *unless* the topic is genuinely about that
+     library (a question about React's `useEffect` should keep the name;
+     a question about a pattern that happens to use `useEffect` should
+     describe the pattern abstractly).
+
+   Keep:
+
+   - The underlying concept, pattern, or constraint the diff illustrates.
+   - Generic phrasing that tests reasoning ("what breaks", "when not to
+     use", "what trade-off does this lock in").
+   - One concrete-but-generic example if it sharpens the question (use
+     placeholder names — "the parent component", "the outer transform").
+
+   ### Question quality bar
+
+   - 1–2 sentences. Specific enough to have a right answer; generic enough
+     to make sense in any codebase that meets the same constraint.
+   - Tests *implications*, *trade-offs*, or *consequences* — not recall
+     of definitions. Avoid "what is X" / "define X".
+   - Each item in a multi-question bank for one topic must hit a different
+     angle (what breaks, when NOT to use, how it composes with adjacent
+     systems, what would change if a key constraint were removed).
+   - Answer: 3–5 sentences that demonstrate genuine understanding. The
+     ideal answer for a test, not a textbook definition.
+   - Clue: 1–2 sentences that nudge without revealing the answer.
+
+   `rocky add-question` is idempotent on duplicate question text — if a
+   question already exists in the bank verbatim, the call is skipped.
+
+7. **Drain the queue**:
    ```bash
    rocky checkpoint mark
    ```
 
-7. **Report**, one line. Mention cross-project merges explicitly:
-   `Checkpointed N commits → M new topics, K merged (J across projects).`
+8. **Report**, one line. Mention cross-project merges explicitly:
+   `Checkpointed N commits → M new topics, K merged (J across projects), Q questions added.`
 
 ## Rules
 
@@ -104,7 +159,9 @@ Run these steps in order. Stop and report if any step fails.
   skip it.
 - **Never call `rocky session-end`.** Legacy LLM-driven path.
 - **Never call `rocky checkpoint mark` until every `add-topic` has succeeded.**
-  Failed extractions stay queued for retry.
+  Failed extractions stay queued for retry. (`add-question` failures are
+  not blocking — questions can always be filled in later by re-running the
+  skill or `rocky backfill --fill-question-bank`.)
 
 ## Boundaries
 
