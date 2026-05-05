@@ -2,12 +2,6 @@
 // Each constant corresponds to one section of the docs.
 
 const kIntroduction = r'''
-# What is Rocky?
-
-Rocky is a command-line tool that keeps your technical knowledge sharp while AI agents handle more and more of your work.
-
----
-
 ## Why it exists
 
 Every senior engineer knows the feeling: you stop writing something by hand, and six months later you can't remember how it works without looking it up. That's normal. That's how memory works.

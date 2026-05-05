@@ -269,9 +269,23 @@ class _DocsShellState extends State<DocsShell> {
             child: SingleChildScrollView(
               controller: _scrollController,
               padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 40),
-              child: SectionContent(
-                key: ValueKey(_selected),
-                markdown: kSections[_selected].markdown,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_selected == 0)
+                    _HeroBlock(
+                      onInstall: () => _selectSection(1),
+                      onLearnMore: () => _scrollController.animateTo(
+                        560,
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.easeInOutCubic,
+                      ),
+                    ),
+                  SectionContent(
+                    key: ValueKey(_selected),
+                    markdown: kSections[_selected].markdown,
+                  ),
+                ],
               ),
             ),
           ),
@@ -1125,6 +1139,321 @@ class _GraphPreview extends StatelessWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Hero block — landing page above the "What is Rocky?" content
+// ---------------------------------------------------------------------------
+class _HeroBlock extends StatelessWidget {
+  final VoidCallback onInstall;
+  final VoidCallback onLearnMore;
+  const _HeroBlock({required this.onInstall, required this.onLearnMore});
+
+  @override
+  Widget build(BuildContext context) {
+    final isNarrow = MediaQuery.of(context).size.width < 900;
+    final left = _HeroText(isNarrow: isNarrow, onInstall: onInstall, onLearnMore: onLearnMore);
+    const right = _RockyIqDial(target: 74);
+
+    final body = isNarrow
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              left,
+              const SizedBox(height: 32),
+              const Center(child: right),
+            ],
+          )
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(flex: 5, child: left),
+              const SizedBox(width: 32),
+              right,
+            ],
+          );
+
+    return Container(
+      padding: const EdgeInsets.only(bottom: 40),
+      margin: const EdgeInsets.only(bottom: 32),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.divider, width: 1)),
+      ),
+      child: body,
+    );
+  }
+}
+
+class _HeroText extends StatelessWidget {
+  final bool isNarrow;
+  final VoidCallback onInstall;
+  final VoidCallback onLearnMore;
+  const _HeroText({required this.isNarrow, required this.onInstall, required this.onLearnMore});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(99),
+            border: Border.all(color: AppColors.primary.withValues(alpha: 0.3), width: 1),
+          ),
+          child: Text(
+            '♫  ROCKY IQ',
+            style: TextStyle(
+              color: AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          "What's your Rocky IQ?",
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: isNarrow ? 36 : 44,
+            fontWeight: FontWeight.w800,
+            height: 1.1,
+            letterSpacing: -1,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'A live 0–100 score of how well you actually understand the code your AI is shipping. Decays when you stop engaging. Climbs when you can answer for it.',
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 16,
+            height: 1.6,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            _HeroButton(label: 'Install Rocky  →', primary: true, onTap: onInstall),
+            _HeroButton(label: 'Learn more  ↓', primary: false, onTap: onLearnMore),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'Free, local, open source. Plugs into Claude Code, VS Code, your browser, and your git history.',
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HeroButton extends StatefulWidget {
+  final String label;
+  final bool primary;
+  final VoidCallback onTap;
+  const _HeroButton({required this.label, required this.primary, required this.onTap});
+  @override
+  State<_HeroButton> createState() => _HeroButtonState();
+}
+
+class _HeroButtonState extends State<_HeroButton> {
+  bool _hovered = false;
+  @override
+  Widget build(BuildContext context) {
+    final bg = widget.primary
+        ? (_hovered ? AppColors.primaryDim : AppColors.primary)
+        : (_hovered ? AppColors.sidebarHover : Colors.transparent);
+    final fg = widget.primary ? Colors.black : AppColors.textPrimary;
+    final border = widget.primary ? Colors.transparent : AppColors.divider;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: border, width: 1),
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              color: fg,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RockyIqDial extends StatefulWidget {
+  final int target;
+  const _RockyIqDial({required this.target});
+  @override
+  State<_RockyIqDial> createState() => _RockyIqDialState();
+}
+
+class _RockyIqDialState extends State<_RockyIqDial> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      duration: const Duration(milliseconds: 1400),
+      vsync: this,
+    );
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Color _colorFor(double v) {
+    if (v >= 70) return TermColors.successGreen;
+    if (v >= 40) return TermColors.fadingAmber;
+    return TermColors.gapRed;
+  }
+
+  String _bucketFor(double v) {
+    if (v >= 70) return 'KNOWN';
+    if (v >= 40) return 'FADING';
+    return 'GAP';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (context, _) {
+        final v = _anim.value * widget.target;
+        final color = _colorFor(v);
+        return SizedBox(
+          width: 240,
+          height: 240,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CustomPaint(
+                size: const Size(240, 240),
+                painter: _DialPainter(
+                  progress: v / 100,
+                  color: color,
+                  trackColor: AppColors.divider,
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    v.toInt().toString(),
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 64,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                      letterSpacing: -2,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '/ 100',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      _bucketFor(v),
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DialPainter extends CustomPainter {
+  final double progress; // 0..1
+  final Color color;
+  final Color trackColor;
+  _DialPainter({required this.progress, required this.color, required this.trackColor});
+
+  static const double _twoPi = 6.2831853;
+  static const double _topStart = -1.5707963; // -90°
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 14.0;
+    final center = size.center(Offset.zero);
+    final radius = (size.shortestSide - stroke) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    final track = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..color = trackColor
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(rect, 0, _twoPi, false, track);
+
+    final arc = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round
+      ..shader = SweepGradient(
+        startAngle: 0,
+        endAngle: _twoPi,
+        colors: [color.withValues(alpha: 0.55), color],
+      ).createShader(rect);
+
+    final sweep = _twoPi * progress.clamp(0.0, 1.0);
+    canvas.drawArc(rect, _topStart, sweep, false, arc);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DialPainter old) =>
+      old.progress != progress || old.color != color || old.trackColor != trackColor;
 }
 
 // ---------------------------------------------------------------------------
