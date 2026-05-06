@@ -1,1 +1,0 @@
-Python data pipeline that transforms raw bank statements into standardised, categorised transactions — supports CSV/PDF ingestion, multi-account double-entry bookkeeping, and Pandas-based analysis

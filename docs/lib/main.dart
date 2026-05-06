@@ -1,3 +1,7 @@
+import 'dart:ui_web' as ui_web;
+// ignore: avoid_web_libraries_in_flutter, deprecated_member_use
+import 'dart:html' as html;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -118,9 +122,9 @@ final List<DocSection> kSections = [
   const DocSection('Commands', Icons.terminal, kCommands),
   const DocSection('Configuration', Icons.settings, kConfiguration),
   const DocSection('How It Works', Icons.account_tree, kHowItWorks),
-  const DocSection('Obsidian', Icons.hub, kObsidian),
   const DocSection('Sync & Backup', Icons.sync, kSync),
-  const DocSection('Demo Usecase', Icons.timeline, kWalkthrough),
+  const DocSection('Obsidian', Icons.hub, kObsidian),
+  const DocSection('Demo', Icons.play_circle_outline_rounded, kWalkthrough),
   const DocSection('Voice', Icons.mic_rounded, kVoice),
   const DocSection('References', Icons.menu_book_outlined, kReferences),
 ];
@@ -473,7 +477,33 @@ class _CodePart extends _MdPart {
   _CodePart(this.code, this.language);
 }
 
+class _DetailsPart extends _MdPart {
+  final String title;
+  final String body;
+  _DetailsPart(this.title, this.body);
+}
+
 List<_MdPart> _parseParts(String markdown) {
+  // First pass: extract :::details TITLE\n...\n::: blocks.
+  // The body may itself contain code fences, so we recurse into _parseCodeAndText
+  // for everything outside the details blocks and store the body as raw markdown.
+  final parts = <_MdPart>[];
+  final detailsRe = RegExp(r':::details\s+([^\n]+)\n([\s\S]*?)\n:::', multiLine: true);
+  int lastEnd = 0;
+  for (final m in detailsRe.allMatches(markdown)) {
+    if (m.start > lastEnd) {
+      parts.addAll(_parseCodeAndText(markdown.substring(lastEnd, m.start)));
+    }
+    parts.add(_DetailsPart((m.group(1) ?? '').trim(), m.group(2) ?? ''));
+    lastEnd = m.end;
+  }
+  if (lastEnd < markdown.length) {
+    parts.addAll(_parseCodeAndText(markdown.substring(lastEnd)));
+  }
+  return parts;
+}
+
+List<_MdPart> _parseCodeAndText(String markdown) {
   final parts = <_MdPart>[];
   // Match fenced code blocks: ```lang\n...\n```
   final re = RegExp(r'```(\w*)\n([\s\S]*?)```', multiLine: true);
@@ -510,25 +540,16 @@ class SectionContent extends StatelessWidget {
       if (part is _TextPart) {
         widgets.add(StyledMarkdown(data: part.text));
         i++;
-      } else if (part is _CodePart && part.language == 'graphlink') {
-        final segs = part.code.trim().split('|');
+      } else if (part is _DetailsPart) {
         widgets.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: _GraphLink(
-            linkPath: segs.isNotEmpty ? segs[0].trim() : '',
-            label:    segs.length > 1 ? segs[1].trim() : 'Open interactive graph',
-          ),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: _DetailsPanel(title: part.title, body: part.body),
         ));
         i++;
-      } else if (part is _CodePart && part.language == 'imagelink') {
-        final segs = part.code.trim().split('|');
+      } else if (part is _CodePart && part.language == 'youtube') {
         widgets.add(Padding(
-          padding: const EdgeInsets.only(bottom: 20),
-          child: _GraphPreview(
-            imagePath: segs.isNotEmpty ? segs[0].trim() : '',
-            linkPath:  segs.length > 1 ? segs[1].trim() : '',
-            caption:   segs.length > 2 ? segs[2].trim() : 'Open interactive graph',
-          ),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: _YouTubeEmbed(videoId: part.code.trim()),
         ));
         i++;
       } else if (part is _CodePart) {
@@ -565,102 +586,38 @@ class SectionContent extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Terminal block — animated, blinking cursor, Mac chrome
 // ---------------------------------------------------------------------------
-class TerminalBlock extends StatefulWidget {
+class TerminalBlock extends StatelessWidget {
   final String code;
   final String language;
-  /// Output to reveal instantly after the input finishes typing.
+  /// Output rendered after the input section. Static — no reveal animation.
   final String? outputCode;
   const TerminalBlock({super.key, required this.code, required this.language, this.outputCode});
 
-  @override
-  State<TerminalBlock> createState() => _TerminalBlockState();
-}
-
-class _TerminalBlockState extends State<TerminalBlock>
-    with TickerProviderStateMixin {
-  late final AnimationController _typewriter;
-  late final AnimationController _cursor;
-  late final Animation<int> _charCount;
-  bool _animationStarted = false;
-  ScrollPosition? _scrollPos;
-
-  late final String _inputSection;
-  late final String _outputSection;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // Split at the last shell-prompt line: everything up to and including it
-    // is typed character-by-character; everything after appears all at once.
+  /// Split the source at the last shell-prompt line. Everything up to and
+  /// including that line is the input section; everything after is output.
+  /// If no prompt is found (or the prompt is on the last line), all of `code`
+  /// is treated as input and `outputCode` (if given) is the output.
+  ({String input, String output}) _split() {
     final promptRe = RegExp(r'^[\w~/.]*\s*\$\s');
-    final lines = widget.code.split('\n');
+    final lines = code.split('\n');
     int lastPrompt = -1;
     for (int i = 0; i < lines.length; i++) {
       if (promptRe.hasMatch(lines[i])) lastPrompt = i;
     }
     if (lastPrompt < 0 || lastPrompt == lines.length - 1) {
-      _inputSection = widget.code;
-      _outputSection = widget.outputCode ?? '';
-    } else {
-      _inputSection = lines.sublist(0, lastPrompt + 1).join('\n');
-      final rest = lines.sublist(lastPrompt + 1).join('\n');
-      _outputSection =
-          widget.outputCode != null ? '$rest\n${widget.outputCode}' : rest;
+      return (input: code, output: outputCode ?? '');
     }
-
-    final totalChars = _inputSection.length;
-    // Scale duration: ~18ms per char, clamped between 600ms and 2800ms
-    final ms = (totalChars * 18).clamp(600, 2800);
-    _typewriter = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: ms),
-    );
-    _charCount = IntTween(begin: 0, end: totalChars)
-        .animate(CurvedAnimation(parent: _typewriter, curve: Curves.linear));
-
-    _cursor = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 530),
-    )..repeat(reverse: true);
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final scrollable = Scrollable.maybeOf(context);
-      _scrollPos = scrollable?.position;
-      _scrollPos?.addListener(_checkVisibility);
-      _checkVisibility();
-    });
+    final input = lines.sublist(0, lastPrompt + 1).join('\n');
+    final rest = lines.sublist(lastPrompt + 1).join('\n');
+    final output = outputCode != null ? '$rest\n$outputCode' : rest;
+    return (input: input, output: output);
   }
 
-  @override
-  void dispose() {
-    _scrollPos?.removeListener(_checkVisibility);
-    _typewriter.dispose();
-    _cursor.dispose();
-    super.dispose();
-  }
-
-  void _checkVisibility() {
-    if (_animationStarted || !mounted) return;
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null || !box.attached) return;
-    final pos = box.localToGlobal(Offset.zero);
-    final screenH = MediaQuery.sizeOf(context).height;
-    if (pos.dy < screenH + 80 && pos.dy + box.size.height > -80) {
-      _animationStarted = true;
-      _typewriter.forward();
-    }
-  }
-
-  String get _title {
-    final lang = widget.language;
-    if (lang.isEmpty) return 'output';
-    return lang;
-  }
+  String get _title => language.isEmpty ? 'output' : language;
 
   @override
   Widget build(BuildContext context) {
+    final sections = _split();
     return Container(
       decoration: BoxDecoration(
         color: TermColors.bg,
@@ -678,7 +635,7 @@ class _TerminalBlockState extends State<TerminalBlock>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildTitleBar(),
-          _buildBody(),
+          _buildBody(sections.input, sections.output),
         ],
       ),
     );
@@ -723,69 +680,39 @@ class _TerminalBlockState extends State<TerminalBlock>
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       );
 
-  Widget _buildBody() {
-    return AnimatedBuilder(
-      animation: _charCount,
-      builder: (context, _) {
-        final visible = _inputSection.substring(0, _charCount.value);
-        final lines = visible.split('\n');
-        final isFinished = _charCount.value == _inputSection.length;
-
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: const BoxDecoration(
-            color: TermColors.bg,
-            borderRadius: BorderRadius.only(
-              bottomLeft: Radius.circular(10),
-              bottomRight: Radius.circular(10),
+  Widget _buildBody(String inputSection, String outputSection) {
+    final inputLines = inputSection.split('\n');
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        color: TermColors.bg,
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(10),
+          bottomRight: Radius.circular(10),
+        ),
+      ),
+      child: SelectionArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final line in inputLines) _buildLine(line),
+            if (outputSection.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              ..._buildOutputLines(outputSection),
+            ],
+            // Static cursor at the end — no blink, no reveal animation.
+            const Text(
+              '█',
+              style: TextStyle(
+                color: TermColors.cursor,
+                fontFamily: 'monospace',
+                fontSize: 14,
+                height: 1.0,
+              ),
             ),
-          ),
-          child: SelectionArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final line in lines) _buildLine(line),
-                // Cursor sits right after the typed input while still animating
-                if (!isFinished)
-                  AnimatedBuilder(
-                    animation: _cursor,
-                    builder: (_, __) => Text(
-                      '█',
-                      style: const TextStyle(
-                        color: TermColors.cursor,
-                        fontFamily: 'monospace',
-                        fontSize: 14,
-                        height: 1.0,
-                      ),
-                    ),
-                  ),
-                // Output revealed all at once when input finishes typing
-                if (isFinished && _outputSection.isNotEmpty)
-                  ...[
-                    const SizedBox(height: 2),
-                    ..._buildOutputLines(_outputSection),
-                  ],
-                // Blinking cursor at the bottom
-                if (isFinished)
-                  AnimatedBuilder(
-                    animation: _cursor,
-                    builder: (_, __) => Text(
-                      '█',
-                      style: TextStyle(
-                        color: _cursor.value > 0.5
-                            ? TermColors.cursor
-                            : Colors.transparent,
-                        fontFamily: 'monospace',
-                        fontSize: 14,
-                        height: 1.0,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 
@@ -1031,111 +958,187 @@ class StyledMarkdown extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Graph link — inline "open in new tab" styled link to a live graph
+// YouTube embed — for ```youtube VIDEO_ID``` fenced blocks.
+// Renders a 16:9 iframe via HtmlElementView on Flutter web.
+// Falls back to a "coming soon" card when the ID is a placeholder.
 // ---------------------------------------------------------------------------
-class _GraphLink extends StatelessWidget {
-  final String linkPath;
-  final String label;
-  const _GraphLink({required this.linkPath, required this.label});
+class _YouTubeEmbed extends StatelessWidget {
+  final String videoId;
+  const _YouTubeEmbed({required this.videoId});
+
+  static final Set<String> _registered = {};
+
+  bool get _isPlaceholder {
+    final v = videoId.trim().toUpperCase();
+    return v.isEmpty ||
+        v == 'PLACEHOLDER' ||
+        v == 'TODO' ||
+        v.startsWith('TODO_') ||
+        v.startsWith('PLACEHOLDER_');
+  }
+
+  void _registerOnce() {
+    if (_registered.contains(videoId)) return;
+    _registered.add(videoId);
+    ui_web.platformViewRegistry.registerViewFactory('youtube-$videoId', (int _) {
+      final iframe = html.IFrameElement()
+        ..src = 'https://www.youtube-nocookie.com/embed/$videoId'
+        ..style.border = 'none'
+        ..style.width = '100%'
+        ..style.height = '100%'
+        ..allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+      iframe.setAttribute('allowfullscreen', 'true');
+      return iframe;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final url = Uri.base.resolve(linkPath).toString();
-    return GestureDetector(
-      onTap: () => _openUrl(url),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: AppColors.secondary,
-                fontSize: 14,
-                decoration: TextDecoration.underline,
-                decorationColor: AppColors.secondary,
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isDark,
+      builder: (context, _, __) {
+        if (_isPlaceholder) {
+          return AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBg,
+                border: Border.all(color: AppColors.divider, width: 1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.play_circle_outline_rounded,
+                      size: 64,
+                      color: AppColors.textMuted,
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Demo video coming soon',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'A walkthrough is in production',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.open_in_new, size: 13, color: AppColors.secondary),
-          ],
-        ),
-      ),
+          );
+        }
+
+        _registerOnce();
+        return AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.divider, width: 1),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: HtmlElementView(viewType: 'youtube-$videoId'),
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// Graph preview — screenshot with link to live graph
+// Collapsible details panel — for ":::details TITLE\n...\n:::" blocks
 // ---------------------------------------------------------------------------
-class _GraphPreview extends StatelessWidget {
-  final String imagePath;
-  final String linkPath;
-  final String caption;
-  const _GraphPreview({required this.imagePath, required this.linkPath, required this.caption});
+class _DetailsPanel extends StatefulWidget {
+  final String title;
+  final String body;
+  const _DetailsPanel({required this.title, required this.body});
+  @override
+  State<_DetailsPanel> createState() => _DetailsPanelState();
+}
+
+class _DetailsPanelState extends State<_DetailsPanel> {
+  bool _open = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final imgUrl  = Uri.base.resolve(imagePath).toString();
-    final linkUrl = Uri.base.resolve(linkPath).toString();
-
     return ValueListenableBuilder<bool>(
       valueListenable: _isDark,
-      builder: (_, dark, __) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          GestureDetector(
-            onTap: () => _openUrl(linkUrl),
-            child: MouseRegion(
+      builder: (context, _, __) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          border: Border.all(color: AppColors.divider, width: 1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            MouseRegion(
               cursor: SystemMouseCursors.click,
-              child: Container(
-                constraints: const BoxConstraints(maxHeight: 340),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.divider, width: 1),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Image.network(
-                  imgUrl,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 160,
-                    color: AppColors.codeBg,
-                    child: Center(
-                      child: Text('Graph preview unavailable',
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                    ),
+              onEnter: (_) => setState(() => _hovered = true),
+              onExit: (_) => setState(() => _hovered = false),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => _open = !_open),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  color: _hovered ? AppColors.sidebarHover : Colors.transparent,
+                  child: Row(
+                    children: [
+                      AnimatedRotation(
+                        turns: _open ? 0.25 : 0.0,
+                        duration: const Duration(milliseconds: 180),
+                        child: Icon(
+                          Icons.chevron_right_rounded,
+                          size: 20,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.title,
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _open ? 'Hide' : 'Show',
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 10),
-          GestureDetector(
-            onTap: () => _openUrl(linkUrl),
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    caption,
-                    style: TextStyle(
-                      color: AppColors.secondary,
-                      fontSize: 13,
-                      decoration: TextDecoration.underline,
-                      decorationColor: AppColors.secondary,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.open_in_new, size: 12, color: AppColors.secondary),
-                ],
+            if (_open)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: SectionContent(markdown: widget.body),
               ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1346,38 +1349,43 @@ class _RockyIqDialState extends State<_RockyIqDial> with SingleTickerProviderSta
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (context, _) {
-        final v = _anim.value * widget.target;
-        final color = _colorFor(v);
-        return SizedBox(
-          width: 240,
-          height: 240,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              CustomPaint(
-                size: const Size(240, 240),
-                painter: _DialPainter(
-                  progress: v / 100,
-                  color: color,
-                  trackColor: AppColors.divider,
-                ),
-              ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    v.toInt().toString(),
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 64,
-                      fontWeight: FontWeight.w800,
-                      height: 1,
-                      letterSpacing: -2,
-                    ),
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isDark,
+      builder: (context, dark, __) => AnimatedBuilder(
+        animation: _anim,
+        builder: (context, _) {
+          final v = _anim.value * widget.target;
+          final color = _colorFor(v);
+          // Pure black in light mode for max-contrast hero number;
+          // theme-aware light tone in dark mode.
+          final numberColor = dark ? AppColors.textPrimary : Colors.black;
+          return SizedBox(
+            width: 240,
+            height: 240,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CustomPaint(
+                  size: const Size(240, 240),
+                  painter: _DialPainter(
+                    progress: v / 100,
+                    color: color,
+                    trackColor: AppColors.divider,
                   ),
+                ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      v.toInt().toString(),
+                      style: TextStyle(
+                        color: numberColor,
+                        fontSize: 64,
+                        fontWeight: FontWeight.w800,
+                        height: 1,
+                        letterSpacing: -2,
+                      ),
+                    ),
                   const SizedBox(height: 4),
                   Text(
                     '/ 100',
@@ -1409,7 +1417,8 @@ class _RockyIqDialState extends State<_RockyIqDial> with SingleTickerProviderSta
             ],
           ),
         );
-      },
+        },
+      ),
     );
   }
 }
