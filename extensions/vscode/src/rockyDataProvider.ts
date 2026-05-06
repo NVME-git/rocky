@@ -21,6 +21,7 @@ import type {
  */
 export class RockyDataProvider {
   private cache: PkgData | null = null;
+  private topicIndex: Map<string, RockyNode> | null = null;
   private watcher: fs.FSWatcher | null = null;
 
   private _onDidChange = new vscode.EventEmitter<void>();
@@ -164,18 +165,31 @@ export class RockyDataProvider {
   getLocalNodes(): RockyNode[] {
     const pkg = this.getPkgData();
     if (!pkg) return [];
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) return [];
-    const repoName = path.basename(folders[0].uri.fsPath).toLowerCase();
+    const repoName = this.getCurrentRepoName();
+    if (!repoName) return [];
     return pkg.nodes.filter(
       (n) => n.repo !== undefined && n.repo.toLowerCase() === repoName
     );
   }
 
-  /** Look up a single node by topic name (case-insensitive). */
+  /** Lowercase basename of the first workspace folder (the repo name), or null if no folder is open. */
+  getCurrentRepoName(): string | null {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) return null;
+    return path.basename(folders[0].uri.fsPath).toLowerCase();
+  }
+
+  /** Look up a single node by topic name (case-insensitive). O(1) via lazy index. */
   getNodeByTopic(topic: string): RockyNode | undefined {
     const pkg = this.getPkgData();
-    return pkg?.nodes.find((n) => n.topic.toLowerCase() === topic.toLowerCase());
+    if (!pkg) return undefined;
+    if (!this.topicIndex) {
+      this.topicIndex = new Map();
+      for (const n of pkg.nodes) {
+        this.topicIndex.set(n.topic.toLowerCase(), n);
+      }
+    }
+    return this.topicIndex.get(topic.toLowerCase());
   }
 
   /** Look up nodes whose topic name contains the query. */
@@ -188,7 +202,13 @@ export class RockyDataProvider {
 
   /** Clear the in-memory cache so the next read reloads from disk. */
   clearCache(): void {
+    this.invalidate();
+  }
+
+  /** Drop the cache + lookup index in lock-step. */
+  private invalidate(): void {
     this.cache = null;
+    this.topicIndex = null;
     this._onDidChange.fire();
   }
 
@@ -199,8 +219,7 @@ export class RockyDataProvider {
       if (fs.existsSync(dir)) {
         this.watcher = fs.watch(dir, (_event, filename) => {
           if (filename === "pkg.json" || filename === null) {
-            this.cache = null;
-            this._onDidChange.fire();
+            this.invalidate();
           }
         });
       }
@@ -211,8 +230,7 @@ export class RockyDataProvider {
     if (localDir) {
       try {
         fs.watch(localDir, () => {
-          this.cache = null;
-          this._onDidChange.fire();
+          this.invalidate();
         });
       } catch {
         // non-fatal

@@ -69,6 +69,8 @@ export class DueTreeProvider implements vscode.TreeDataProvider<DueItem> {
           title: "Show Topic Detail",
           arguments: [{ topic: n.topic }],
         };
+        item.contextValue = "rockyTopic";
+        item.topicName = n.topic;
         return item;
       });
 
@@ -85,6 +87,7 @@ export class DueTreeProvider implements vscode.TreeDataProvider<DueItem> {
 
 export class DueItem extends vscode.TreeItem {
   children: DueItem[];
+  topicName?: string;
 
   constructor(label: string, children: DueItem[], kind: "topic" | "repo" | "info") {
     const state =

@@ -5,6 +5,7 @@ import { recallNow } from "./extension";
 
 type SortMode = "recall" | "name";
 type GroupMode = "domain" | "repo";
+export type ScopeMode = "repo" | "all";
 
 export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<TopicItem | undefined | void>();
@@ -12,6 +13,7 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
 
   private sortMode: SortMode = "recall";
   private groupMode: GroupMode = "domain";
+  private scope: ScopeMode = "repo";
 
   constructor(private readonly dataProvider: RockyDataProvider) {}
 
@@ -27,6 +29,15 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
   setGroupMode(mode: GroupMode): void {
     this.groupMode = mode;
     this.refresh();
+  }
+
+  setScope(scope: ScopeMode): void {
+    this.scope = scope;
+    this.refresh();
+  }
+
+  getScope(): ScopeMode {
+    return this.scope;
   }
 
   toggleSort(): void {
@@ -56,8 +67,22 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
       ];
     }
 
+    const repoName = this.dataProvider.getCurrentRepoName();
+    const visibleNodes =
+      this.scope === "repo" && repoName
+        ? pkg.nodes.filter((n) => n.repo?.toLowerCase() === repoName)
+        : pkg.nodes;
+
+    if (visibleNodes.length === 0) {
+      const msg =
+        this.scope === "repo"
+          ? `No topics for "${repoName ?? "this workspace"}". Use "Rocky: Show All Projects" to see the full PKG.`
+          : "No topics found. Run rocky to build your knowledge graph.";
+      return [new TopicItem(msg, vscode.TreeItemCollapsibleState.None)];
+    }
+
     const groups = new Map<string, RockyNode[]>();
-    for (const node of pkg.nodes) {
+    for (const node of visibleNodes) {
       const key =
         this.groupMode === "domain"
           ? node.domain || "Other"
@@ -103,6 +128,7 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
           arguments: [{ topic: n.topic }],
         };
         item.contextValue = "rockyTopic";
+        item.topicName = n.topic;
         return item;
       });
 
@@ -124,6 +150,7 @@ export class TopicsTreeProvider implements vscode.TreeDataProvider<TopicItem> {
 
 export class TopicItem extends vscode.TreeItem {
   children?: TopicItem[];
+  topicName?: string;
 
   constructor(label: string, collapsibleState: vscode.TreeItemCollapsibleState) {
     super(label, collapsibleState);

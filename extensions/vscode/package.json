@@ -58,19 +58,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "rocky.openGraph",
-        "title": "Rocky: Open Knowledge Graph",
-        "icon": "$(type-hierarchy)"
-      },
-      {
-        "command": "rocky.openGlobalGraph",
-        "title": "Rocky: Open Global Knowledge Graph"
-      },
-      {
-        "command": "rocky.openLocalGraph",
-        "title": "Rocky: Open Local Knowledge Graph"
-      },
-      {
         "command": "rocky.quizWeak",
         "title": "Rocky: Quiz Weakest Topics",
         "icon": "$(play)"
@@ -82,6 +69,23 @@
       {
         "command": "rocky.quizRepo",
         "title": "Rocky: Quiz by Repo…"
+      },
+      {
+        "command": "rocky.quizInTerminal",
+        "title": "Rocky: Quiz Weakest in Agent Terminal",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "rocky.teachInTerminal",
+        "title": "Rocky: Teach a Persona in Agent Terminal"
+      },
+      {
+        "command": "rocky.quizTopicInTerminal",
+        "title": "Rocky: Quiz Me on This Topic (Agent Terminal)"
+      },
+      {
+        "command": "rocky.teachTopicInTerminal",
+        "title": "Rocky: Teach This Topic to a Persona (Agent Terminal)"
       },
       {
         "command": "rocky.searchTopics",
@@ -105,6 +109,16 @@
         "title": "Rocky: Group Topics by Repo"
       },
       {
+        "command": "rocky.showAllProjects",
+        "title": "Rocky: Show All Projects",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "rocky.showRepoOnly",
+        "title": "Rocky: Show This Repo Only",
+        "icon": "$(folder-active)"
+      },
+      {
         "command": "rocky.showTopicDetail",
         "title": "Rocky: Show Topic Detail"
       },
@@ -122,8 +136,18 @@
           "group": "navigation@1"
         },
         {
-          "command": "rocky.openGraph",
-          "when": "view == rockyTopics",
+          "command": "rocky.showAllProjects",
+          "when": "view == rockyTopics && rocky.topicScope == repo",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rocky.showRepoOnly",
+          "when": "view == rockyTopics && rocky.topicScope == all",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rocky.openWebApp",
+          "when": "view == rockyTopics || view == rockySummary",
           "group": "navigation@2"
         },
         {
@@ -132,14 +156,14 @@
           "group": "navigation@2"
         },
         {
-          "command": "rocky.searchTopics",
-          "when": "view == rockyTopics",
+          "command": "rocky.quizInTerminal",
+          "when": "view == rockyDue",
           "group": "navigation@3"
         },
         {
-          "command": "rocky.openWebApp",
-          "when": "view == rockySummary",
-          "group": "navigation@2"
+          "command": "rocky.searchTopics",
+          "when": "view == rockyTopics",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -147,6 +171,16 @@
           "command": "rocky.quizRepo",
           "when": "viewItem == rockyGroup && view == rockyTopics",
           "group": "rocky@1"
+        },
+        {
+          "command": "rocky.quizTopicInTerminal",
+          "when": "viewItem == rockyTopic",
+          "group": "rocky@1"
+        },
+        {
+          "command": "rocky.teachTopicInTerminal",
+          "when": "viewItem == rockyTopic",
+          "group": "rocky@2"
         }
       ],
       "commandPalette": [
@@ -181,6 +215,11 @@
           "type": "string",
           "default": "",
           "description": "URL of the running Rocky web server (e.g. http://127.0.0.1:8080). Start the server with `rocky view`. Used to enable quiz recording and live data fetching."
+        },
+        "rocky.agentCommand": {
+          "type": "string",
+          "default": "claude",
+          "description": "CLI invoked by 'Quiz/Teach in Agent Terminal' commands. With `claude`, the slash command is auto-sent as the starter prompt. With `opencode` (or any other agent), the TUI is launched and the slash command is shown in a notification for you to type once the prompt is ready — OpenCode's CLI takes a project path as its default positional, not a message."
         }
       }
     }

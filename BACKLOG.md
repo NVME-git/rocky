@@ -56,6 +56,33 @@ the topics introduced in that layer before it can merge into the next.
 
 See: [Roadmap section in docs](docs/lib/content.dart) for full design.
 
+### Launch agent quiz/teach session from rocky view `[idea]`
+Button in the rocky view web UI that starts a Claude Code or OpenCode session
+with `/rocky-quiz` or `/rocky-teach` pre-loaded. Bridges the in-page quiz
+(quick, no agent) with the agent-driven modes (richer adaptive grading,
+teacher persona role-play).
+
+Phased implementation:
+1. **Click-to-copy + toast** — button copies `cd <project> && claude "/rocky-quiz"`
+   to clipboard, shows "Pasted — run it in your terminal." Bulletproof, works
+   on any OS, ships in an afternoon. Good default.
+2. **Server-spawned terminal (opt-in)** — new `POST /api/launch?mode=quiz|teach`
+   endpoint. Server detects terminal via `$TERMINAL` then a fallback chain
+   (kitty → ghostty → alacritty → foot → gnome-terminal), spawns it with
+   the agent CLI and starter prompt. Behind a config flag (e.g.
+   `[view] launch_terminal = true`) so SSH-tunnel users aren't surprised
+   by terminals opening on the remote machine.
+
+Open questions to settle before building: (a) verify `claude "<prompt>"` and
+the OpenCode equivalent both accept a positional starter prompt cleanly;
+(b) UX disambiguation from the existing in-page quiz at `/api/quiz/*` —
+labelling needs to make clear when to pick which.
+
+Out of scope for this entry but worth noting: a custom URL scheme
+(`rocky://quiz?project=...`) would be a third path, but adds an install
+step and a browser security prompt — defer unless the click-to-copy or
+terminal-spawn paths prove insufficient.
+
 ### Rocky as a retroactive clue filler `[in progress]`
 `rocky backfill --fill-clues` — generates missing clues for nodes that already have canonical Q&A.
 Useful after upgrading Rocky versions that add new node fields. Foundation for a future scheduler
@@ -73,6 +100,24 @@ the user types `[c]` during a quiz. For manually-added topics, generated on-dema
 A background scheduler that runs enrichment passes over the PKG when new features are added —
 generating missing fields (clues, cross-concept edges, debugging questions) without requiring
 manual intervention. Goal: quiz time is always fast because all pre-computation happened offline.
+
+### Conversation-source tagging in topic listings `[planned]`
+Visually distinguish chat-sourced topics from commit-sourced topics in `rocky list`,
+`rocky topic`, `rocky inspect`, and the dashboard. With the conversation-reflection
+pass added to `/rocky-checkpoint`, topics can now enter the PKG without a backing
+commit — the schema already supports this (a topic with zero non-empty SHAs across
+its `topic_encounters` is chat-only), but display paths render them identically to
+commit-grounded topics.
+
+Why it matters: when reviewing the PKG, the user needs to know which topics have
+real code grounding vs. which are vibes-from-a-conversation. Without the tag, the
+two classes are indistinguishable and chat topics inherit unearned authority.
+Pairs with the existing AI-source tagging idea above — both are about making the
+provenance of a topic legible at a glance.
+
+Cheapest implementation: derive the tag at display time from `topic_encounters`
+(no schema migration), surface as a `[chat]` badge in CLI output and a field in
+`node_to_json` so the web view picks it up too.
 
 ### Embedding-based semantic dedup `[planned]`
 Replace today's lexical dedup (slugified node id + `topic_jaccard` token-set similarity in

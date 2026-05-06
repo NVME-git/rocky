@@ -37,8 +37,9 @@ Run these steps in order. Stop and report if any step fails.
    rocky checkpoint diff
    ```
    JSON with `pending_count` and `commits[]` (`sha`, `subject`, `message`,
-   `diff`). If `pending_count == 0`, tell the user "Nothing to checkpoint —
-   the queue is empty." and stop.
+   `diff`). An empty queue is no longer a stop condition — proceed to the
+   conversation pass in step 4. Only stop early if *both* the queue is empty
+   AND the conversation pass yields no candidates (reported at step 8).
 
 2. **Read the global dedup list** (across all projects):
    ```bash
@@ -54,7 +55,9 @@ Run these steps in order. Stop and report if any step fails.
    Use `summary` to ground topic naming in this codebase's vocabulary.
    `null` summary → suggest `rocky explore` first, but continue.
 
-4. **Extract topics.** For each commit:
+4. **Extract topics — two passes.**
+
+   **Pass A — commit pass** (skip if the queue was empty). For each commit:
    - Identify 1–3 atomic learnings — one specific concept, pattern, or
      implementation detail per topic. Not "URL stuff". Not the whole commit.
    - Skip pure plumbing (formatting, version bumps, trivial renames). Empty
@@ -62,6 +65,20 @@ Run these steps in order. Stop and report if any step fails.
    - **Cross-project dedup**: if a near-match exists anywhere in the global
      list (same concept under any name), call `rocky add-topic` with the
      **existing topic's name** to merge instead of creating a duplicate.
+
+   **Pass B — conversation reflection.** Look back over the current
+   session's transcript, scoped to messages *after* the most recent
+   `/rocky-checkpoint` invocation in this session (if any — otherwise the
+   entire session). For each candidate learning:
+   - **Filter bar (strict)**: extract only what the *user* actively engaged
+     with — surprise, pushback, follow-up questions, or an explicit "huh,
+     didn't know that." Things you merely mentioned without engagement do
+     not qualify. Discussion ≠ learning. When in doubt, leave it out.
+   - **Cross-check against pass A**: don't double-record an insight that a
+     commit topic already captured — merge into that topic if the angle
+     overlaps, otherwise skip.
+   - **Cross-project dedup**: same as pass A — merge by meaning into
+     existing global topics where applicable.
 
 5. **Store each topic**. New OR merge:
    ```bash
@@ -81,8 +98,11 @@ Run these steps in order. Stop and report if any step fails.
      Architecture Performance Security Testing Tooling Data Other`.
    - **`--kind`**: `concept` (an idea), `pattern` (a recurring solution
      shape), or `implementation` (a specific way to do it in code).
-   - **`--context`**: smallest diff hunk that demonstrates the topic.
-   - **`--commit`**: the SHA from the queue.
+   - **`--context`**: smallest diff hunk that demonstrates the topic
+     (commit-pass topics) OR a 2–4 line conversation excerpt that captures
+     the user's engagement with the idea (conversation-pass topics).
+   - **`--commit`**: the SHA from the queue. **Omit entirely for
+     conversation-pass topics** — they have no commit to anchor.
 
    The output JSON has `action: "created"` or `action: "merged"` plus
    `recall_now` so you know how the topic stands.
@@ -147,8 +167,11 @@ Run these steps in order. Stop and report if any step fails.
    rocky checkpoint mark
    ```
 
-8. **Report**, one line. Mention cross-project merges explicitly:
-   `Checkpointed N commits → M new topics, K merged (J across projects), Q questions added.`
+8. **Report**, one line. Mention both extraction sources and cross-project
+   merges:
+   `Checkpointed N commits → M commit topics + P conversation topics, K merged (J across projects), Q questions added.`
+   If both passes produced zero topics, say "Nothing worth recording — no
+   commits queued and no notable conversation insights."
 
 ## Rules
 
@@ -156,7 +179,12 @@ Run these steps in order. Stop and report if any step fails.
 - **The user's voice matters.** If a commit message contains a clear
   "I learned that …" or "the trick is …", make that the topic.
 - **Don't invent.** If a commit is too small to extract a learning from,
-  skip it.
+  skip it. Same goes for the conversation pass — if no message shows the
+  user genuinely engaging with an idea, the right number of conversation
+  topics is zero.
+- **Conversation-pass scope.** The pass is bounded by the previous
+  `/rocky-checkpoint` invocation in this session. Messages before that
+  boundary were already considered.
 - **Never call `rocky session-end`.** Legacy LLM-driven path.
 - **Never call `rocky checkpoint mark` until every `add-topic` has succeeded.**
   Failed extractions stay queued for retry. (`add-question` failures are

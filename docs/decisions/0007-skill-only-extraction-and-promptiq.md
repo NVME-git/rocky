@@ -142,3 +142,100 @@ dimensions feeding back into the heuristic for calibration.
   new provider plumbing decision).
 - An ADR re-introducing automatic per-turn extraction (would need to justify
   the latency cost).
+
+---
+
+## Update — 2026-05-06 · Conversation-reflection pass in /rocky-checkpoint
+
+### Context for the update
+
+The original ADR cemented commits as the unit of extraction: post-commit hook
+queues a diff, `/rocky-checkpoint` drains the queue. This is correct for
+work that crystallises into code, but it leaves a class of learnings on the
+floor: debugging conversations that resolve without a code change, design
+discussions where a path is rejected, library exploration that informs a
+*future* commit, agent explanations the user pushes back on. All of these
+are real learning moments; none of them produce a queued diff.
+
+The skill is already running inside an agent session that has the full
+transcript in context. Adding a second extraction pass over the conversation
+costs no additional infrastructure — only a procedural change to the skill.
+
+### What the update changes
+
+Extend `/rocky-checkpoint` (and by parallel, `/rocky-backfill`) with a
+**conversation-reflection pass** alongside the existing commit pass.
+
+- **Pass A — commit pass.** Unchanged. Reads the queue via
+  `rocky checkpoint diff`, extracts per-commit topics, calls `rocky add-topic
+  --commit <sha>`. Drains the queue at the end via `rocky checkpoint mark`.
+- **Pass B — conversation pass.** Reads the current session's transcript
+  *in-model* (no tool call). For each candidate, applies a **strict filter
+  bar**: extract only what the *user* actively engaged with — surprise,
+  pushback, follow-up questions, an explicit "huh, didn't know that."
+  Discussion alone does not qualify. The bar is intentionally higher than
+  commits because conversations contain more noise. Cross-checks against
+  Pass A topics to avoid doubles, then dedups across projects against
+  `rocky list --json` (same as Pass A).
+- **Storage.** Conversation topics use the same `rocky add-topic` primitive
+  with `--commit` *omitted* and `--context` carrying a 2–4 line conversation
+  excerpt instead of a diff hunk. The schema already supports commit-less
+  topics; no migration required.
+
+### Supporting decisions
+
+1. **Empty queue is no longer a stop condition.** The skill previously
+   exited early on `pending_count == 0`. Now it proceeds to the conversation
+   pass regardless. Only stops when *both* passes yield nothing.
+2. **Conversation-pass scope = messages after the previous
+   `/rocky-checkpoint` invocation in this session** (or the entire session
+   if there's no prior invocation). Prevents re-extracting the same chat
+   content on a re-run within one session. The commit-pass queue handles
+   its own idempotency via the existing drain.
+3. **One trigger, not two.** No separate `/rocky-reflect` command — the
+   single `/rocky-checkpoint` action runs both passes. Less to remember;
+   the commit context grounds the conversation pass anyway.
+4. **No new CLI primitive.** Reuses `rocky add-topic` and `rocky add-question`
+   unchanged. The conversation pass is purely a skill-side procedural
+   change.
+
+### Why no new mode for "agent did work without committing"
+
+Considered briefly: a separate flow that mines uncommitted agent work (e.g.
+`git diff HEAD`) when no commits exist. Rejected — the conversation pass
+covers the same ground (the agent's work *is* in the transcript) without
+adding a third extraction surface. If a user wants commit-grounded topics
+from work-in-progress, they can commit (even WIP) and the existing path
+picks it up.
+
+### Trade-offs of the update
+
+**Good**
+- Captures a class of learning previously lost: conversations that resolve
+  without code, design dead-ends, "I just learned X" moments.
+- Zero infrastructure cost — skill-only change, no Rust modifications, no
+  schema migration.
+- Preserves the "Rocky never calls an LLM" architectural invariant — the
+  agent already in the session does the extraction.
+- Symmetric with the existing commit-pass extraction model.
+
+**Bad**
+- Conversation pass relies on agent self-evaluation of what was learned,
+  which carries bias (over-weights things the agent explained well,
+  under-weights things obvious to the user). Mitigation is the strict
+  filter bar; if it under-fires we relax, if it over-fires we tighten.
+- Chat-sourced and commit-sourced topics are visually indistinguishable in
+  `rocky list` / `rocky topic` / `rocky inspect` until the follow-up
+  tagging change ships. Tracked in [BACKLOG.md](../../BACKLOG.md) as
+  *"Conversation-source tagging in topic listings"*. Until then, chat
+  topics inherit unearned authority in the listings.
+- The user can't easily tell whether a topic in their PKG came from code
+  they shipped or from a chat — same root cause as the bullet above.
+
+### Reversal triggers for the update
+
+- Empirical evidence that conversation-pass topics flood the PKG with
+  low-quality entries the user doesn't engage with at quiz time. Rollback
+  is a one-line skill edit.
+- A future ADR introducing a separate `/rocky-reflect` command if the
+  combined skill prompt grows unwieldy.

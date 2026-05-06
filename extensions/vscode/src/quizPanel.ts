@@ -95,6 +95,14 @@ function buildQuizHtml(nodes: QuizNode[], serverUrl: string | null): string {
   .question{font-size:15px;line-height:1.5;margin-bottom:14px;color:var(--vscode-editor-foreground)}
   .clue-btn{background:none;border:none;color:var(--vscode-textLink-foreground);cursor:pointer;font-size:12px;text-decoration:underline;margin-bottom:10px;display:block}
   .clue{font-size:12px;font-style:italic;padding:8px;background:var(--vscode-input-background);border-radius:4px;margin-bottom:14px;display:none}
+  .answer-row{display:flex;gap:8px;align-items:stretch;margin-bottom:6px}
+  .answer-row textarea{flex:1;resize:vertical;min-height:54px;padding:8px;border-radius:4px;border:1px solid var(--vscode-input-border);background:var(--vscode-input-background);color:var(--vscode-input-foreground);font-family:inherit;font-size:13px}
+  .mic-btn{width:42px;border-radius:4px;border:1px solid var(--vscode-input-border);background:var(--vscode-input-background);color:var(--vscode-foreground);cursor:pointer;font-size:18px;user-select:none;-webkit-user-select:none}
+  .mic-btn:hover{background:var(--vscode-button-hoverBackground)}
+  .mic-btn.recording{background:#c0392b;color:#fff;border-color:#c0392b}
+  .mic-btn.transcribing{background:var(--vscode-button-background);color:var(--vscode-button-foreground);border-color:transparent;cursor:progress}
+  .mic-hint{font-size:11px;color:var(--vscode-descriptionForeground);min-height:14px;margin-bottom:10px}
+  .mic-hint.error{color:var(--vscode-errorForeground)}
   .assess-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
   .assess-btn{padding:10px 4px;border-radius:6px;border:1px solid var(--vscode-button-border,#555);background:var(--vscode-input-background);color:var(--vscode-foreground);cursor:pointer;font-size:11px;font-weight:600;text-align:center;transition:all .15s}
   .assess-btn:hover{background:var(--vscode-button-hoverBackground);color:var(--vscode-button-foreground)}
@@ -120,6 +128,11 @@ function buildQuizHtml(nodes: QuizNode[], serverUrl: string | null): string {
   <p class="question" id="question"></p>
   <button class="clue-btn" id="clue-btn" onclick="toggleClue()" style="display:none">Show clue</button>
   <div class="clue" id="clue"></div>
+  <div class="answer-row">
+    <textarea id="my-answer" placeholder="Speak or type your answer (optional — for your own articulation)…"></textarea>
+    <button class="mic-btn" id="mic-btn" title="Hold to speak (release to transcribe)">🎤</button>
+  </div>
+  <div class="mic-hint" id="mic-hint"></div>
   <div class="assess-grid" id="assess-grid">
     <button class="assess-btn" onclick="assess(0.15)"><span class="score-icon">✗</span>Don't know</button>
     <button class="assess-btn" onclick="assess(0.5)"><span class="score-icon">~</span>Partly</button>
@@ -181,6 +194,12 @@ function showQuestion() {
   document.getElementById('assess-grid').style.display = 'grid';
   document.getElementById('feedback').style.display = 'none';
   document.getElementById('next-btn').style.display = 'none';
+
+  // Reset the user-answer scratchpad between questions.
+  const ans = document.getElementById('my-answer');
+  if (ans) ans.value = '';
+  const hint = document.getElementById('mic-hint');
+  if (hint) { hint.textContent = ''; hint.classList.remove('error'); }
 }
 
 function toggleClue() {
@@ -243,6 +262,169 @@ function restart() {
   document.getElementById('quiz-area').style.display = 'block';
   showQuestion();
 }
+
+// ══════════════════════════════════════════════════════════
+// VOICE: push-to-hold mic → /api/transcribe (whisper-cpp)
+// Mirrors the proven pattern in src/app.html: capture mono Float32 at 16 kHz,
+// encode 16-bit PCM WAV in-browser, POST to the rocky server.
+// Requires rocky.serverUrl (otherwise the mic button hides itself).
+// ══════════════════════════════════════════════════════════
+const micState = { stream: null, ctx: null, source: null, processor: null, buffers: [], sampleRate: 16000 };
+
+function setMicHint(text, isError) {
+  const hint = document.getElementById('mic-hint');
+  if (!hint) return;
+  hint.textContent = text || '';
+  hint.classList.toggle('error', !!isError);
+}
+
+async function startMic(ev) {
+  if (ev) ev.preventDefault();
+  if (!SERVER_URL) { setMicHint('Voice needs rocky.serverUrl set (run \`rocky view\`).', true); return; }
+  const btn = document.getElementById('mic-btn');
+  if (!btn || btn.classList.contains('recording') || btn.classList.contains('transcribing')) return;
+  setMicHint('');
+  try {
+    micState.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
+    });
+  } catch (e) {
+    setMicHint('Mic blocked — grant microphone permission and try again.', true);
+    return;
+  }
+  micState.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  micState.sampleRate = micState.ctx.sampleRate;
+  micState.source = micState.ctx.createMediaStreamSource(micState.stream);
+  micState.processor = micState.ctx.createScriptProcessor(4096, 1, 1);
+  micState.buffers = [];
+  micState.processor.onaudioprocess = (e) => {
+    micState.buffers.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+  micState.source.connect(micState.processor);
+  micState.processor.connect(micState.ctx.destination);
+  btn.classList.add('recording');
+  setMicHint('Listening… release to transcribe');
+}
+
+async function stopMic(ev) {
+  if (ev) ev.preventDefault();
+  const btn = document.getElementById('mic-btn');
+  if (!btn || !btn.classList.contains('recording')) return;
+  btn.classList.remove('recording');
+  btn.classList.add('transcribing');
+  setMicHint('Transcribing…');
+
+  try { micState.processor.disconnect(); } catch {}
+  try { micState.source.disconnect(); } catch {}
+  try { micState.stream.getTracks().forEach(t => t.stop()); } catch {}
+  try { await micState.ctx.close(); } catch {}
+
+  const wav = encodeWAV(micState.buffers, micState.sampleRate, 16000);
+  micState.buffers = [];
+  if (wav.byteLength <= 44) {
+    btn.classList.remove('transcribing');
+    setMicHint('Nothing recorded — hold the button while speaking.', true);
+    return;
+  }
+
+  try {
+    const r = await fetch(SERVER_URL + '/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'audio/wav' },
+      body: wav,
+    });
+    if (!r.ok) {
+      if (r.status === 502) setMicHint('whisper-cli not installed. Run scripts/install-whisper.sh.', true);
+      else if (r.status === 503) setMicHint('Voice is disabled in your rocky config.', true);
+      else setMicHint('Transcribe failed (' + r.status + ')', true);
+      return;
+    }
+    const data = await r.json();
+    const transcript = (data && data.transcript) || '';
+    insertAtCursor(document.getElementById('my-answer'), transcript);
+    setMicHint('');
+  } catch (e) {
+    setMicHint('Network error — is \`rocky view\` still running?', true);
+  } finally {
+    btn.classList.remove('transcribing');
+  }
+}
+
+function insertAtCursor(textarea, text) {
+  if (!text || !textarea) return;
+  const start = textarea.selectionStart || textarea.value.length;
+  const end = textarea.selectionEnd || textarea.value.length;
+  const before = textarea.value.slice(0, start);
+  const after = textarea.value.slice(end);
+  const sep = before && !before.endsWith(' ') ? ' ' : '';
+  textarea.value = before + sep + text + after;
+  textarea.focus();
+}
+
+function encodeWAV(chunks, srcRate, dstRate) {
+  let totalSamples = 0;
+  for (const c of chunks) totalSamples += c.length;
+  const merged = new Float32Array(totalSamples);
+  let offset = 0;
+  for (const c of chunks) { merged.set(c, offset); offset += c.length; }
+  const resampled = (srcRate === dstRate) ? merged : resampleLinear(merged, srcRate, dstRate);
+  const numSamples = resampled.length;
+  const byteLength = 44 + numSamples * 2;
+  const buf = new ArrayBuffer(byteLength);
+  const view = new DataView(buf);
+  const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+  writeStr(0, 'RIFF');
+  view.setUint32(4, byteLength - 8, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, dstRate, true);
+  view.setUint32(28, dstRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  view.setUint32(40, numSamples * 2, true);
+  let p = 44;
+  for (let i = 0; i < numSamples; i++) {
+    const s = Math.max(-1, Math.min(1, resampled[i]));
+    view.setInt16(p, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    p += 2;
+  }
+  return buf;
+}
+
+function resampleLinear(input, srcRate, dstRate) {
+  const ratio = srcRate / dstRate;
+  const outLen = Math.floor(input.length / ratio);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const srcIdx = i * ratio;
+    const lo = Math.floor(srcIdx);
+    const hi = Math.min(lo + 1, input.length - 1);
+    const frac = srcIdx - lo;
+    out[i] = input[lo] * (1 - frac) + input[hi] * frac;
+  }
+  return out;
+}
+
+(function bindMic() {
+  const btn = document.getElementById('mic-btn');
+  if (!btn) return;
+  if (!SERVER_URL) {
+    btn.disabled = true;
+    btn.title = 'Voice requires rocky.serverUrl (run \`rocky view\`).';
+    btn.style.opacity = '0.4';
+    btn.style.cursor = 'not-allowed';
+    return;
+  }
+  btn.addEventListener('mousedown', startMic);
+  btn.addEventListener('mouseup', stopMic);
+  btn.addEventListener('mouseleave', stopMic);
+  btn.addEventListener('touchstart', startMic, { passive: false });
+  btn.addEventListener('touchend', stopMic);
+})();
 
 init();
 </script>

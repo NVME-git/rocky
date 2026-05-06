@@ -1,11 +1,12 @@
 import * as vscode from "vscode";
-import { TopicsTreeProvider } from "./topicsTreeProvider";
+import { TopicsTreeProvider, type ScopeMode } from "./topicsTreeProvider";
 import { SummaryTreeProvider } from "./summaryTreeProvider";
 import { DueTreeProvider } from "./dueTreeProvider";
 import { SessionsTreeProvider } from "./sessionsTreeProvider";
-import { GraphPanel } from "./graphPanel";
 import { QuizPanel } from "./quizPanel";
 import { RockyDataProvider } from "./rockyDataProvider";
+
+const TOPIC_SCOPE_KEY = "rocky.topicScope";
 
 export function activate(context: vscode.ExtensionContext): void {
   const dataProvider = new RockyDataProvider();
@@ -14,6 +15,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const summaryTree = new SummaryTreeProvider(dataProvider);
   const dueTree = new DueTreeProvider(dataProvider);
   const sessionsTree = new SessionsTreeProvider(dataProvider);
+
+  // Restore the previous topic-scope choice (default: repo-only).
+  const savedScope = context.workspaceState.get<ScopeMode>(TOPIC_SCOPE_KEY, "repo");
+  topicsTree.setScope(savedScope);
+  void vscode.commands.executeCommand("setContext", TOPIC_SCOPE_KEY, savedScope);
 
   // ── status bar item ──────────────────────────────────────────────────────
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
@@ -90,17 +96,6 @@ export function activate(context: vscode.ExtensionContext): void {
       dueTree.refresh();
       sessionsTree.refresh();
       void updateStatusBar(statusBar, dataProvider);
-    }),
-
-    // ── graph ────────────────────────────────────────────────────────────────
-    vscode.commands.registerCommand("rocky.openGraph", () => {
-      GraphPanel.createOrShow(context.extensionUri, dataProvider, "global");
-    }),
-    vscode.commands.registerCommand("rocky.openGlobalGraph", () => {
-      GraphPanel.createOrShow(context.extensionUri, dataProvider, "global");
-    }),
-    vscode.commands.registerCommand("rocky.openLocalGraph", () => {
-      GraphPanel.createOrShow(context.extensionUri, dataProvider, "local");
     }),
 
     // ── quiz ─────────────────────────────────────────────────────────────────
@@ -183,6 +178,14 @@ export function activate(context: vscode.ExtensionContext): void {
       topicsTree.setGroupMode("repo");
     }),
 
+    // ── topic scope toggle (repo-only ↔ all-projects) ────────────────────────
+    vscode.commands.registerCommand("rocky.showAllProjects", () => {
+      setTopicScope(context, topicsTree, "all");
+    }),
+    vscode.commands.registerCommand("rocky.showRepoOnly", () => {
+      setTopicScope(context, topicsTree, "repo");
+    }),
+
     // ── topic detail ──────────────────────────────────────────────────────────
     vscode.commands.registerCommand("rocky.showTopicDetail", (topic: { topic: string }) => {
       const node = dataProvider.getNodeByTopic(topic.topic);
@@ -210,9 +213,90 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       }
     }),
+
+    // ── agent-driven quiz / teach (spawns a terminal with claude/opencode) ───
+    vscode.commands.registerCommand("rocky.quizInTerminal", () => {
+      spawnAgentTerminal("Rocky Quiz", "/rocky-quiz");
+    }),
+    vscode.commands.registerCommand("rocky.teachInTerminal", () => {
+      spawnAgentTerminal("Rocky Teach", "/rocky-teach");
+    }),
+    vscode.commands.registerCommand(
+      "rocky.quizTopicInTerminal",
+      (item?: { topicName?: string }) => {
+        const topic = item?.topicName;
+        if (!topic) {
+          vscode.window.showWarningMessage("Rocky: No topic selected.");
+          return;
+        }
+        spawnAgentTerminal(`Rocky Quiz · ${topic}`, `/rocky-quiz me on "${topic}"`);
+      }
+    ),
+    vscode.commands.registerCommand(
+      "rocky.teachTopicInTerminal",
+      (item?: { topicName?: string }) => {
+        const topic = item?.topicName;
+        if (!topic) {
+          vscode.window.showWarningMessage("Rocky: No topic selected.");
+          return;
+        }
+        spawnAgentTerminal(`Rocky Teach · ${topic}`, `/rocky-teach me about "${topic}"`);
+      }
+    ),
   );
 
   statusBar.show();
+}
+
+function setTopicScope(
+  context: vscode.ExtensionContext,
+  topicsTree: TopicsTreeProvider,
+  scope: ScopeMode
+): void {
+  topicsTree.setScope(scope);
+  void context.workspaceState.update(TOPIC_SCOPE_KEY, scope);
+  void vscode.commands.executeCommand("setContext", TOPIC_SCOPE_KEY, scope);
+  vscode.window.showInformationMessage(
+    scope === "repo"
+      ? "Rocky: showing topics for this repo only."
+      : "Rocky: showing topics from all projects."
+  );
+}
+
+/**
+ * Spawn a VSCode terminal with the configured agent CLI and a starter prompt.
+ * Defaults to `claude`; override via the `rocky.agentCommand` setting.
+ *
+ * Verified CLI shapes:
+ *   - claude:   `claude "<prompt>"` — positional starter prompt opens an
+ *               interactive session with the prompt pre-sent.
+ *   - opencode: bare `opencode` opens the TUI; the default positional is a
+ *               *project path*, not a message. `opencode run "<msg>"` is
+ *               one-shot (non-interactive), unsuitable for quiz/teach.
+ *               We launch the TUI and surface the slash command in a
+ *               VSCode notification so the user can type it once the TUI
+ *               is ready.
+ *   - other:    same fallback as opencode — launch bare, show the prompt
+ *               in a notification.
+ */
+function spawnAgentTerminal(name: string, prompt: string): void {
+  const cfg = vscode.workspace.getConfiguration("rocky");
+  const agent = cfg.get<string>("agentCommand")?.trim() || "claude";
+  const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const terminal = vscode.window.createTerminal({ name, cwd: folder });
+
+  const isClaudeCli = agent.split(/\s+/)[0] === "claude";
+  if (isClaudeCli) {
+    const safePrompt = prompt.replace(/"/g, '\\"');
+    terminal.sendText(`${agent} "${safePrompt}"`);
+  } else {
+    terminal.sendText(agent);
+    void vscode.window.showInformationMessage(
+      `Rocky: type  ${prompt}  into the agent once its prompt is ready.`
+    );
+  }
+
+  terminal.show();
 }
 
 async function updateStatusBar(
