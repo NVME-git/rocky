@@ -205,30 +205,6 @@ At any question you can:
 - **Type `i`** to ignore the topic (useful for hallucinated topics)
 - **Type `k`** if you already know this well (Rocky records it without a full Q&A)
 
-### Try the rich-context pipeline end-to-end
-
-Rocky ships with a smoke-test / tutorial script that walks the full flow on a throwaway repo so it never touches your real PKG:
-
-```bash
-ollama serve &                                 # in another terminal
-scripts/tutorial.sh --noninteractive
-```
-
-The script creates `~/.rocky-tutorial/`, isolates Rocky to it via `ROCKY_HOME`, makes a fake project with two real commits, then walks through:
-
-1. `rocky explore` — generates a project context summary from README/CLAUDE.md/docs
-2. `rocky post-commit` — queues the latest commit's diff (no LLM call)
-3. `rocky session-end` — drains the queue and produces nodes with a 4-question bank each
-4. `rocky list --since today` — shows what was added
-5. `rocky inspect <topic>` — full detail including the generated question bank
-6. A third commit demonstrating Layer-1 dedup (existing topic gets `encounter +1` instead of a new duplicate)
-
-When it finishes, you can quiz on the freshly-generated content:
-
-```bash
-ROCKY_HOME=~/.rocky-tutorial/data XDG_CONFIG_HOME=~/.rocky-tutorial/config rocky quiz
-```
-
 ---
 
 ## Commands
@@ -511,7 +487,7 @@ Every topic is assigned to one of 13 domains:
 Rocky reads `~/.config/rocky/config.toml` (global) and `./.rocky.toml` (project override).
 A legacy `~/.rocky/.rocky.toml` is silently auto-migrated on first run.
 
-Rocky's data directory defaults to `~/.rocky/`. Override with the `ROCKY_HOME` environment variable when you want a fully isolated playground (handy for testing — see `scripts/tutorial.sh`).
+Rocky's data directory defaults to `~/.rocky/`. Override with the `ROCKY_HOME` environment variable when you want a fully isolated playground.
 
 ```toml
 [llm]

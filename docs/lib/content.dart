@@ -559,7 +559,7 @@ Six tabs: **Dashboard** (Rocky IQ banner), **Knowledge Map** (interactive 2-hop 
 Environment overrides:
 
 - `ROCKY_NO_OPEN=1` — skip auto-opening the browser (useful when iterating on the UI source).
-- `ROCKY_BIND=0.0.0.0:7777` — expose the UI off-loopback (used by the Docker image).
+- `ROCKY_BIND=0.0.0.0:7777` — expose the UI off-loopback (e.g. when serving from a remote box).
 
 ### `rocky sync` / `rocky restore`
 
