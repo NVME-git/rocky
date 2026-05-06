@@ -101,6 +101,31 @@ A background scheduler that runs enrichment passes over the PKG when new feature
 generating missing fields (clues, cross-concept edges, debugging questions) without requiring
 manual intervention. Goal: quiz time is always fast because all pre-computation happened offline.
 
+### Make `rocky add-topic` merge-update semantics explicit `[idea]`
+On a merge (the topic name already exists), `rocky add-topic` silently preserves
+the existing `description` and `domain` even when new values are passed via
+`--description` / `--domain`. Only the `--context` is appended and the
+question-bank insert proceeds normally. Surfaced when re-running
+`/rocky-checkpoint` against an evolved topic during a conversation pass —
+the new framing was lost and the old (sometimes incorrect) framing stayed.
+
+The conservative default is fine when add-topic is being called from a
+post-commit hook on autopilot (don't let a stale auto-extracted line
+clobber a curated description). It's a footgun when an agent is deliberately
+re-framing a topic with new context. Two ways out:
+
+1. **Update on explicit flag pass** — if `--description` or `--domain` was
+   supplied on the merge call, replace; otherwise keep. The CLI already
+   knows whether the flag was present vs default.
+2. **Separate `rocky update-topic` primitive** — clean separation of "create
+   or merge-by-context" from "in-place edit." Skill could call update-topic
+   when a merge target's framing has clearly drifted.
+
+Lean toward #1 — single primitive, behaves the way a caller intuitively
+expects ("if I passed it, I meant it"). #2 is cleaner architecturally but
+adds a new command surface for a behavior that's almost always paired with
+add-topic anyway.
+
 ### Conversation-source tagging in topic listings `[planned]`
 Visually distinguish chat-sourced topics from commit-sourced topics in `rocky list`,
 `rocky topic`, `rocky inspect`, and the dashboard. With the conversation-reflection

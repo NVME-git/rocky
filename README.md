@@ -134,6 +134,55 @@ A **team tier** is on the roadmap: shared PKGs, manager dashboards, and a PR-gat
 
 ---
 
+## Repo structure
+
+```
+rocky/
+├── src/                          # Rust binary — the rocky CLI + web server
+│   ├── main.rs                   # CLI entry, command dispatch, install/uninstall
+│   ├── db.rs · node.rs           # PKG storage (SQLite) + topic model
+│   ├── fsrs.rs                   # spaced-repetition scheduling
+│   ├── server.rs · app.html      # `rocky view` axum server + bundled web UI
+│   ├── teacher.rs · personality.rs   # LLM extraction + Rocky's voice
+│   ├── promptiq.rs               # PromptIQ scoring
+│   ├── sync.rs · obsidian.rs     # git PKG sync + Obsidian export
+│   ├── voice.rs                  # whisper.cpp push-to-talk
+│   ├── local_log.rs · session.rs # per-project queue + prompt log
+│   └── config.rs                 # config + paths
+│
+├── skills/                       # Claude Code skills installed by `rocky install claude-all`
+│   ├── rocky-checkpoint/         # extract topics from session diffs + transcript
+│   ├── rocky-quiz/               # inline quiz on weakest topics
+│   ├── rocky-backfill/           # one-shot seed from existing git history
+│   └── rocky-promptiq-rescore/   # PromptIQ scoring of recent prompts
+│
+├── docs/                         # Astro static site → nvme-git.github.io/rocky/
+│   ├── src/content/docs/         # markdown sources (one .md per section)
+│   ├── src/components/           # HeroBlock, IqDial, Sidebar (vanilla, no framework)
+│   ├── src/data/sections.ts      # single source of truth for sidebar order
+│   ├── plugins/                  # remark + rehype plugins:
+│   │                             #   :::details, ```youtube, terminal-chrome
+│   ├── public/                   # PWA manifest, icons, favicon
+│   └── decisions/                # ADRs (Nygard format)
+│
+├── extensions/
+│   ├── vscode/                   # VS Code extension — IQ in status bar, topics tree, graph
+│   └── browser/                  # Chrome MV3 extension — capture YouTube + articles
+│
+├── scripts/
+│   └── install-whisper.sh        # one-shot local STT install
+│
+├── .github/workflows/
+│   └── pages.yml                 # Node 20 → npm ci → npm run build → upload docs/dist
+│
+├── Cargo.toml · Cargo.lock       # Rust crate
+├── BACKLOG.md                    # planned + in-progress features
+├── README.md                     # this file
+└── .env.example                  # ANTHROPIC_API_KEY stub (only needed for non-agent flows)
+```
+
+---
+
 ## Architecture decisions
 
 The major design choices — the rich-context pipeline, the FSRS-based recall model, the Rocky IQ score, the privacy mode, the agent-skill pivot — are recorded as ADRs in [`docs/decisions/`](docs/decisions/). Each ADR is one Nygard-style file: context, decision, consequences. Read those if you want to know *why* a thing is the way it is.
