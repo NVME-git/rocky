@@ -24,23 +24,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          channel: stable
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: docs/package-lock.json
 
       - name: Install dependencies
         working-directory: docs
-        run: flutter pub get
+        run: npm ci
 
-      - name: Build Flutter web
+      - name: Build Astro site
         working-directory: docs
-        run: flutter build web --base-href /rocky/ --release
+        run: npm run build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/build/web
+          path: docs/dist
 
   deploy:
     needs: build

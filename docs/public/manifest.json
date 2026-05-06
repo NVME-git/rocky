@@ -1,7 +1,7 @@
 {
     "name": "Rocky",
     "short_name": "Rocky",
-    "description": "Rocky — A CLI that keeps your technical knowledge sharp while AI agents handle the work.",
+    "description": "Rocky — your live 0–100 score of how well you actually understand the code your AI is shipping.",
     "start_url": "/rocky/",
     "display": "standalone",
     "background_color": "#0A0E1A",

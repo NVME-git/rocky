@@ -1,0 +1,14 @@
+---
+import { getEntry } from 'astro:content';
+import DocLayout from '../layouts/DocLayout.astro';
+import HeroBlock from '../components/HeroBlock.astro';
+
+const intro = await getEntry('docs', 'introduction');
+const { Content } = await intro.render();
+---
+<DocLayout activeSlug="introduction">
+  <HeroBlock />
+  <article id="why-it-exists">
+    <Content />
+  </article>
+</DocLayout>

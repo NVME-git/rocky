@@ -1,0 +1,121 @@
+---
+const { target = 74 } = Astro.props as { target?: number };
+const id = `iq-${Math.random().toString(36).slice(2, 9)}`;
+// Geometry shared between server-rendered SVG and the animation script.
+const SIZE = 240;
+const STROKE = 14;
+const RADIUS = (SIZE - STROKE) / 2;
+const CIRC = 2 * Math.PI * RADIUS;
+---
+<div class="iq-wrap" data-iq-target={target} data-iq-id={id}>
+  <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true">
+    <circle
+      class="iq-track"
+      cx={SIZE / 2} cy={SIZE / 2} r={RADIUS}
+      fill="none" stroke-width={STROKE} stroke-linecap="round"
+    />
+    <circle
+      id={`${id}-arc`}
+      class="iq-arc"
+      cx={SIZE / 2} cy={SIZE / 2} r={RADIUS}
+      fill="none" stroke-width={STROKE} stroke-linecap="round"
+      stroke-dasharray={CIRC}
+      stroke-dashoffset={CIRC}
+      transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
+    />
+  </svg>
+  <div class="iq-center">
+    <div id={`${id}-num`} class="iq-num">0</div>
+    <div class="iq-denom">/ 100</div>
+    <div id={`${id}-pill`} class="iq-pill known">KNOWN</div>
+  </div>
+</div>
+
+<script define:vars={{ id, target, CIRC }}>
+  const wrap = document.querySelector(`[data-iq-id="${id}"]`);
+  if (wrap) {
+    const arc = document.getElementById(`${id}-arc`);
+    const num = document.getElementById(`${id}-num`);
+    const pill = document.getElementById(`${id}-pill`);
+    const DURATION = 1400;
+    const start = performance.now();
+    const ease = (t) => 1 - Math.pow(1 - t, 3); // easeOutCubic
+
+    function bucket(v) {
+      if (v >= 70) return { label: 'KNOWN',  cls: 'known'  };
+      if (v >= 40) return { label: 'FADING', cls: 'fading' };
+      return                { label: 'GAP',    cls: 'gap'    };
+    }
+
+    function frame(now) {
+      const t = Math.min(1, (now - start) / DURATION);
+      const v = ease(t) * target;
+      const offset = CIRC * (1 - v / 100);
+      arc.setAttribute('stroke-dashoffset', String(offset));
+      arc.classList.remove('known', 'fading', 'gap');
+      const b = bucket(v);
+      arc.classList.add(b.cls);
+      pill.classList.remove('known', 'fading', 'gap');
+      pill.classList.add(b.cls);
+      pill.textContent = b.label;
+      num.textContent = String(Math.round(v));
+      if (t < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+</script>
+
+<style>
+  .iq-wrap {
+    position: relative;
+    width: 240px; height: 240px;
+    flex-shrink: 0;
+  }
+  .iq-track {
+    stroke: theme('colors.divider.DEFAULT');
+  }
+  :global(html.light) .iq-track { stroke: theme('colors.divider.light'); }
+
+  .iq-arc {
+    transition: stroke 350ms ease;
+  }
+  .iq-arc.known  { stroke: theme('colors.known');  }
+  .iq-arc.fading { stroke: theme('colors.fading'); }
+  .iq-arc.gap    { stroke: theme('colors.gap');    }
+
+  .iq-center {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 4px;
+  }
+  .iq-num {
+    font-size: 64px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -2px;
+    color: theme('colors.ink.DEFAULT');
+    font-variant-numeric: tabular-nums;
+  }
+  :global(html.light) .iq-num { color: #000; }
+
+  .iq-denom {
+    font-size: 14px;
+    font-weight: 500;
+    color: theme('colors.ink.dim');
+  }
+  :global(html.light) .iq-denom { color: theme('colors.ink.dim-light'); }
+
+  .iq-pill {
+    margin-top: 8px;
+    padding: 3px 8px;
+    border-radius: 99px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    transition: color 350ms ease, background 350ms ease;
+  }
+  .iq-pill.known  { color: theme('colors.known');  background: rgba(29, 158, 117, 0.15); }
+  .iq-pill.fading { color: theme('colors.fading'); background: rgba(239, 159, 39, 0.15); }
+  .iq-pill.gap    { color: theme('colors.gap');    background: rgba(226, 75, 74, 0.15);  }
+</style>
