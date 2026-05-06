@@ -83,6 +83,13 @@ html.light .prose hr { border-color: theme('colors.divider.light'); }
 .prose table {
   @apply w-full text-left text-sm my-4;
   border-collapse: collapse;
+  /* Let wide tables scroll horizontally on small screens instead of
+     blowing out the layout. */
+  display: block;
+  overflow-x: auto;
+}
+@media (min-width: 768px) {
+  .prose table { display: table; }
 }
 .prose th, .prose td {
   @apply px-3 py-2 align-top;

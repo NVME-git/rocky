@@ -32,6 +32,22 @@ const pageTitle = title ? `${title} · Rocky` : 'Rocky · Personal Knowledge Gra
     </script>
   </head>
   <body>
+    {/* Mobile-only top bar with hamburger + brand. */}
+    <header class="topbar">
+      <button id="nav-toggle" class="hamburger" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="primary-sidebar">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path fill="currentColor" d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/>
+        </svg>
+      </button>
+      <a href={base} class="topbar-logo">
+        <span class="topbar-mark">🪨</span>
+        <span class="topbar-name">Rocky</span>
+      </a>
+    </header>
+
+    {/* Tap-to-close backdrop, only active when sidebar is open on mobile. */}
+    <div id="backdrop" class="backdrop" aria-hidden="true"></div>
+
     <div class="shell">
       <Sidebar activeSlug={activeSlug} />
       <main class="content">
@@ -43,6 +59,32 @@ const pageTitle = title ? `${title} · Rocky` : 'Rocky · Personal Knowledge Gra
       </main>
     </div>
 
+    <script>
+      const body = document.body;
+      const toggle = document.getElementById('nav-toggle');
+      const backdrop = document.getElementById('backdrop');
+
+      function setOpen(open: boolean) {
+        body.classList.toggle('sidebar-open', open);
+        toggle?.setAttribute('aria-expanded', String(open));
+      }
+      function close() { setOpen(false); }
+
+      toggle?.addEventListener('click', () => setOpen(!body.classList.contains('sidebar-open')));
+      backdrop?.addEventListener('click', close);
+
+      // Close on Escape
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && body.classList.contains('sidebar-open')) close();
+      });
+
+      // Close on any sidebar link click (mobile UX — sidebar collapses
+      // before navigation kicks in, so the next page lands clean).
+      document.querySelectorAll('aside.sidebar a.nav-item').forEach((a) => {
+        a.addEventListener('click', close);
+      });
+    </script>
+
     <style>
       .shell { display: flex; min-height: 100vh; }
       .content { flex: 1; min-width: 0; }
@@ -51,8 +93,79 @@ const pageTitle = title ? `${title} · Rocky` : 'Rocky · Personal Knowledge Gra
         margin: 0 auto;
         padding: 40px 48px;
       }
+
+      /* ── Mobile-only topbar ──────────────────────────────────────── */
+      .topbar {
+        display: none;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        position: sticky;
+        top: 0;
+        z-index: 80;
+        background: theme('colors.sidebar.DEFAULT');
+        border-bottom: 1px solid theme('colors.divider.DEFAULT');
+      }
+      :global(html.light) .topbar {
+        background: theme('colors.sidebar.light');
+        border-color: theme('colors.divider.light');
+      }
+      .hamburger {
+        background: none;
+        border: 0;
+        cursor: pointer;
+        padding: 6px;
+        color: theme('colors.ink.DEFAULT');
+        display: inline-flex;
+        border-radius: 6px;
+      }
+      :global(html.light) .hamburger { color: theme('colors.ink.light'); }
+      .hamburger:hover { background: theme('colors.sidebar.hover'); }
+      :global(html.light) .hamburger:hover { background: theme('colors.sidebar.hover-light'); }
+      .topbar-logo {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        text-decoration: none;
+      }
+      .topbar-mark {
+        width: 24px; height: 24px;
+        display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 6px;
+        background: linear-gradient(135deg, theme('colors.brand.DEFAULT'), theme('colors.brand.dim'));
+        font-size: 14px;
+        color: #000;
+      }
+      .topbar-name {
+        color: theme('colors.ink.DEFAULT');
+        font-weight: 700;
+        font-size: 16px;
+        letter-spacing: 0.3px;
+      }
+      :global(html.light) .topbar-name { color: theme('colors.ink.light'); }
+
+      /* ── Tap-to-close backdrop ───────────────────────────────────── */
+      .backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        z-index: 90;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 200ms ease;
+      }
+      :global(body.sidebar-open) .backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
       @media (max-width: 768px) {
-        .content-inner { padding: 24px 20px; }
+        .topbar { display: flex; }
+        .content-inner { padding: 24px 18px; }
+        /* Lock body scroll behind the open drawer. */
+        :global(body.sidebar-open) {
+          overflow: hidden;
+        }
       }
     </style>
   </body>

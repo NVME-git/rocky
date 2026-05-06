@@ -3,7 +3,7 @@ import { sections } from '../data/sections';
 const { activeSlug } = Astro.props as { activeSlug?: string };
 const base = import.meta.env.BASE_URL; // "/rocky/"
 ---
-<aside class="sidebar">
+<aside id="primary-sidebar" class="sidebar" aria-label="Documentation navigation">
   <a href={base} class="logo-row">
     <span class="logo-mark">🪨</span>
     <span class="logo-text">Rocky</span>
@@ -77,6 +77,26 @@ const base = import.meta.env.BASE_URL; // "/rocky/"
     position: sticky; top: 0;
   }
   :global(html.light) .sidebar { background: theme('colors.sidebar.light'); border-color: theme('colors.divider.light'); }
+
+  /* ── Mobile drawer ─────────────────────────────────────────────── */
+  /* Below 768px the sidebar lives outside the document flow, slides
+     in from the left when body.sidebar-open is set. The rest of the
+     content takes the full viewport width. */
+  @media (max-width: 768px) {
+    .sidebar {
+      position: fixed;
+      top: 0; left: 0;
+      height: 100dvh;            /* dvh = dynamic viewport — handles iOS URL bar */
+      width: min(86vw, 320px);
+      z-index: 100;
+      transform: translateX(-100%);
+      transition: transform 240ms ease;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    }
+    :global(body.sidebar-open) .sidebar {
+      transform: translateX(0);
+    }
+  }
 
   .logo-row {
     display: flex; align-items: center; gap: 12px;
