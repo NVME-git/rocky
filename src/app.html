@@ -356,6 +356,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .mb-clear-btn:hover{color:#e2e8f0}
 
 /* ── quiz modal ── */
+/* PromptIQ recent-prompts modal */
+#piq-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);z-index:180;display:none;align-items:center;justify-content:center;padding:32px}
+#piq-overlay.visible{display:flex}
+#piq-modal{background:#15182a;border:1px solid #2d3148;border-radius:12px;width:min(720px,100%);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+#piq-head{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #2d3148;gap:12px}
+#piq-head .piq-title{font-size:14px;font-weight:700;color:#c4cde0}
+#piq-head .piq-sub{font-size:11px;color:#7c9ef3;margin-top:3px}
+.piq-close{background:none;border:none;color:#8892a4;font-size:22px;line-height:1;cursor:pointer;padding:0 4px;font-family:inherit}
+.piq-close:hover{color:#e2e8f0}
+#piq-body{overflow-y:auto;padding:6px 0}
+.piq-row{padding:10px 20px;border-bottom:1px solid #1e2340;cursor:pointer;transition:background .12s}
+.piq-row:hover{background:#1a1d27}
+.piq-row:last-child{border-bottom:none}
+.piq-meta{display:flex;align-items:center;gap:8px;font-size:10px;color:#555e7a;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+.piq-score{display:inline-block;font-weight:700;padding:2px 8px;border-radius:10px;font-variant-numeric:tabular-nums;letter-spacing:0;text-transform:none;font-size:11px}
+.piq-score.bad{background:rgba(231,76,60,.15);color:#e74c3c}
+.piq-score.warn{background:rgba(230,168,23,.15);color:#e6a817}
+.piq-score.ok{background:rgba(124,158,243,.15);color:#7c9ef3}
+.piq-score.great{background:rgba(29,158,117,.15);color:#1d9e75}
+.piq-llm-badge{display:inline-block;font-size:9px;font-weight:600;color:#7c9ef3;background:rgba(124,158,243,.15);padding:1px 6px;border-radius:8px;letter-spacing:.5px;text-transform:uppercase}
+.piq-llm-badge.heuristic{color:#8892a4;background:rgba(136,146,164,.12)}
+.piq-prompt{font-size:12px;color:#c4cde0;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.piq-row.collapsed .piq-prompt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.piq-feedback{font-size:11px;color:#7c9ef3;margin-top:5px;font-style:italic}
+.piq-empty{padding:32px;text-align:center;color:#555e7a;font-size:12px}
+
 #quiz-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:none;align-items:center;justify-content:center}
 #quiz-overlay.visible{display:flex}
 #quiz-modal{background:#1a1d27;border:1px solid #2d3148;border-radius:12px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:14px}
@@ -482,7 +508,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div class="score-bar"><div class="score-fill" id="atrophy-fill" style="width:0"></div></div>
       <svg class="iq-spark" id="atrophy-spark" preserveAspectRatio="none"></svg>
     </div>
-    <div class="atrophy-banner iq-half" id="prompt-iq-banner" title="Click for recent prompts" style="cursor:default">
+    <div class="atrophy-banner iq-half" id="prompt-iq-banner" title="Click for recent prompts" style="cursor:pointer" onclick="openPromptIqModal()">
       <div>
         <div class="label">PromptIQ</div>
         <div class="iq-trend" id="prompt-iq-trend">—</div>
@@ -646,6 +672,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 </div><!-- /#main-pane -->
 
+<!-- PROMPTIQ RECENT-PROMPTS MODAL -->
+<div id="piq-overlay" onclick="closePromptIqModal(event)">
+  <div id="piq-modal" onclick="event.stopPropagation()">
+    <div id="piq-head">
+      <div>
+        <div class="piq-title">Recent prompts</div>
+        <div class="piq-sub" id="piq-sub">—</div>
+      </div>
+      <button class="piq-close" onclick="closePromptIqModal()" aria-label="Close">×</button>
+    </div>
+    <div id="piq-body"></div>
+  </div>
+</div>
+
 <!-- QUIZ OVERLAY -->
 <div id="quiz-overlay">
   <div id="quiz-modal">
@@ -728,6 +768,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 // DATA
 // ══════════════════════════════════════════════════════════
 let DATA = null;
+let LATEST_PROMPT_IQ = null;        // last /api/prompt-iq response — backs the dashboard tile modal
 
 const DOMAIN_COLORS = {
   Language:'#3498db',Database:'#e74c3c',Auth:'#9b59b6',API:'#2ecc71',
@@ -1157,6 +1198,15 @@ function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Generic SVG-element helper used by the IQ sparklines (and previously the
+// wormhole module). Lives at top level so it survives any refactor that
+// touches the map module.
+function svgEl(name, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', name);
+  if (attrs) for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
 }
 
 function _hexFromCss(c) { return parseInt(c.slice(1), 16); }
@@ -2826,7 +2876,11 @@ function drawIqSparkline(svg, rawValues, color) {
   const valid = values.filter(v => v != null && Number.isFinite(v));
   if (valid.length < 2) {
     const t = svgEl('text', { x: 4, y: 18, class: 'iq-spark-empty' });
-    t.textContent = valid.length === 0 ? 'no history yet — keep using Rocky' : 'collecting data…';
+    // Sparklines need ≥3 daily snapshots to show a meaningful trend (today,
+    // yesterday, the day before — the slope is ambiguous before that).
+    t.textContent = valid.length === 0
+      ? 'no daily snapshots yet — at least 3 days of usage needed for a trend'
+      : `1 of 3 daily snapshots — come back in ${valid.length === 1 ? 2 : 1} day${valid.length === 1 ? 's' : ''}`;
     svg.appendChild(t);
     return;
   }
@@ -2891,7 +2945,12 @@ function renderDashboard() {
              : iq >= 50 ? 'holding — some recent topics are starting to fade'
              : iq >= 30 ? 'slipping — schedule a review session soon'
              : 'fading — recent material is decaying fast, quiz now to recover';
-  document.getElementById('atrophy-meta').textContent = meta;
+  // Last checkpoint = the most-recent topic added to the PKG. Tells the user
+  // how fresh the underlying graph is (the IQ derives from it).
+  const ckptList = DATA.recentlyAdded || [];
+  const lastCkpt = ckptList.length ? relTime(ckptList[0].created_at) : null;
+  document.getElementById('atrophy-meta').textContent =
+    lastCkpt ? `${meta} · last checkpoint ${lastCkpt}` : meta;
 
   const rDelta = Number(DATA.rockyIqDelta || 0);
   const rTrendEl = document.getElementById('atrophy-trend');
@@ -2902,21 +2961,11 @@ function renderDashboard() {
   drawIqSparkline(document.getElementById('atrophy-spark'), (DATA.iqHistory || []).map(s => s.rocky_iq), '#7c9ef3');
   drawIqSparkline(document.getElementById('prompt-iq-spark'), (DATA.iqHistory || []).map(s => s.prompt_iq), '#e6a817');
 
-  // PromptIQ — fetched lazily from /api/prompt-iq for the current value + delta.
+  // PromptIQ — fetched lazily; the tile-paint logic lives in a helper so the
+  // modal's own fetch can also refresh the tile and we never end up with a
+  // stale "—" while the modal shows live data.
   fetch('/api/prompt-iq').then(r => r.ok ? r.json() : null).then(p => {
-    if (!p) return;
-    const v = Math.max(0, Math.min(100, p.current || 0));
-    document.getElementById('prompt-iq-value').textContent = v;
-    document.getElementById('prompt-iq-fill').style.width = Math.max(2, v) + '%';
-    const trendEl = document.getElementById('prompt-iq-trend');
-    if (p.delta > 0)      { trendEl.textContent = '↑ ' + p.delta + ' this week'; trendEl.className = 'iq-trend up'; }
-    else if (p.delta < 0) { trendEl.textContent = '↓ ' + (-p.delta) + ' this week'; trendEl.className = 'iq-trend down'; }
-    else                  { trendEl.textContent = '— this week';                  trendEl.className = 'iq-trend'; }
-    const promptMeta = p.sample_size === 0 ? 'no prompts logged yet — install the Claude or OpenCode hook'
-                     : v >= 70 ? `directing well · ${p.sample_size} prompt${p.sample_size === 1 ? '' : 's'} sampled`
-                     : v >= 40 ? `building the habit · ${p.sample_size} prompt${p.sample_size === 1 ? '' : 's'} sampled`
-                     : `lots of room to grow · ${p.sample_size} prompt${p.sample_size === 1 ? '' : 's'} sampled`;
-    document.getElementById('prompt-iq-meta').textContent = promptMeta;
+    if (p) applyPromptIq(p);
   }).catch(() => { /* endpoint not available — leave defaults */ });
 
   // Due for review
@@ -2992,6 +3041,122 @@ function quizOne(nodeId, topic) {
   // Single-topic quiz path: just launch — no need to mutate selection state.
   startQuizNodes([nodeId]);
 }
+
+// Single source of truth for painting the PromptIQ dashboard tile from a
+// /api/prompt-iq response. Called from both renderDashboard's initial fetch
+// and openPromptIqModal's fetch, so opening the modal also self-heals the
+// tile if the dashboard render somehow skipped it (race, missed tab event).
+function applyPromptIq(p) {
+  if (!p) return;
+  LATEST_PROMPT_IQ = p;
+  const cur = Number(p.current);
+  const v = Number.isFinite(cur) ? Math.max(0, Math.min(100, cur)) : 0;
+  const valueEl = document.getElementById('prompt-iq-value');
+  const fillEl  = document.getElementById('prompt-iq-fill');
+  const trendEl = document.getElementById('prompt-iq-trend');
+  const metaEl  = document.getElementById('prompt-iq-meta');
+  if (!valueEl) return;              // dashboard tab not loaded yet
+  valueEl.textContent = v;
+  if (fillEl) fillEl.style.width = Math.max(2, v) + '%';
+  const d = Number(p.delta) || 0;
+  if (trendEl) {
+    if (d > 0)      { trendEl.textContent = '↑ ' + d + ' this week'; trendEl.className = 'iq-trend up'; }
+    else if (d < 0) { trendEl.textContent = '↓ ' + (-d) + ' this week'; trendEl.className = 'iq-trend down'; }
+    else            { trendEl.textContent = '— this week';            trendEl.className = 'iq-trend'; }
+  }
+  if (metaEl) {
+    const n = Number(p.sample_size) || 0;
+    const base = n === 0 ? 'no prompts logged yet — install the Claude or OpenCode hook'
+               : v >= 70 ? `directing well · ${n} prompt${n === 1 ? '' : 's'} sampled`
+               : v >= 40 ? `building the habit · ${n} prompt${n === 1 ? '' : 's'} sampled`
+               :           `lots of room to grow · ${n} prompt${n === 1 ? '' : 's'} sampled`;
+    const rescored = relTime(p.last_rescored_at);
+    metaEl.textContent = rescored ? `${base} · last rescored ${rescored}` : base;
+  }
+}
+
+// PromptIQ recent-prompts modal — opened from the dashboard tile.
+// Pulls from the cached /api/prompt-iq response when available, otherwise
+// re-fetches. Each row is collapsed to two lines by default; clicking
+// expands to the full prompt.
+function _piqScoreClass(score) {
+  if (score >= 70) return 'great';
+  if (score >= 50) return 'ok';
+  if (score >= 30) return 'warn';
+  return 'bad';
+}
+function renderPromptIqModal(p) {
+  const body = document.getElementById('piq-body');
+  const sub = document.getElementById('piq-sub');
+  if (!p) { body.innerHTML = '<div class="piq-empty">Loading…</div>'; return; }
+  const recent = p.recent || [];
+  if (recent.length === 0) {
+    sub.textContent = 'no prompts logged yet';
+    body.innerHTML = '<div class="piq-empty">Install the Claude or OpenCode hook to start logging your prompts.</div>';
+    return;
+  }
+  const rescored = relTime(p.last_rescored_at);
+  const subBase = `${recent.length} of ${p.sample_size} prompts in the last 7 days · avg ${p.current}`;
+  sub.textContent = rescored ? `${subBase} · last rescored ${rescored}` : subBase;
+  body.innerHTML = recent.map(r => {
+    const score = (r.llm_score != null) ? r.llm_score : r.heuristic_score;
+    const cls = _piqScoreClass(score);
+    const ts = (r.ts || '').slice(0, 16).replace('T', ' ');
+    const isLlm = r.llm_score != null;
+    const badge = isLlm
+      ? '<span class="piq-llm-badge" title="Rescored by an agent against the rubric — trust this number">LLM</span>'
+      : '<span class="piq-llm-badge heuristic" title="Heuristic score only — no agent rescore yet, treat as a conservative estimate">heuristic</span>';
+    const fb = r.feedback ? `<div class="piq-feedback">${escapeHtml(r.feedback)}</div>` : '';
+    return `<div class="piq-row collapsed" onclick="this.classList.toggle('collapsed')">
+      <div class="piq-meta">
+        <span class="piq-score ${cls}">${score}</span>
+        ${badge}
+        <span>${escapeHtml(ts)}</span>
+        <span>${escapeHtml(r.source || '—')}</span>
+      </div>
+      <div class="piq-prompt">${escapeHtml(r.prompt || '')}</div>
+      ${fb}
+    </div>`;
+  }).join('');
+}
+
+// Compact relative-time helper for "last rescored Xm ago" / "12h ago" etc.
+// Tolerates the SQLite ISO-ish format ("2026-05-07 17:24:12.721871...") by
+// splitting on the space + dropping any sub-second fraction.
+function relTime(iso) {
+  if (!iso) return null;
+  const clean = String(iso).replace(' ', 'T').replace(/\.\d+/, '');
+  const t = Date.parse(clean);
+  if (!Number.isFinite(t)) return null;
+  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (sec < 60)    return 'just now';
+  if (sec < 3600)  return Math.floor(sec / 60) + 'm ago';
+  if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
+  return Math.floor(sec / 86400) + 'd ago';
+}
+function openPromptIqModal() {
+  const overlay = document.getElementById('piq-overlay');
+  overlay.classList.add('visible');
+  renderPromptIqModal(LATEST_PROMPT_IQ);
+  // Always refetch on open — the modal is the only path that guarantees
+  // the tile gets a value, since the dashboard render's fetch can race.
+  fetch('/api/prompt-iq').then(r => r.ok ? r.json() : null).then(p => {
+    if (!p) return;
+    applyPromptIq(p);
+    renderPromptIqModal(p);
+  }).catch(() => {});
+}
+function closePromptIqModal(ev) {
+  // When called from the overlay's click handler, only close on backdrop hits.
+  if (ev && ev.target && ev.target.id !== 'piq-overlay' && ev.currentTarget !== ev.target) return;
+  document.getElementById('piq-overlay').classList.remove('visible');
+}
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const o = document.getElementById('piq-overlay');
+    if (o && o.classList.contains('visible')) closePromptIqModal();
+  }
+});
 
 // ══════════════════════════════════════════════════════════
 // REVIEW QUEUE TAB

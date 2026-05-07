@@ -250,6 +250,27 @@ pub struct PromptIqReport {
     pub by_source: Vec<SourceBreakdown>,
     pub recent_low_score: Option<PromptRecord>,
     pub recent_high_score: Option<PromptRecord>,
+    /// Last ~20 prompts (most recent first) for the dashboard tile's modal.
+    pub recent: Vec<PromptRecord>,
+    /// MAX(evaluated_at) within the last-7-days window — when an LLM rescore
+    /// last touched the score floor. None if no rescore yet.
+    pub last_rescored_at: Option<String>,
+}
+
+/// True if the prompt represents real user input (something they typed to
+/// direct the agent). False for slash-command-only invocations and for
+/// auto-injected harness blocks (task-notification wrappers) that get logged
+/// as "user prompts" by the hook even though the user never typed them.
+fn is_real_prompt(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() { return false; }
+    // Single-line slash-command invocations: `/rocky-checkpoint`, `/loop`, etc.
+    if t.starts_with('/') && !t.contains('\n') { return false; }
+    // Entire prompt is a harness-injected notification block.
+    if t.starts_with("<task-notification>") && t.ends_with("</task-notification>") {
+        return false;
+    }
+    true
 }
 
 #[derive(Debug, Serialize)]
@@ -270,22 +291,28 @@ pub fn current_iq() -> Result<PromptIqReport> {
     let prev7_start = (now - Duration::days(14)).naive_local().to_string();
 
     let mut q = conn.prepare(
-        "SELECT heuristic_score, llm_score, source, ts, id, project_path, prompt, feedback
+        "SELECT heuristic_score, llm_score, source, ts, id, project_path, prompt, feedback, evaluated_at
          FROM prompts WHERE ts >= ?"
     )?;
-    let prev_q = conn.prepare(
-        "SELECT heuristic_score, llm_score FROM prompts WHERE ts >= ? AND ts < ?"
+    let mut prev_q = conn.prepare(
+        "SELECT heuristic_score, llm_score, prompt FROM prompts WHERE ts >= ? AND ts < ?"
     )?;
 
-    let last7: Vec<(i64, Option<i64>, String, String, i64, String, String, Option<String>)> =
+    // Last-7 window. `is_real_prompt` filters out skill invocations and
+    // harness-injected notification blocks so the IQ tracks user intent only.
+    let last7_all: Vec<(i64, Option<i64>, String, String, i64, String, String, Option<String>, Option<String>)> =
         q.query_map(params![last7_start.clone()], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?))
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?))
         })?.filter_map(|r| r.ok()).collect();
+    let last7: Vec<_> = last7_all.into_iter().filter(|r| is_real_prompt(&r.6)).collect();
 
-    let mut prev_q = prev_q;
     let prev: Vec<(i64, Option<i64>)> = prev_q
-        .query_map(params![prev7_start, last7_start], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .query_map(params![prev7_start, last7_start], |r| -> rusqlite::Result<(i64, Option<i64>, String)> {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
         .filter_map(|r| r.ok())
+        .filter(|r| is_real_prompt(&r.2))
+        .map(|(h, l, _)| (h, l))
         .collect();
 
     let current = if last7.is_empty() {
@@ -320,7 +347,7 @@ pub fn current_iq() -> Result<PromptIqReport> {
     by_source.sort_by(|a, b| b.count.cmp(&a.count));
 
     // Best/worst prompts in the last 7 days for surfacing.
-    let to_record = |r: &(i64, Option<i64>, String, String, i64, String, String, Option<String>)| -> PromptRecord {
+    let to_record = |r: &(i64, Option<i64>, String, String, i64, String, String, Option<String>, Option<String>)| -> PromptRecord {
         PromptRecord {
             id: r.4, ts: r.3.clone(), source: r.2.clone(), project_path: r.5.clone(),
             prompt: r.6.clone(), heuristic_score: r.0, llm_score: r.1, feedback: r.7.clone(),
@@ -328,6 +355,18 @@ pub fn current_iq() -> Result<PromptIqReport> {
     };
     let recent_low = last7.iter().min_by_key(|r| effective_score(r.0, r.1)).map(to_record);
     let recent_high = last7.iter().max_by_key(|r| effective_score(r.0, r.1)).map(to_record);
+
+    // Most-recent slice for the dashboard tile. SELECT had no ORDER BY, so
+    // sort descending by ts here and cap at 20.
+    let mut recent_sorted: Vec<&_> = last7.iter().collect();
+    recent_sorted.sort_by(|a, b| b.3.cmp(&a.3));
+    let recent: Vec<PromptRecord> = recent_sorted.into_iter().take(20).map(to_record).collect();
+
+    // Most-recent rescore timestamp anywhere in the last-7 window.
+    let last_rescored_at = last7
+        .iter()
+        .filter_map(|r| r.8.clone())
+        .max();
 
     Ok(PromptIqReport {
         current,
@@ -337,6 +376,8 @@ pub fn current_iq() -> Result<PromptIqReport> {
         by_source,
         recent_low_score: recent_low,
         recent_high_score: recent_high,
+        recent,
+        last_rescored_at,
     })
 }
 
