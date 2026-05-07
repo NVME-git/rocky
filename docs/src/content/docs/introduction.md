@@ -37,7 +37,7 @@ This is the canonical Rocky workflow. After `rocky install claude`, the agent pi
 - `/rocky-checkpoint` — at the end of a session, the agent reads the diffs and transcript, extracts topics with question banks, and writes them straight into your PKG using the cross-project dedup list.
 - `/rocky-quiz` — runs a Socratic review session inside the Claude session, using the canonical questions Rocky stored.
 - `/rocky-backfill` — seeds the PKG from a project's existing git history when you're new to a repo or first installing Rocky.
-- `/rocky-promptiq-rescore` — re-evaluates your recent prompts and produces a PromptIQ score with feedback.
+- `/rocky-promptiq` — re-evaluates your recent prompts and produces a PromptIQ score with feedback.
 
 ```bash
 rocky install claude     # one-time: drops the skills into ~/.claude/skills/

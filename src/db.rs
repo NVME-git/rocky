@@ -369,19 +369,22 @@ impl Db {
             };
             // repo only backfills if not already set
             let effective_repo = if !repo.is_empty() && node.repo.is_empty() { repo } else { &node.repo };
+            // Advance last_reviewed / last_encountered only if the override is
+            // newer than the current value — merging in an older commit must
+            // not roll the FSRS clock backwards.
             conn.execute(
                 "UPDATE nodes SET
                     stability        = ?1,
                     difficulty       = ?2,
-                    last_reviewed    = ?3,
-                    last_encountered = ?4,
+                    last_reviewed    = CASE WHEN ?3 > last_reviewed THEN ?3 ELSE last_reviewed END,
+                    last_encountered = CASE WHEN ?4 > last_encountered THEN ?4 ELSE last_encountered END,
                     review_count     = review_count + 1,
                     kind             = ?5,
                     domain           = ?6,
                     description      = CASE WHEN description = '' THEN ?7 ELSE description END,
                     repo             = ?8
                  WHERE id = ?9",
-                params![new_s, new_d, reviewed, today, kind.as_str(), effective_domain, description, effective_repo, node_id],
+                params![new_s, new_d, reviewed, reviewed, kind.as_str(), effective_domain, description, effective_repo, node_id],
             )?;
         } else {
             let mut stability = fsrs::initial_stability(kind);
@@ -395,7 +398,7 @@ impl Db {
                     (id, topic, kind, domain, description, difficulty, stability,
                      last_reviewed, last_encountered, review_count, created_at, repo)
                  VALUES (?1, ?2, ?3, ?4, ?5, 0.3, ?6, ?7, ?8, 1, ?9, ?10)",
-                params![node_id, topic, kind.as_str(), domain, description, stability, reviewed, today, created_at, repo],
+                params![node_id, topic, kind.as_str(), domain, description, stability, reviewed, reviewed, created_at, repo],
             )?;
         }
 

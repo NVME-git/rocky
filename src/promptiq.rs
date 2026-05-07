@@ -2,7 +2,7 @@
 //!
 //! Stores prompts at `~/.rocky/prompts.db`. Each row carries a heuristic score
 //! computed at log time (~1 ms, no network) and an optional `llm_score` written
-//! later by `/rocky-promptiq-rescore`.
+//! later by `/rocky-promptiq`.
 //!
 //! See ADR 0007 for rationale.
 

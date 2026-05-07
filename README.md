@@ -67,7 +67,7 @@ Three steps. The first one is *work normally*.
 
 Inline reviews without leaving the agent: type `/rocky-quiz` in Claude Code.
 Adopting Rocky on an existing repo: type `/rocky-backfill` once.
-Re-score how well you've been prompting: `/rocky-promptiq-rescore`.
+Re-score how well you've been prompting: `/rocky-promptiq`.
 
 ---
 
@@ -154,7 +154,7 @@ rocky/
 │   ├── rocky-checkpoint/         # extract topics from session diffs + transcript
 │   ├── rocky-quiz/               # inline quiz on weakest topics
 │   ├── rocky-backfill/           # one-shot seed from existing git history
-│   └── rocky-promptiq-rescore/   # PromptIQ scoring of recent prompts
+│   └── rocky-promptiq/   # PromptIQ scoring of recent prompts
 │
 ├── docs/                         # Astro static site → nvme-git.github.io/rocky/
 │   ├── src/content/docs/         # markdown sources (one .md per section)

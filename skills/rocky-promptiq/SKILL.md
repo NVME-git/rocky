@@ -1,14 +1,14 @@
 ---
-name: rocky-promptiq-rescore
+name: rocky-promptiq
 description: >
   Re-evaluate the user's recent prompts using your own judgment to produce a
   PromptIQ score (0-100) per prompt and short feedback. Use this when the user
   asks to refresh their PromptIQ, see how their prompting is improving, or get
-  feedback on recent prompts. Trigger phrases: "/rocky-promptiq-rescore",
+  feedback on recent prompts. Trigger phrases: "/rocky-promptiq",
   "rescore my prompts", "evaluate my prompting", "promptiq".
 ---
 
-# Rocky · PromptIQ rescore
+# Rocky · PromptIQ
 
 Walk through the user's recent prompts and score each one for *prompting
 quality* — how well-formed, specific, and actionable each prompt was as a

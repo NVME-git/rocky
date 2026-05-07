@@ -189,6 +189,26 @@ enum Cmd {
         #[arg(long, default_value = "0.7")]
         score: f64,
     },
+    /// Add a semantic edge between two topics (used by the rocky-checkpoint
+    /// and rocky-backfill skills to connect related topics in the implication
+    /// graph). Idempotent on duplicate (source, target, kind).
+    AddEdge {
+        /// Source topic name (substring match — must resolve to exactly one topic)
+        #[arg(long)]
+        source: String,
+        /// Target topic name (substring match — must resolve to exactly one topic)
+        #[arg(long)]
+        target: String,
+        /// Kind: implies | depends_on | conflicts_with | part_of
+        #[arg(long, default_value = "implies")]
+        kind: String,
+        /// One-sentence rationale for why this edge exists
+        #[arg(long, default_value = "")]
+        description: String,
+        /// Edge strength 0..1. Defaults to 0.5.
+        #[arg(long, default_value = "0.5")]
+        strength: f64,
+    },
     /// Append a single question to a topic's question_bank (used by the rocky-quiz
     /// skill so good questions persist across sessions for rotation).
     AddQuestion {
@@ -261,7 +281,7 @@ enum Cmd {
         log: Option<String>,
     },
     /// Persist an agent-evaluated PromptIQ score for a logged prompt. Called
-    /// by the /rocky-promptiq-rescore skill after the agent judges the prompt.
+    /// by the /rocky-promptiq skill after the agent judges the prompt.
     PromptEval {
         /// Prompt id (returned by `rocky prompts --json`)
         #[arg(long)]
@@ -597,6 +617,9 @@ fn run() -> Result<()> {
         }
         Some(Cmd::AddTopic { name, description, domain, kind, context, commit, score }) => {
             run_add_topic(&db, &name, &description, &domain, &kind, context.as_deref(), commit.as_deref(), score)?;
+        }
+        Some(Cmd::AddEdge { source, target, kind, description, strength }) => {
+            run_add_edge(&db, &source, &target, &kind, &description, strength)?;
         }
         Some(Cmd::Context) => emit_project_context_json(&db)?,
         Some(Cmd::Checkpoint { action }) => match action {
@@ -3122,6 +3145,20 @@ fn run_add_topic(
 ) -> Result<()> {
     let kind_enum = node::Kind::from_str(kind);
     let pre_existing = db.get_node(name)?.is_some();
+    // Resolve the topic's effective date: commit's author date when --commit is
+    // given and the SHA is reachable from cwd; otherwise None (today fallback).
+    // Conversation-pass topics omit --commit and so naturally get today.
+    let effective_date: Option<chrono::NaiveDate> = commit
+        .filter(|s| !s.is_empty())
+        .and_then(|sha| {
+            let out = std::process::Command::new("git")
+                .args(["log", "-1", "--format=%cs", sha])
+                .output()
+                .ok()?;
+            if !out.status.success() { return None; }
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()
+        });
     db.add_or_update(
         name,
         score,
@@ -3129,9 +3166,9 @@ fn run_add_topic(
         domain,
         description,
         context.unwrap_or(""),
-        None,
+        effective_date,
         &project_repo_name(),
-        None,
+        effective_date,
     )?;
     let repo = project_repo_name();
     if let Some(sha) = commit {
@@ -3288,6 +3325,80 @@ fn run_add_question(db: &Db, topic_query: &str, question: &str, answer: &str, cl
     Ok(())
 }
 
+fn run_add_edge(
+    db: &Db,
+    source_query: &str,
+    target_query: &str,
+    kind_str: &str,
+    description: &str,
+    strength: f64,
+) -> Result<()> {
+    // Resolve a topic-name query → Node, with the same exact/substring semantics
+    // as run_add_question.
+    let resolve = |query: &str| -> Result<node::Node> {
+        let nodes = db.all_nodes()?;
+        let q = query.to_lowercase();
+        let matches: Vec<&node::Node> = nodes
+            .iter()
+            .filter(|n| !n.kind.is_domain())
+            .filter(|n| n.id == query || n.topic.to_lowercase().contains(&q))
+            .collect();
+        if matches.is_empty() {
+            anyhow::bail!("no topic matching '{query}'");
+        }
+        if matches.len() > 1 {
+            let exact: Vec<&&node::Node> = matches.iter().filter(|n| n.topic.to_lowercase() == q).collect();
+            if exact.len() == 1 {
+                return Ok((*exact[0]).clone());
+            }
+            let names: Vec<&str> = matches.iter().map(|n| n.topic.as_str()).collect();
+            anyhow::bail!("ambiguous: {} topics match '{query}': {}", names.len(), names.join(", "));
+        }
+        Ok(matches[0].clone())
+    };
+
+    let source = resolve(source_query)?;
+    let target = resolve(target_query)?;
+    if source.id == target.id {
+        anyhow::bail!("source and target are the same topic");
+    }
+
+    let kind = db::EdgeKind::from_str(kind_str);
+    let already = db.edge_exists(&source.id, &target.id, &kind).unwrap_or(false);
+    if already {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "source": source.topic,
+            "target": target.topic,
+            "kind": kind.as_str(),
+            "added": false,
+            "reason": "edge already exists in this direction (or its reverse)",
+        }))?);
+        return Ok(());
+    }
+
+    let edge_id = format!("{}-{}-{}", source.id, target.id, kind.as_str());
+    let strength = strength.clamp(0.0, 1.0);
+    db.insert_edge(&db::Edge {
+        id: edge_id,
+        source_id: source.id.clone(),
+        target_id: target.id.clone(),
+        kind,
+        description: description.trim().to_string(),
+        strength,
+        created_at: chrono::Local::now().date_naive().to_string(),
+        last_fired: None,
+        last_fired_session: None,
+    })?;
+
+    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+        "source": source.topic,
+        "target": target.topic,
+        "kind": kind_str,
+        "added": true,
+    }))?);
+    Ok(())
+}
+
 fn run_delete_topic(db: &Db, topic_query: &str) -> Result<()> {
     let nodes = db.all_nodes()?;
     let q = topic_query.to_lowercase();
@@ -3316,7 +3427,7 @@ fn run_delete_topic(db: &Db, topic_query: &str) -> Result<()> {
 
 const SKILL_CHECKPOINT: &str = include_str!("../skills/rocky-checkpoint/SKILL.md");
 const SKILL_QUIZ: &str = include_str!("../skills/rocky-quiz/SKILL.md");
-const SKILL_PROMPTIQ_RESCORE: &str = include_str!("../skills/rocky-promptiq-rescore/SKILL.md");
+const SKILL_PROMPTIQ_RESCORE: &str = include_str!("../skills/rocky-promptiq/SKILL.md");
 const SKILL_BACKFILL: &str = include_str!("../skills/rocky-backfill/SKILL.md");
 
 fn claude_skills_dir() -> Result<std::path::PathBuf> {
@@ -3335,7 +3446,7 @@ fn install_claude_skills() -> Result<Vec<(bool, String)>> {
     let skills = [
         ("rocky-checkpoint", SKILL_CHECKPOINT),
         ("rocky-quiz", SKILL_QUIZ),
-        ("rocky-promptiq-rescore", SKILL_PROMPTIQ_RESCORE),
+        ("rocky-promptiq", SKILL_PROMPTIQ_RESCORE),
         ("rocky-backfill", SKILL_BACKFILL),
     ];
     let mut out = Vec::new();
@@ -3352,7 +3463,7 @@ fn install_claude_skills() -> Result<Vec<(bool, String)>> {
 fn uninstall_claude_skills() -> Result<Vec<(bool, String)>> {
     let base = claude_skills_dir()?;
     let mut out = Vec::new();
-    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq-rescore", "rocky-backfill"] {
+    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq", "rocky-backfill"] {
         let dir = base.join(name);
         if dir.exists() {
             std::fs::remove_dir_all(&dir)?;
@@ -3370,7 +3481,7 @@ fn install_opencode_skills() -> Result<Vec<(bool, String)>> {
     let skills = [
         ("rocky-checkpoint", SKILL_CHECKPOINT),
         ("rocky-quiz", SKILL_QUIZ),
-        ("rocky-promptiq-rescore", SKILL_PROMPTIQ_RESCORE),
+        ("rocky-promptiq", SKILL_PROMPTIQ_RESCORE),
         ("rocky-backfill", SKILL_BACKFILL),
     ];
     let mut out = Vec::new();
@@ -3387,7 +3498,7 @@ fn install_opencode_skills() -> Result<Vec<(bool, String)>> {
 fn uninstall_opencode_skills() -> Result<Vec<(bool, String)>> {
     let base = opencode_skills_dir()?;
     let mut out = Vec::new();
-    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq-rescore", "rocky-backfill"] {
+    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq", "rocky-backfill"] {
         let dir = base.join(name);
         if dir.exists() {
             std::fs::remove_dir_all(&dir)?;

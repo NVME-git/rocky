@@ -58,17 +58,17 @@ read.
 **Add PromptIQ.** A 0–100 KPI scored at prompt-log time via a fast Rust
 heuristic on five dimensions:
 
-| Dimension | What it measures | Max contribution |
-|---|---|---|
-| Specificity | File paths, function names, library/framework references | +30 |
-| Context | Length above threshold, references to current state | +20 |
-| Actionability | Imperative verb + concrete object | +20 |
-| Verification | Mentions tests, edge cases, error handling, acceptance criteria | +15 |
-| Anti-patterns | Vague phrasing without follow-up ("build me X", "fix it") | -20 |
+| Dimension     | What it measures                                              | Max contribution |
+| ------------- | ------------------------------------------------------------- | ---------------- |
+| Specificity   | File paths, function names, library/framework references     | +30              |
+| Context       | Length above threshold, references to current state          | +20              |
+| Actionability | Imperative verb + concrete object                            | +20              |
+| Verification  | Mentions tests, edge cases, error handling, acceptance criteria | +15            |
+| Anti-patterns | Vague phrasing without follow-up ("build me X", "fix it")   | -20              |
 
 The heuristic runs synchronously when a prompt is logged (~1 ms in pure local
 computation, no network). For accuracy, an agent-driven pass refines it: the
-new `/rocky-promptiq-rescore` skill walks recent prompts and overwrites
+new `/rocky-promptiq` skill walks recent prompts and overwrites
 their scores using the agent's own reasoning. Same architectural model as
 `/rocky-checkpoint` and `/rocky-quiz` — Rocky never makes its own LLM call
 for this; the agent in your editor does.
@@ -103,7 +103,7 @@ feedback = "silent"   # off | immediate | silent
 
 **Surface.** A dashboard tile in `rocky view` next to Rocky IQ:
 
-```
+```text
 PromptIQ: 67  ·  ↑ 5 this week
 ```
 
@@ -114,6 +114,7 @@ dimensions feeding back into the heuristic for calibration.
 ## Consequences
 
 **Good**
+
 - One mental model for extraction: type `/rocky-checkpoint`. No competing path.
 - One LLM provider config bundle to reason about.
 - Rocky stops shipping a transcript parser and a Stop-hook installer it no
@@ -128,6 +129,7 @@ dimensions feeding back into the heuristic for calibration.
   Ollama, Rocky never calls an LLM directly, the skills handle extraction.
 
 **Bad**
+
 - Anyone currently relying on `rocky install stop` for auto-extraction
   breaks. They have to switch to `/rocky-checkpoint`.
 - The 1 ms heuristic blocks the prompt-log hook. Confirmed acceptable
@@ -138,6 +140,7 @@ dimensions feeding back into the heuristic for calibration.
   separately when a prompt has been agent-rescored.
 
 **Reversed by**
+
 - An ADR introducing per-prompt LLM scoring inside Rocky (would require a
   new provider plumbing decision).
 - An ADR re-introducing automatic per-turn extraction (would need to justify
@@ -211,6 +214,7 @@ picks it up.
 ### Trade-offs of the update
 
 **Good**
+
 - Captures a class of learning previously lost: conversations that resolve
   without code, design dead-ends, "I just learned X" moments.
 - Zero infrastructure cost — skill-only change, no Rust modifications, no
@@ -220,6 +224,7 @@ picks it up.
 - Symmetric with the existing commit-pass extraction model.
 
 **Bad**
+
 - Conversation pass relies on agent self-evaluation of what was learned,
   which carries bias (over-weights things the agent explained well,
   under-weights things obvious to the user). Mitigation is the strict

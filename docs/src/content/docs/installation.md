@@ -72,7 +72,7 @@ rocky install claude-all
 - `/rocky-checkpoint` — end-of-session: read recent diffs + transcript, extract topics with **generic question banks** (no repo-specific identifiers), merge into the PKG (using the global dedup list so the same idea across projects becomes one node with multiple `repos[]`).
 - `/rocky-quiz` — Socratic review inside the Claude session, picking from the canonical question bank.
 - `/rocky-backfill` — one-shot seeder for projects that already had history when Rocky was installed.
-- `/rocky-promptiq-rescore` — re-evaluates your recent prompts and produces a PromptIQ score with feedback.
+- `/rocky-promptiq` — re-evaluates your recent prompts and produces a PromptIQ score with feedback.
 
 It also enables prompt logging so the skills can see your session transcript, and rewires the git post-commit hook so commits queue diffs (which `/rocky-checkpoint` drains) instead of running an LLM directly.
 

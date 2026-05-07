@@ -162,14 +162,51 @@ Run these steps in order. Stop and report if any step fails.
    `rocky add-question` is idempotent on duplicate question text — if a
    question already exists in the bank verbatim, the call is skipped.
 
-7. **Drain the queue**:
+7. **Connect topics with semantic edges.** For each topic you've just stored,
+   identify 1–3 strong edges to existing topics in the PKG (from `rocky list
+   --json`). Only add an edge when the relationship is real and non-obvious —
+   "both touch CSS" is not an edge; "WAL pragma implies single-writer model
+   becomes the natural fit" is.
+
+   ```bash
+   rocky add-edge \
+     --source "WAL + FK Pragmas as Schema Header" \
+     --target "Single-Writer Justification for SQLite" \
+     --kind "implies" \
+     --strength 0.8 \
+     --description "WAL gives concurrent reads; the single-writer model lets you skip write-side concurrency complexity, which the WAL approach was already implicitly assuming."
+   ```
+
+   Edge kinds:
+
+   - `implies` — A being applied makes B more likely / natural / safer
+   - `depends_on` — A requires B to exist or be understood first
+   - `conflicts_with` — A and B can't both apply to the same context
+   - `part_of` — A is a specific case or component of B
+
+   **Strength calibration** (always pass `--strength`, don't let it default):
+
+   - `0.6` — clearly related but the connection is non-obvious / interpretive
+   - `0.7` — clearly related, obvious to anyone in the domain
+   - `0.8` — closely coupled, hard to discuss one without the other
+   - `0.9` — foundational, B is *necessary* for A to function
+
+   Anything below 0.6 should be skipped — if it isn't at least clearly
+   related, it isn't an edge. Default to 0.7 if you're unsure.
+
+   Quality bar: 1–3 edges per new topic max. Skip if no real relationship
+   exists. The description should explain the relationship in one sentence,
+   not just restate the topic names. `rocky add-edge` is idempotent on
+   duplicate (source, target, kind) — duplicates are silently skipped.
+
+8. **Drain the queue**:
    ```bash
    rocky checkpoint mark
    ```
 
-8. **Report**, one line. Mention both extraction sources and cross-project
+9. **Report**, one line. Mention both extraction sources and cross-project
    merges:
-   `Checkpointed N commits → M commit topics + P conversation topics, K merged (J across projects), Q questions added.`
+   `Checkpointed N commits → M commit topics + P conversation topics, K merged (J across projects), Q questions added, E edges.`
    If both passes produced zero topics, say "Nothing worth recording — no
    commits queued and no notable conversation insights."
 

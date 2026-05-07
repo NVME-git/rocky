@@ -38,7 +38,7 @@ One-shot seeder for a project that already had commits when you installed Rocky.
 
 Run **once** per project after install, then forget it exists.
 
-### `/rocky-promptiq-rescore`
+### `/rocky-promptiq`
 
 Re-evaluates your recent prompts using the agent's own judgment and writes a **PromptIQ** score (0–100) and short feedback per prompt. Surfaces patterns: prompts that are too vague, prompts that don't include enough constraints, prompts that ask the agent to invent context it should be told.
 

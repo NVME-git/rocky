@@ -191,7 +191,7 @@ If you want pieces:
 
 | Command | What it installs |
 |---|---|
-| `rocky install skills` | `~/.claude/skills/{rocky-checkpoint,rocky-quiz,rocky-backfill,rocky-promptiq-rescore}/SKILL.md` |
+| `rocky install skills` | `~/.claude/skills/{rocky-checkpoint,rocky-quiz,rocky-backfill,rocky-promptiq}/SKILL.md` |
 | `rocky install claude` | Just the prompt-logging entry in `~/.claude/settings.json` |
 | `rocky install stop`   | Legacy: Stop hook → Ollama auto-extract on every Claude turn |
 
