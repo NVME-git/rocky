@@ -252,46 +252,66 @@ async fn quiz_start(
 ) -> Result<Json<QuizStartResp>, StatusCode> {
     let db = state.db.clone();
     let has_llm = state.teacher.is_some();
+    // Single-topic quizzes get the *full* bank surfaced (capped at 8) so the
+    // user can step through every question they've authored. Multi-topic
+    // quizzes return one question per topic — otherwise a "quiz top 5" call
+    // could balloon to 25+ questions.
+    let single_topic = req.node_ids.len() == 1;
     let questions = tokio::task::spawn_blocking(move || -> Result<Vec<QuizQuestion>> {
         let mut qs = Vec::new();
         for nid in &req.node_ids {
             if let Some(node) = db.get_node_by_id(nid)? {
-                // Priority order: pick from the question_bank (rotation by
-                // least-asked), then canonical, then "Explain:", then a bare
-                // prompt. The bank is the user-facing pool — they spent LLM
-                // calls building it, so it should win over the placeholder.
-                let mut question = String::new();
-                let mut answer = String::new();
-                let mut clue = String::new();
-                let mut from_bank = false;
                 if !node.question_bank.is_empty() {
-                    let pick_idx = (0..node.question_bank.len())
-                        .min_by_key(|&i| node.question_bank[i].asked_count)
-                        .unwrap_or(0);
-                    let q = &node.question_bank[pick_idx];
-                    question = q.question.clone();
-                    answer = q.answer.clone();
-                    clue = q.clue.clone();
-                    from_bank = true;
-                    // Bump asked_count so the next quiz session rotates to a
-                    // different question. Best-effort — failure to persist
-                    // doesn't break the quiz response.
+                    // Sort indices by asked_count ascending so the freshest
+                    // question comes first. Stable on ties (preserve insertion
+                    // order for predictability).
+                    let mut idx: Vec<usize> = (0..node.question_bank.len()).collect();
+                    idx.sort_by_key(|&i| node.question_bank[i].asked_count);
+                    let take = if single_topic { idx.len().min(8) } else { 1 };
+
                     let mut bank = node.question_bank.clone();
-                    bank[pick_idx].asked_count += 1;
+                    for &i in idx.iter().take(take) {
+                        let q = &node.question_bank[i];
+                        qs.push(QuizQuestion {
+                            node_id: nid.clone(),
+                            topic: node.topic.clone(),
+                            domain: node.domain.clone(),
+                            description: node.description.clone(),
+                            question: q.question.clone(),
+                            answer: q.answer.clone(),
+                            clue: q.clue.clone(),
+                            has_canonical: true,
+                        });
+                        // Bump asked_count so subsequent sessions rotate.
+                        bank[i].asked_count += 1;
+                    }
                     let _ = db.set_question_bank(&node.topic, &bank);
+                    continue;
                 }
-                if question.is_empty() && !node.canonical_question.is_empty() {
-                    question = node.canonical_question.clone();
-                    answer = node.canonical_answer.clone();
-                    clue = node.canonical_clue.clone();
-                }
-                if question.is_empty() {
-                    question = if !node.description.is_empty() {
-                        format!("Explain: {} — {}", node.topic, node.description)
+                // No bank → fall back to canonical, then "Explain:", then bare.
+                let (question, answer, clue, has_canonical) =
+                    if !node.canonical_question.is_empty() {
+                        (
+                            node.canonical_question.clone(),
+                            node.canonical_answer.clone(),
+                            node.canonical_clue.clone(),
+                            true,
+                        )
+                    } else if !node.description.is_empty() {
+                        (
+                            format!("Explain: {} — {}", node.topic, node.description),
+                            String::new(),
+                            String::new(),
+                            false,
+                        )
                     } else {
-                        format!("What do you know about {}?", node.topic)
+                        (
+                            format!("What do you know about {}?", node.topic),
+                            String::new(),
+                            String::new(),
+                            false,
+                        )
                     };
-                }
                 qs.push(QuizQuestion {
                     node_id: nid.clone(),
                     topic: node.topic.clone(),
@@ -300,7 +320,7 @@ async fn quiz_start(
                     question,
                     answer,
                     clue,
-                    has_canonical: from_bank || !node.canonical_question.is_empty(),
+                    has_canonical,
                 });
             }
         }

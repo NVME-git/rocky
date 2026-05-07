@@ -373,8 +373,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .qm-eval-status.done{color:#1d9e75;font-style:normal;font-weight:600}
 .qm-progress-bar{height:3px;background:#1e2340;border-radius:2px;overflow:hidden}
 .qm-progress-fill{height:100%;background:#7c9ef3;border-radius:2px;transition:width .3s}
-.qm-meta{font-size:11px;color:#555e7a;display:flex;gap:10px}
+.qm-meta{font-size:11px;color:#555e7a;display:flex;gap:10px;align-items:center}
 .qm-meta span{background:#1e2340;padding:2px 7px;border-radius:10px}
+.qm-nav-btn{background:#1e2340;border:1px solid #3d4468;color:#7c9ef3;padding:2px 8px;border-radius:10px;font-size:12px;cursor:pointer;font-family:inherit;line-height:1.2;transition:background .12s,border-color .12s,color .12s}
+.qm-nav-btn:hover{background:#2a3260;border-color:#7c9ef3}
+.qm-nav-btn:disabled{opacity:.35;cursor:default;background:#1e2340}
+.qm-nav-spacer{flex:1}
 .qm-question{font-size:15px;color:#e2e8f0;line-height:1.5;font-weight:500}
 .qm-clue-toggle{font-size:11px;color:#555e7a;background:none;border:none;cursor:pointer;text-decoration:underline;align-self:flex-start}
 .qm-clue-toggle:hover{color:#8892a4}
@@ -448,7 +452,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="logo">◈ Rocky</div>
   <div class="nav">
     <button class="nav-btn active" data-tab="dashboard" onclick="switchTab('dashboard')"><span class="nav-icon">⊞</span>Dashboard</button>
-    <button class="nav-btn" data-tab="map" onclick="switchTab('map')"><span class="nav-icon">◉</span>Knowledge Map</button>
+    <button class="nav-btn" data-tab="map" onclick="switchTab('map')"><span class="nav-icon">◉</span>Explorer</button>
     <button class="nav-btn" data-tab="queue" onclick="switchTab('queue')"><span class="nav-icon">⊟</span>Review Queue</button>
     <button class="nav-btn" data-tab="sessions" onclick="switchTab('sessions')"><span class="nav-icon">⊡</span>Sessions</button>
     <button class="nav-btn" data-tab="projects" onclick="switchTab('projects')"><span class="nav-icon">▣</span>Projects</button>
@@ -1124,17 +1128,15 @@ const MAP_CAP_2HOP   = 100;
 
 // LOD thresholds. Hysteresis on the starfield boundary so wiggling at the
 // edge doesn't thrash the sprite pool.
-const MAP_LOD_LABELS_K     = 0.55;
 const MAP_LOD_EDGES_K      = 0.40;
 const MAP_LOD_STARFIELD_IN = 0.22;   // below this → starfield
 const MAP_LOD_STARFIELD_OUT= 0.28;   // above this → individual sprites
-const MAP_TICKER_K         = 0.85;   // long names ticker-scroll above this
-const MAP_TICKER_PX_PER_S  = 28;     // marquee speed (world units / sec)
-const MAP_TICKER_MASK_W    = 180;    // visible window width (world units)
-const MAP_LABEL_TRUNC_LEN  = 26;     // chars before ellipsis
-// Cursor-revealed edges. Screen-pixel sizes — converted to world units at
-// draw time, so dashes look identical at every zoom level.
+// Cursor-revealed edges + labels. Screen-pixel sizes — converted to world
+// units at draw time, so dashes and label callouts look identical at every
+// zoom level.
 const MAP_EDGE_REVEAL_PX   = 240;    // edges fade in within this radius of cursor
+const MAP_LABEL_REVEAL_PX  = 130;    // topic labels reveal in a tighter spotlight
+const MAP_LABEL_OFFSET_PX  = 38;     // distance from node centre to label endpoint
 const MAP_DASH_LEN_PX      = 6;
 const MAP_DASH_GAP_PX      = 5;
 const MAP_DASH_SPEED_PX    = 26;     // dashes flow src → tgt at this px/sec
@@ -1289,7 +1291,7 @@ function onMapResize() {
   });
 }
 
-// ── ticker: bob + edges + halos ────────────────────────────────────────────
+// ── ticker: bob + label callouts + edges + halos ──────────────────────────
 function onTick() {
   if (!mapNodesById.size || !mapLiveNodes.size) {
     drawMapEdges();
@@ -1297,7 +1299,11 @@ function onTick() {
     return;
   }
   const t = performance.now() / 1000;
-  const tickerOn = mapCameraK >= MAP_TICKER_K;
+  // Cursor-reveal radius for topic labels (world units → screen-px constant).
+  const haveCursor = !!mapCursorWorld;
+  const labelRadius = MAP_LABEL_REVEAL_PX / mapCameraK;
+  const labelR2 = labelRadius * labelRadius;
+  const labelOff = MAP_LABEL_OFFSET_PX / mapCameraK;
   for (const [id, sprite] of mapLiveNodes) {
     const n = mapNodesById.get(id);
     if (!n) continue;
@@ -1307,25 +1313,35 @@ function onTick() {
       yOff = Math.sin(t * n.bob_speed * 2 * Math.PI + (n.bob_phase || 0)) * amp;
     }
     sprite.gfx.position.set(n.x, n.y + yOff);
-    if (sprite.label) sprite.label.position.set(n.x, n.y + yOff + (sprite.labelOff || 0));
 
-    // Topic label / ticker visibility (stars + user labels are always on).
-    if (n.kind !== 'domain' && n.kind !== 'user' && sprite.label) {
-      const labelsAllowed = mapCameraK >= MAP_LOD_LABELS_K;
-      const useTicker = sprite.truncated && tickerOn && labelsAllowed;
-      if (useTicker) {
-        const tk = ensureTickerLabel(sprite, n);
-        if (tk) {
-          sprite.label.visible = false;
-          tk.container.visible = true;
-          tk.container.position.set(n.x, n.y + yOff + sprite.labelOff);
-          tk.text.x = tk.baseX - ((t * MAP_TICKER_PX_PER_S) % tk.cycleW);
-        } else {
-          sprite.label.visible = labelsAllowed;
-        }
+    if (sprite.label) {
+      if (n.kind === 'domain' || n.kind === 'user') {
+        // Stars + user: label centred on node, always visible (alpha set by
+        // applyDimAndHighlight). Bob is zero for these.
+        sprite.label.position.set(n.x, n.y);
       } else {
-        if (sprite.ticker) sprite.ticker.container.visible = false;
-        sprite.label.visible = labelsAllowed;
+        // Topic: callout label offset radially outward, leader line drawn in
+        // mapHaloGfx. Visibility + alpha gated by cursor proximity, with
+        // selection / hover / search-match acting as anchors that pin the
+        // label even when the cursor wanders away.
+        const lx = n.x + sprite.labelDx * labelOff;
+        const ly = n.y + yOff + sprite.labelDy * labelOff;
+        sprite.label.position.set(lx, ly);
+        let reveal = 0;
+        const isAnchored = (selectedNode === id) || (mapHoverId === id)
+                        || mapSearchMatches.has(id);
+        if (isAnchored) {
+          reveal = 1;
+        } else if (haveCursor) {
+          const dx = n.x - mapCursorWorld.x, dy = n.y - mapCursorWorld.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 <= labelR2) reveal = 1 - Math.sqrt(d2) / labelRadius;
+        }
+        sprite.label.visible = reveal > 0.04;
+        // Multiply by gfx.alpha so search non-matches and planning-dimmed
+        // topics still fade their label even at full reveal.
+        sprite.label.alpha = reveal * (sprite.gfx.alpha ?? 1);
+        sprite._labelReveal = reveal;        // halo layer reads this for the leader line
       }
     }
   }
@@ -1410,7 +1426,6 @@ function reconcileLiveNodes() {
       const n = mapNodesById.get(id);
       if (!n || (n.kind !== 'domain' && n.kind !== 'user')) {
         const s = mapLiveNodes.get(id);
-        destroyTicker(s);
         if (s.gfx) s.gfx.destroy();
         if (s.label) s.label.destroy();
         mapLiveNodes.delete(id);
@@ -1430,10 +1445,16 @@ function reconcileLiveNodes() {
 
   const { inView, oneHop, twoHop } = computeVisibilityBuckets();
   const desired = new Set([...inView, ...oneHop, ...twoHop]);
+  // Anchor the selected node + its 1-hop neighbours so its edges always have
+  // endpoint sprites to draw, even when the camera roams elsewhere.
+  if (selectedNode) {
+    desired.add(selectedNode);
+    const adj = mapAdj.get(selectedNode);
+    if (adj) for (const nb of adj) desired.add(nb);
+  }
   for (const id of [...mapLiveNodes.keys()]) {
     if (!desired.has(id)) {
       const s = mapLiveNodes.get(id);
-      destroyTicker(s);
       if (s.gfx) s.gfx.destroy();
       if (s.label) s.label.destroy();
       mapLiveNodes.delete(id);
@@ -1506,11 +1527,7 @@ function createNodeSprite(n) {
   });
   mapNodeLayer.addChild(g);
 
-  const fullText = isUser ? (DATA.userName || 'You') : n.topic;
-  const truncated = !isUser && !isDomain && fullText.length > MAP_LABEL_TRUNC_LEN;
-  const labelText = isUser ? fullText :
-                    isDomain ? fullText :
-                    (truncated ? fullText.slice(0, MAP_LABEL_TRUNC_LEN - 2) + '…' : fullText);
+  const labelText = isUser ? (DATA.userName || 'You') : n.topic;
   const fontSize = isUser ? 14 : isDomain ? 13 : 11;
   const fontWeight = (isUser || isDomain) ? '700' : '500';
   const fillColor = isUser ? '#0a0e1a' : isDomain ? '#0a0e1a' : '#cbd5e1';
@@ -1519,56 +1536,35 @@ function createNodeSprite(n) {
     fontSize, fontWeight, fill: fillColor,
   });
   txt.resolution = 2;
-  let labelOff;
-  if (isUser || isDomain) { txt.anchor.set(0.5, 0.5); labelOff = 0; }
-  else { txt.anchor.set(0.5, 0); labelOff = radius + 6; }
-  txt.position.set(n.x, n.y + labelOff);
+
+  // Stars + user labels stay centred on their node and always visible.
+  // Topic labels splay outward from the domain star with a leader line, and
+  // only show when the cursor is nearby (handled per-frame in onTick).
+  let labelDx = 0, labelDy = 0;
+  if (isUser || isDomain) {
+    txt.anchor.set(0.5, 0.5);
+    txt.position.set(n.x, n.y);
+  } else {
+    // Outward direction = unit vector from the domain star to this topic.
+    // Falls back to "below" if the star can't be located.
+    let ux = 0, uy = 1;
+    if (n.domain) {
+      const star = (DATA.nodes || []).find(d => d.kind === 'domain' && d.topic === n.domain);
+      if (star && star.x != null) {
+        const vx = n.x - star.x, vy = n.y - star.y;
+        const dist = Math.hypot(vx, vy);
+        if (dist > 0.1) { ux = vx / dist; uy = vy / dist; }
+      }
+    }
+    // Anchor shifts opposite the outward direction so the line endpoint sits
+    // flush against the label's bounding box.
+    txt.anchor.set(0.5 - ux * 0.5, 0.5 - uy * 0.5);
+    labelDx = ux; labelDy = uy;
+    txt.visible = false;             // shown by cursor-reveal in onTick
+  }
   mapLabelLayer.addChild(txt);
 
-  return { gfx: g, label: txt, labelOff, radius, fullText, truncated, ticker: null };
-}
-
-// Lazy ticker (marquee) for long topic names. Doubled-text trick: text holds
-// "name · name ·" so as text.x scrolls left from 0 down to -cycleW, a second
-// copy slides into view from the right edge of the mask — seamless wrap when
-// we reset to text.x = 0.
-function ensureTickerLabel(sprite, n) {
-  if (sprite.ticker) return sprite.ticker;
-  if (!sprite.truncated) return null;
-  const sep = '   ·   ';
-  const text = new PIXI.Text(sprite.fullText + sep + sprite.fullText + sep, {
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    fontSize: 11, fontWeight: '500', fill: 0xcbd5e1,
-  });
-  text.resolution = 2;
-  const cycleW = text.width / 2;
-  const maskW = MAP_TICKER_MASK_W;
-  const lineH = 14;
-  text.anchor.set(0, 0);
-  text.x = -maskW / 2;            // baseline: left edge of mask
-  text.y = 0;
-  const mask = new PIXI.Graphics();
-  mask.beginFill(0xffffff);
-  mask.drawRect(-maskW / 2, 0, maskW, lineH);
-  mask.endFill();
-  const container = new PIXI.Container();
-  container.addChild(text);
-  container.addChild(mask);
-  text.mask = mask;
-  container.position.set(n.x, n.y + sprite.labelOff);
-  container.visible = false;
-  mapLabelLayer.addChild(container);
-  sprite.ticker = { container, text, mask, cycleW, baseX: -maskW / 2 };
-  return sprite.ticker;
-}
-
-function destroyTicker(sprite) {
-  if (!sprite.ticker) return;
-  const t = sprite.ticker;
-  if (t.text) t.text.destroy();
-  if (t.mask) t.mask.destroy();
-  if (t.container) t.container.destroy({ children: true });
-  sprite.ticker = null;
+  return { gfx: g, label: txt, radius, labelDx, labelDy };
 }
 
 // ── edges ──────────────────────────────────────────────────────────────────
@@ -1578,11 +1574,14 @@ function drawMapEdges() {
   // Below the edges-LOD threshold edges are unreadable anyway — skip the
   // whole walk for a free perf win on big graphs.
   if (mapCameraK < MAP_LOD_EDGES_K) return;
-  // Cursor-revealed: edges only show within a radius of the cursor. No
-  // cursor on canvas → no edges at all.
-  if (!mapCursorWorld) return;
+  // Edges show when EITHER the cursor is on the canvas (proximity reveal)
+  // OR a node is selected (its detail panel is open) — selection anchors
+  // its connections regardless of where the cursor wandered to.
+  const haveCursor = !!mapCursorWorld;
+  if (!haveCursor && !selectedNode) return;
 
-  const cx = mapCursorWorld.x, cy = mapCursorWorld.y;
+  const cx = haveCursor ? mapCursorWorld.x : 0;
+  const cy = haveCursor ? mapCursorWorld.y : 0;
   const worldRadius = MAP_EDGE_REVEAL_PX / mapCameraK;
   const r2 = worldRadius * worldRadius;
 
@@ -1601,17 +1600,24 @@ function drawMapEdges() {
     if (!sn || !tn) continue;
     if (sn.kind === 'user' || tn.kind === 'user') continue;
 
-    // Cursor-proximity gate: nearer endpoint must be within reveal radius.
-    // Smooth fade-in toward cursor so edges materialise rather than pop.
-    const dS = (sn.x - cx) ** 2 + (sn.y - cy) ** 2;
-    const dT = (tn.x - cx) ** 2 + (tn.y - cy) ** 2;
-    const minD2 = Math.min(dS, dT);
-    if (minD2 > r2) continue;
-    const reveal = 1 - Math.sqrt(minD2) / worldRadius;   // 1 at cursor, 0 at radius
+    const isSelectedEdge = selectedNode && (sId === selectedNode || tId === selectedNode);
+    let reveal;
+    if (isSelectedEdge) {
+      reveal = 1;                         // selection forces full visibility
+    } else if (haveCursor) {
+      const dS = (sn.x - cx) ** 2 + (sn.y - cy) ** 2;
+      const dT = (tn.x - cx) ** 2 + (tn.y - cy) ** 2;
+      const minD2 = Math.min(dS, dT);
+      if (minD2 > r2) continue;
+      reveal = 1 - Math.sqrt(minD2) / worldRadius;
+    } else {
+      continue;                           // no cursor + not a selection edge
+    }
 
     const tierMin = Math.min(mapLiveTier.get(sId) ?? 2, mapLiveTier.get(tId) ?? 2);
     let alpha = (tierMin === 0 ? 0.92 : 0.55) * reveal;
     if (mapHoverId && (mapHoverId === sId || mapHoverId === tId)) alpha = Math.max(alpha, 0.95);
+    if (isSelectedEdge) alpha = Math.max(alpha, 0.92);
     if (mapSearchQuery && (mapSearchMatches.has(sId) || mapSearchMatches.has(tId)))
       alpha = Math.max(alpha, 0.7);
     if (alpha <= 0.02) continue;
@@ -1651,6 +1657,26 @@ function drawDashedLine(gfx, x1, y1, x2, y2, color, alpha, width, dashLen, gapLe
 function drawMapHalos() {
   if (!mapHaloGfx) return;
   mapHaloGfx.clear();
+
+  // Leader lines — drawn first so the rings + glows below paint over them.
+  // Width is screen-px so it stays consistent with the label scale.
+  if (!mapStarfieldMode) {
+    const lineW = 1 / mapCameraK;
+    for (const [id, sprite] of mapLiveNodes) {
+      const reveal = sprite._labelReveal;
+      if (!reveal || reveal <= 0.04) continue;
+      const n = mapNodesById.get(id);
+      if (!n || n.kind === 'domain' || n.kind === 'user') continue;
+      mapHaloGfx.lineStyle(lineW, 0x4a5478, 0.65 * reveal);
+      // Skip the line through the node interior — start from the rim.
+      const r = (sprite.radius || 12);
+      const startX = sprite.gfx.x + sprite.labelDx * r;
+      const startY = sprite.gfx.y + sprite.labelDy * r;
+      mapHaloGfx.moveTo(startX, startY);
+      mapHaloGfx.lineTo(sprite.label.x, sprite.label.y);
+    }
+  }
+
   if (mapHoverId) {
     const s = mapLiveNodes.get(mapHoverId);
     if (s) {
@@ -1713,9 +1739,11 @@ function applyDimAndHighlight() {
       else if (r >= 0.6) alpha = Math.min(alpha, 0.22);
     }
     sprite.gfx.alpha = alpha;
-    const labelAlpha = alpha * (tier === 0 ? 1 : 0.7);
-    if (sprite.label) sprite.label.alpha = labelAlpha;
-    if (sprite.ticker) sprite.ticker.container.alpha = labelAlpha;
+    // Star + user labels follow the dim alpha directly. Topic labels are
+    // owned by onTick — their alpha = cursor-reveal × this gfx.alpha.
+    if (sprite.label && (n && (n.kind === 'domain' || n.kind === 'user'))) {
+      sprite.label.alpha = alpha * (tier === 0 ? 1 : 0.7);
+    }
   }
 }
 
@@ -2084,8 +2112,7 @@ function evaluateLod() {
         const n = mapNodesById.get(id);
         if (n && n.kind !== 'domain' && n.kind !== 'user') {
           const s = mapLiveNodes.get(id);
-          destroyTicker(s);
-          if (s.gfx) s.gfx.destroy();
+            if (s.gfx) s.gfx.destroy();
           if (s.label) s.label.destroy();
           mapLiveNodes.delete(id);
           mapLiveTier.delete(id);
@@ -2119,6 +2146,9 @@ function selectGraphNode(id) {
   selectedNode = id;
   const n = DATA.nodes.find(n=>n.id===id);
   if (!n) return;
+  // Anchor the selection's neighbourhood so its edges have sprites to draw.
+  // Safe to call when the map module isn't initialised — it's a no-op then.
+  if (typeof reconcileLiveNodes === 'function' && mapInitialised) reconcileLiveNodes();
   if (n.kind==='domain') { openTaxPanel(n); return; }
   openDetailPanel(n);
 }
@@ -2234,7 +2264,12 @@ function openTaxPanel(n) {
     </li>`).join('');
 }
 
-function closeDetailPanel() { document.getElementById('detail-panel').classList.remove('open'); selectedNode=null; }
+function closeDetailPanel() {
+  document.getElementById('detail-panel').classList.remove('open');
+  selectedNode = null;
+  // Drop the anchored 1-hop expansion so off-screen neighbours can be culled.
+  if (typeof reconcileLiveNodes === 'function' && mapInitialised) reconcileLiveNodes();
+}
 function closeTaxPanel() { document.getElementById('taxonomy-panel').classList.remove('open'); }
 
 // ── Feedback view ──────────────────────────────────────────
@@ -2605,8 +2640,14 @@ function showQuizQuestion() {
   const pct = (current/total*100)+'%';
 
   document.getElementById('qm-progress').style.width = pct;
+  // Nav arrows are visible only when there's something to navigate (>1 q).
+  // Prev disabled at index 0; next acts as skip on the last index → summary.
+  const navHTML = total > 1
+    ? `<button class="qm-nav-btn" id="qm-prev" onclick="quizNavPrev()" title="Previous question" ${current === 0 ? 'disabled' : ''}>←</button>
+       <button class="qm-nav-btn" id="qm-next-nav" onclick="quizNavNext()" title="${current === total - 1 ? 'Finish' : 'Skip to next question'}">→</button>`
+    : '';
   document.getElementById('qm-meta').innerHTML =
-    `<span>${q.domain||'Topic'}</span><span>${current+1} / ${total}</span>`;
+    `<span>${q.domain||'Topic'}</span><span>${current+1} / ${total}</span>` + navHTML;
   document.getElementById('qm-question').textContent = q.question;
   document.getElementById('qm-clue').textContent = q.clue||'';
   document.getElementById('qm-clue').classList.remove('visible');
@@ -2735,6 +2776,21 @@ function nextQuestion() {
   } else {
     showQuizQuestion();
   }
+}
+
+// Nav arrows in the quiz meta — let the user skim the bank without having
+// to score every question first. Forward on the last index falls through
+// to the summary, same as nextQuestion.
+function quizNavPrev() {
+  if (!quizState || quizState.current === 0) return;
+  quizState.current--;
+  showQuizQuestion();
+}
+function quizNavNext() {
+  if (!quizState) return;
+  if (quizState.current >= quizState.questions.length - 1) { showQuizSummary(); return; }
+  quizState.current++;
+  showQuizQuestion();
 }
 
 function showQuizSummary() {
@@ -3140,7 +3196,9 @@ function renderSessions() {
       const chip = document.createElement('div');
       chip.className = 'session-chip';
       chip.onclick = () => quizOne(t.id, t.topic);
-      const enc = (t.encounter_count && t.encounter_count > 1) ? `<span class="sc-encounters">×${t.encounter_count}</span>` : '';
+      const enc = (t.encounter_count && t.encounter_count > 1)
+        ? `<span class="sc-encounters" title="Seen in ${t.encounter_count} commits/sessions">×${t.encounter_count}</span>`
+        : '';
       chip.innerHTML = `<div class="sc-topic" title="${escapeHtml(t.topic)}">${escapeHtml(t.topic)}</div>
         <div class="sc-meta"><span class="sc-domain">${escapeHtml(t.domain || 'Other')}</span><span>${escapeHtml(t.repo || '')}</span>${enc}</div>`;
       grid.appendChild(chip);
