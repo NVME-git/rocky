@@ -88,8 +88,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .queue-row .qr-recall.bad{color:#e74c3c}
 .queue-row .qr-recall.warn{color:#e6a817}
 .queue-row .qr-recall.ok{color:#1d9e75}
+.queue-group-header{display:flex;align-items:center;gap:10px;padding:9px 14px;background:#0f1629;border-bottom:1px solid #1e2340;border-top:1px solid #1e2340;cursor:pointer;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#8892a4;user-select:none}
+.queue-group-header:first-child{border-top:none}
+.queue-group-header:hover{background:#1a2340;color:#c4cde0}
+.queue-group-header.open .qg-label{color:#c4cde0}
+.queue-group-header .qg-chev{font-size:9px;color:#7c9ef3;width:10px;display:inline-block}
+.queue-group-header .qg-label{flex:1;font-weight:600}
+.queue-group-header .qg-count{font-size:10px;color:#555e7a;text-transform:none;letter-spacing:0}
+.queue-group-body .queue-row:last-child{border-bottom:none}
 .queue-row .qr-trend{text-align:center;color:#6b7594}
 .queue-row .qr-last{color:#6b7594;font-size:11px;text-align:right}
+.queue-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;padding:10px 14px}
+.queue-card{background:#1a1d27;border:1px solid #2d3148;border-radius:7px;padding:10px 11px;font-size:12px;cursor:pointer;transition:border-color .12s,background .12s;display:flex;flex-direction:column;gap:6px;text-align:left;font-family:inherit;color:inherit}
+.queue-card:hover{border-color:#7c9ef3;background:#1e2340}
+.queue-card .qc-topic{color:#c4cde0;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queue-card .qc-meta{display:flex;align-items:center;gap:10px;font-size:10px;color:#6b7594;flex-wrap:wrap}
+.queue-card .qc-domain{color:#8892a4}
+.queue-card .qc-recall{font-variant-numeric:tabular-nums;font-weight:600}
+.queue-card .qc-recall.bad{color:#e74c3c}
+.queue-card .qc-recall.warn{color:#e6a817}
+.queue-card .qc-recall.ok{color:#1d9e75}
+.queue-card .qc-trend{font-size:11px;color:#6b7594;margin-left:auto}
+.queue-card .qc-last{color:#555e7a}
 
 /* ── sessions tab ── */
 #tab-sessions{overflow-y:auto;padding:24px}
@@ -231,78 +251,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #map-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,calc(-50% + 100px));z-index:18;pointer-events:none;font-size:11px;color:#8892a4;text-transform:uppercase;letter-spacing:.6px;text-align:center;opacity:0;transition:opacity .35s}
 #map-hint.visible{opacity:.7}
 
-/* ── SAGA TAB ── cinematic timelapse */
-#tab-saga{flex-direction:column;overflow:hidden;position:relative;background:radial-gradient(ellipse at center,#0f1117 0%,#070811 70%,#000 100%)}
-#tab-saga::before{content:"";position:absolute;inset:0;background-image:
-  radial-gradient(1.5px 1.5px at 12% 18%,#fff 50%,transparent 51%),
-  radial-gradient(1px 1px at 78% 32%,#fff 50%,transparent 51%),
-  radial-gradient(1.2px 1.2px at 38% 62%,#fff 50%,transparent 51%),
-  radial-gradient(1px 1px at 88% 78%,#fff 50%,transparent 51%),
-  radial-gradient(1.4px 1.4px at 24% 88%,#fff 50%,transparent 51%),
-  radial-gradient(1px 1px at 56% 8%,#fff 50%,transparent 51%);
-  background-repeat:repeat;background-size:600px 600px;opacity:.18;pointer-events:none}
-
-#saga-svg{flex:1;display:block;position:relative;z-index:1;width:100%;height:100%}
-
-#saga-top{position:absolute;top:14px;left:16px;right:16px;z-index:20;pointer-events:none}
-#saga-meta{position:absolute;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none}
-.saga-date{display:block;font-size:18px;color:#e2e8f0;font-weight:600;letter-spacing:.5px;text-shadow:0 0 12px rgba(0,0,0,.8)}
-.saga-counts{display:block;font-size:11px;color:#8892a4;text-transform:uppercase;letter-spacing:.6px;margin-top:2px;text-shadow:0 0 8px rgba(0,0,0,.8)}
-#saga-export{position:absolute;right:0;top:0;display:flex;gap:6px;pointer-events:all}
-.saga-x-btn{background:rgba(26,29,39,.85);border:1px solid #2d3148;border-radius:5px;padding:5px 10px;color:#7c9ef3;font-size:11px;cursor:pointer;font-family:inherit;letter-spacing:.5px}
-.saga-x-btn:hover{border-color:#7c9ef3;background:#1e2340}
-
-#saga-controls{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:rgba(26,29,39,.92);border:1px solid #2d3148;border-radius:8px;padding:6px 12px;z-index:20;backdrop-filter:blur(4px)}
-.saga-play{background:#1e2340;border:1px solid #3d4468;color:#7c9ef3;width:34px;height:28px;border-radius:5px;cursor:pointer;font-size:12px;font-family:inherit;display:flex;align-items:center;justify-content:center}
-.saga-play:hover{border-color:#7c9ef3}
-#saga-scrub{width:280px;accent-color:#7c9ef3;cursor:pointer}
-#saga-speed,#saga-filter{background:#1a1d27;border:1px solid #2d3148;color:#a4adc4;border-radius:5px;padding:4px 6px;font-size:11px;font-family:inherit;cursor:pointer;outline:none}
-#saga-speed:focus,#saga-filter:focus{border-color:#7c9ef3}
-
-#saga-endcard{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:30;background:radial-gradient(ellipse at center,rgba(0,0,0,.55) 0%,rgba(0,0,0,.85) 100%);text-align:center;padding:40px;animation:ec-fadein .8s ease-out}
-@keyframes ec-fadein{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
-.ec-eyebrow{font-size:11px;color:#8892a4;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px}
-.ec-title{font-size:32px;color:#e2e8f0;font-weight:300;letter-spacing:1px;margin-bottom:20px;max-width:600px}
-.ec-stats{display:flex;gap:32px;margin-bottom:28px;flex-wrap:wrap;justify-content:center}
-.ec-stats .ec-stat{display:flex;flex-direction:column;align-items:center}
-.ec-stats .ec-num{font-size:28px;color:#F59E0B;font-weight:600}
-.ec-stats .ec-lbl{font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:1px;margin-top:2px}
-.ec-buttons{display:flex;gap:14px;justify-content:center;align-items:center;flex-direction:column}
-.ec-share .share-menu{right:auto;left:50%;transform:translateX(-50%)}
-.ec-replay{background:#1e2340;border:1px solid #3d4468;color:#7c9ef3;padding:8px 22px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;letter-spacing:.5px}
-.ec-replay:hover{border-color:#7c9ef3}
-
-/* Share dropdown — used in top-right and on the end card */
-.share-wrap{position:relative;display:inline-block;pointer-events:all}
-.share-btn{background:rgba(26,29,39,.85);border:1px solid #2d3148;border-radius:5px;padding:5px 12px;color:#7c9ef3;font-size:11px;cursor:pointer;font-family:inherit;letter-spacing:.5px;display:inline-flex;align-items:center;gap:4px}
-.share-btn:hover{border-color:#7c9ef3;background:#1e2340}
-.share-btn .chev{font-size:9px;color:#555e7a;transition:transform .15s}
-.share-wrap.open .share-btn .chev,.share-wrap:hover .share-btn .chev{transform:rotate(180deg);color:#7c9ef3}
-.share-btn-lg{padding:8px 22px;font-size:12px}
-.share-menu{position:absolute;top:calc(100% + 6px);right:0;background:#1a1d27;border:1px solid #2d3148;border-radius:6px;padding:4px;display:none;flex-direction:column;gap:1px;min-width:170px;z-index:35;box-shadow:0 6px 20px rgba(0,0,0,.5)}
-.share-wrap.open .share-menu,.share-wrap:hover .share-menu{display:flex}
-.share-wrap-up .share-menu{top:auto;bottom:calc(100% + 6px);right:auto;left:50%;transform:translateX(-50%)}
-.share-menu button{background:transparent;border:none;color:#e2e8f0;padding:7px 12px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px;text-align:left;display:flex;flex-direction:column;gap:1px;align-items:flex-start}
-.share-menu button:hover{background:#232740}
-.share-menu button b{color:#7c9ef3;letter-spacing:.5px}
-.share-menu button span{color:#555e7a;font-size:9px;text-transform:uppercase;letter-spacing:.5px}
-
-#saga-locked{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:40;background:rgba(7,8,17,.92)}
-.saga-lock-card{background:#1a1d27;border:1px solid #2d3148;border-radius:10px;padding:36px 40px;max-width:380px;text-align:center}
-.saga-lock-card .lock-icon{font-size:42px;color:#3d4468;margin-bottom:12px}
-.lock-title{font-size:16px;color:#c4cde0;font-weight:600;margin-bottom:10px}
-.lock-desc{font-size:12px;color:#8892a4;line-height:1.6;margin-bottom:14px}
-.lock-progress{font-size:11px;color:#7c9ef3;font-family:monospace}
-
-/* Saga visuals — these live inside the SVG */
-.saga-explorer{filter:drop-shadow(0 0 12px rgba(124,158,243,.55))}
-.saga-node{transition:opacity .2s}
-.saga-node-active circle{filter:drop-shadow(0 0 4px currentColor)}
-.saga-cloud{opacity:.55;mix-blend-mode:screen}
-.saga-edge-fade{stroke-opacity:.18}
-
 /* ── panels ── */
-#taxonomy-panel,#detail-panel{position:absolute;top:0;bottom:0;background:rgba(20,23,33,.55);border:1px solid rgba(45,49,72,.5);backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%);overflow-y:auto;font-size:12px;z-index:10;transition:transform .2s}
+#taxonomy-panel,#detail-panel{position:absolute;top:0;bottom:0;background:rgba(15,17,23,.40);border:1px solid rgba(45,49,72,.4);backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%);box-shadow:inset 1px 0 0 rgba(255,255,255,.03), -8px 0 28px rgba(0,0,0,.45);overflow-y:auto;font-size:12px;z-index:10;transition:transform .25s ease}
+#detail-panel{box-shadow:inset 1px 0 0 rgba(255,255,255,.03), -8px 0 28px rgba(0,0,0,.45)}
+#taxonomy-panel{box-shadow:inset -1px 0 0 rgba(255,255,255,.03), 8px 0 28px rgba(0,0,0,.45)}
 #taxonomy-panel{left:0;width:220px;padding:12px;transform:translateX(-100%)}
 #taxonomy-panel.open{transform:translateX(0)}
 #detail-panel{right:0;width:280px;padding:14px;transform:translateX(100%)}
@@ -316,6 +268,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .r-fill{height:100%;border-radius:3px;transition:width .4s}
 .panel-quiz-btn{width:100%;margin-top:12px;padding:7px;border-radius:6px;border:none;background:#2a3260;color:#7c9ef3;font-weight:600;font-size:12px;cursor:pointer;transition:background .15s}
 .panel-quiz-btn:hover{background:#344080}
+
+/* connections list — edges from the topic, click warps to the neighbour */
+.conn-list{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.conn-row{display:grid;grid-template-columns:auto auto 1fr;gap:6px;align-items:center;padding:6px 8px;background:rgba(26,29,39,.55);border:1px solid rgba(45,49,72,.5);border-radius:6px;cursor:pointer;font-family:inherit;text-align:left;color:#c4cde0;transition:background .12s,border-color .12s}
+.conn-row:hover{background:rgba(30,35,64,.85);border-color:#7c9ef3}
+.conn-row .conn-arrow{font-size:11px;color:#555e7a;flex-shrink:0}
+.conn-row .conn-topic{font-size:11px;color:#c4cde0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conn-row .conn-desc{grid-column:1 / -1;font-size:10px;color:#6b7594;line-height:1.4;margin-top:2px}
+.conn-kind{font-size:9px;text-transform:uppercase;letter-spacing:.4px;padding:2px 6px;border-radius:3px;font-weight:600;flex-shrink:0;white-space:nowrap}
+.conn-kind.k-implies{background:rgba(6,182,212,.15);color:#06b6d4}
+.conn-kind.k-depends_on{background:rgba(245,158,11,.15);color:#f59e0b}
+.conn-kind.k-conflicts_with{background:rgba(226,75,74,.15);color:#e24b4a}
+.conn-kind.k-part_of{background:rgba(29,158,117,.15);color:#1d9e75}
 
 /* question-bank flashcards */
 .bank-flip{perspective:800px;margin-top:8px;cursor:pointer;position:relative}
@@ -487,7 +452,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="nav-btn" data-tab="queue" onclick="switchTab('queue')"><span class="nav-icon">⊟</span>Review Queue</button>
     <button class="nav-btn" data-tab="sessions" onclick="switchTab('sessions')"><span class="nav-icon">⊡</span>Sessions</button>
     <button class="nav-btn" data-tab="projects" onclick="switchTab('projects')"><span class="nav-icon">▣</span>Projects</button>
-    <button class="nav-btn" id="nav-saga" data-tab="saga" onclick="switchTab('saga')"><span class="nav-icon">✦</span>Saga</button>
     <button class="nav-btn" data-tab="feedback" onclick="switchTab('feedback')"><span class="nav-icon">✎</span>Feedback</button>
   </div>
   <div class="spacer"></div>
@@ -653,67 +617,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<div id="tab-saga" class="tab-content">
-  <svg id="saga-svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
-
-  <!-- locked overlay (shown when feature isn't unlocked yet — alpha skips this) -->
-  <div id="saga-locked" style="display:none">
-    <div class="saga-lock-card">
-      <div class="lock-icon">✦</div>
-      <p class="lock-title">Saga locked</p>
-      <p class="lock-desc">Earn this view by using Rocky for <span id="lock-need-days">30</span> days and completing <span id="lock-need-reviews">50</span> reviews.</p>
-      <p class="lock-progress" id="lock-progress"></p>
-    </div>
-  </div>
-
-  <!-- top-left meta + export -->
-  <div id="saga-top">
-    <div id="saga-meta">
-      <span class="saga-date" id="saga-current-date">—</span>
-      <span class="saga-counts" id="saga-counts"></span>
-    </div>
-    <div id="saga-export" class="share-wrap">
-      <button class="share-btn" onclick="toggleShareMenu(event,this)">Share <span class="chev">▾</span></button>
-      <div class="share-menu">
-        <button onclick="exportSagaSVG();closeShareMenus()" title="Current frame as vector .svg"><b>SVG</b><span>current frame · vector</span></button>
-        <button onclick="exportSagaPNG();closeShareMenus()" title="Current frame as 2× .png"><b>PNG</b><span>current frame · 2160px</span></button>
-        <button onclick="exportSagaGIF();closeShareMenus()" title="Full timelapse as animated .gif"><b>GIF</b><span>full timelapse · 1080²</span></button>
-      </div>
-    </div>
-  </div>
-
-  <!-- end card (shown when timelapse finishes) -->
-  <div id="saga-endcard" style="display:none">
-    <p class="ec-eyebrow">your personal knowledge graph so far</p>
-    <p class="ec-title" id="ec-title">—</p>
-    <div class="ec-stats" id="ec-stats"></div>
-    <div class="ec-buttons">
-      <button class="ec-replay" onclick="sagaReplay()">↺ Replay</button>
-      <div class="share-wrap ec-share">
-        <button class="share-btn share-btn-lg" onclick="toggleShareMenu(event,this)">Share <span class="chev">▾</span></button>
-        <div class="share-menu">
-          <button onclick="exportSagaSVG();closeShareMenus()" title="Current frame as vector .svg"><b>SVG</b><span>current frame · vector</span></button>
-          <button onclick="exportSagaPNG();closeShareMenus()" title="Current frame as 2× .png"><b>PNG</b><span>current frame · 2160px</span></button>
-          <button onclick="exportSagaGIF();closeShareMenus()" title="Full timelapse as animated .gif"><b>GIF</b><span>full timelapse · 1080²</span></button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- bottom controls -->
-  <div id="saga-controls">
-    <button class="saga-play" id="saga-play-btn" onclick="sagaPlayPause()">▶</button>
-    <input type="range" id="saga-scrub" min="0" max="1000" value="0" oninput="sagaScrub(this.value)">
-    <select id="saga-speed" onchange="sagaSetSpeed(parseFloat(this.value))" title="Playback speed">
-      <option value="1">1×</option>
-      <option value="2">2×</option>
-      <option value="4">4×</option>
-    </select>
-    <select id="saga-filter" onchange="sagaSetProject(this.value)" title="Filter by project">
-      <option value="">All projects</option>
-    </select>
-  </div>
-</div>
 
 <!-- FEEDBACK TAB -->
 <div id="tab-feedback" class="tab-content">
@@ -893,13 +796,9 @@ function switchTab(name) {
     renderDashboard();
   } else if (name === 'projects') {
     renderProjects();
-  } else if (name === 'saga') {
-    requestAnimationFrame(() => requestAnimationFrame(initSaga));
   } else if (name === 'feedback') {
     loadFeedback();
   }
-  // Stop any animation when leaving Saga.
-  if (name !== 'saga') stopSagaAnimation();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1229,7 +1128,18 @@ const MAP_LOD_LABELS_K     = 0.55;
 const MAP_LOD_EDGES_K      = 0.40;
 const MAP_LOD_STARFIELD_IN = 0.22;   // below this → starfield
 const MAP_LOD_STARFIELD_OUT= 0.28;   // above this → individual sprites
+const MAP_TICKER_K         = 0.85;   // long names ticker-scroll above this
+const MAP_TICKER_PX_PER_S  = 28;     // marquee speed (world units / sec)
+const MAP_TICKER_MASK_W    = 180;    // visible window width (world units)
+const MAP_LABEL_TRUNC_LEN  = 26;     // chars before ellipsis
+// Cursor-revealed edges. Screen-pixel sizes — converted to world units at
+// draw time, so dashes look identical at every zoom level.
+const MAP_EDGE_REVEAL_PX   = 240;    // edges fade in within this radius of cursor
+const MAP_DASH_LEN_PX      = 6;
+const MAP_DASH_GAP_PX      = 5;
+const MAP_DASH_SPEED_PX    = 26;     // dashes flow src → tgt at this px/sec
 let mapStarfieldMode = false;
+let mapCursorWorld = null;           // {x, y} in world units, or null when off-canvas
 
 // Per-domain accent colour for HUD pills + star fills. Falls back to a soft
 // blue for unknown domains.
@@ -1387,6 +1297,7 @@ function onTick() {
     return;
   }
   const t = performance.now() / 1000;
+  const tickerOn = mapCameraK >= MAP_TICKER_K;
   for (const [id, sprite] of mapLiveNodes) {
     const n = mapNodesById.get(id);
     if (!n) continue;
@@ -1397,6 +1308,26 @@ function onTick() {
     }
     sprite.gfx.position.set(n.x, n.y + yOff);
     if (sprite.label) sprite.label.position.set(n.x, n.y + yOff + (sprite.labelOff || 0));
+
+    // Topic label / ticker visibility (stars + user labels are always on).
+    if (n.kind !== 'domain' && n.kind !== 'user' && sprite.label) {
+      const labelsAllowed = mapCameraK >= MAP_LOD_LABELS_K;
+      const useTicker = sprite.truncated && tickerOn && labelsAllowed;
+      if (useTicker) {
+        const tk = ensureTickerLabel(sprite, n);
+        if (tk) {
+          sprite.label.visible = false;
+          tk.container.visible = true;
+          tk.container.position.set(n.x, n.y + yOff + sprite.labelOff);
+          tk.text.x = tk.baseX - ((t * MAP_TICKER_PX_PER_S) % tk.cycleW);
+        } else {
+          sprite.label.visible = labelsAllowed;
+        }
+      } else {
+        if (sprite.ticker) sprite.ticker.container.visible = false;
+        sprite.label.visible = labelsAllowed;
+      }
+    }
   }
   drawMapEdges();
   drawMapHalos();
@@ -1479,6 +1410,7 @@ function reconcileLiveNodes() {
       const n = mapNodesById.get(id);
       if (!n || (n.kind !== 'domain' && n.kind !== 'user')) {
         const s = mapLiveNodes.get(id);
+        destroyTicker(s);
         if (s.gfx) s.gfx.destroy();
         if (s.label) s.label.destroy();
         mapLiveNodes.delete(id);
@@ -1501,6 +1433,7 @@ function reconcileLiveNodes() {
   for (const id of [...mapLiveNodes.keys()]) {
     if (!desired.has(id)) {
       const s = mapLiveNodes.get(id);
+      destroyTicker(s);
       if (s.gfx) s.gfx.destroy();
       if (s.label) s.label.destroy();
       mapLiveNodes.delete(id);
@@ -1565,14 +1498,19 @@ function createNodeSprite(n) {
       return;
     }
     selectGraphNode(n.id);
+    // Domains warp + zoom into the cluster (navigation primitive). Topics
+    // open the detail panel without moving the camera, *unless* the node is
+    // off-screen — in that case nudge the camera so the user can find it.
     if (isDomain) warpToNode(n.id, 0.7);
-    else if (!isUser) warpToNode(n.id, Math.max(mapCameraK, 0.85));
+    else if (!isUser) softWarpIfOffscreen(n.id);
   });
   mapNodeLayer.addChild(g);
 
-  const labelText = isUser ? (DATA.userName || 'You') :
-                    isDomain ? n.topic :
-                    (n.topic.length > 26 ? n.topic.slice(0, 24) + '…' : n.topic);
+  const fullText = isUser ? (DATA.userName || 'You') : n.topic;
+  const truncated = !isUser && !isDomain && fullText.length > MAP_LABEL_TRUNC_LEN;
+  const labelText = isUser ? fullText :
+                    isDomain ? fullText :
+                    (truncated ? fullText.slice(0, MAP_LABEL_TRUNC_LEN - 2) + '…' : fullText);
   const fontSize = isUser ? 14 : isDomain ? 13 : 11;
   const fontWeight = (isUser || isDomain) ? '700' : '500';
   const fillColor = isUser ? '#0a0e1a' : isDomain ? '#0a0e1a' : '#cbd5e1';
@@ -1587,7 +1525,50 @@ function createNodeSprite(n) {
   txt.position.set(n.x, n.y + labelOff);
   mapLabelLayer.addChild(txt);
 
-  return { gfx: g, label: txt, labelOff, radius };
+  return { gfx: g, label: txt, labelOff, radius, fullText, truncated, ticker: null };
+}
+
+// Lazy ticker (marquee) for long topic names. Doubled-text trick: text holds
+// "name · name ·" so as text.x scrolls left from 0 down to -cycleW, a second
+// copy slides into view from the right edge of the mask — seamless wrap when
+// we reset to text.x = 0.
+function ensureTickerLabel(sprite, n) {
+  if (sprite.ticker) return sprite.ticker;
+  if (!sprite.truncated) return null;
+  const sep = '   ·   ';
+  const text = new PIXI.Text(sprite.fullText + sep + sprite.fullText + sep, {
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontSize: 11, fontWeight: '500', fill: 0xcbd5e1,
+  });
+  text.resolution = 2;
+  const cycleW = text.width / 2;
+  const maskW = MAP_TICKER_MASK_W;
+  const lineH = 14;
+  text.anchor.set(0, 0);
+  text.x = -maskW / 2;            // baseline: left edge of mask
+  text.y = 0;
+  const mask = new PIXI.Graphics();
+  mask.beginFill(0xffffff);
+  mask.drawRect(-maskW / 2, 0, maskW, lineH);
+  mask.endFill();
+  const container = new PIXI.Container();
+  container.addChild(text);
+  container.addChild(mask);
+  text.mask = mask;
+  container.position.set(n.x, n.y + sprite.labelOff);
+  container.visible = false;
+  mapLabelLayer.addChild(container);
+  sprite.ticker = { container, text, mask, cycleW, baseX: -maskW / 2 };
+  return sprite.ticker;
+}
+
+function destroyTicker(sprite) {
+  if (!sprite.ticker) return;
+  const t = sprite.ticker;
+  if (t.text) t.text.destroy();
+  if (t.mask) t.mask.destroy();
+  if (t.container) t.container.destroy({ children: true });
+  sprite.ticker = null;
 }
 
 // ── edges ──────────────────────────────────────────────────────────────────
@@ -1597,6 +1578,20 @@ function drawMapEdges() {
   // Below the edges-LOD threshold edges are unreadable anyway — skip the
   // whole walk for a free perf win on big graphs.
   if (mapCameraK < MAP_LOD_EDGES_K) return;
+  // Cursor-revealed: edges only show within a radius of the cursor. No
+  // cursor on canvas → no edges at all.
+  if (!mapCursorWorld) return;
+
+  const cx = mapCursorWorld.x, cy = mapCursorWorld.y;
+  const worldRadius = MAP_EDGE_REVEAL_PX / mapCameraK;
+  const r2 = worldRadius * worldRadius;
+
+  // Dash sizes/speed are screen-px → divide by k so they look identical at
+  // every zoom. Offset advances over time so dashes flow src → tgt.
+  const dashLen = MAP_DASH_LEN_PX / mapCameraK;
+  const gapLen  = MAP_DASH_GAP_PX / mapCameraK;
+  const dashOffset = (performance.now() / 1000) * (MAP_DASH_SPEED_PX / mapCameraK);
+
   for (const e of DATA.edges) {
     const sId = typeof e.source === 'object' ? e.source.id : e.source;
     const tId = typeof e.target === 'object' ? e.target.id : e.target;
@@ -1604,19 +1599,52 @@ function drawMapEdges() {
     if (!s || !t) continue;
     const sn = mapNodesById.get(sId), tn = mapNodesById.get(tId);
     if (!sn || !tn) continue;
-    if (sn.kind === 'user' || tn.kind === 'user') continue;  // hide user→domain spokes
+    if (sn.kind === 'user' || tn.kind === 'user') continue;
+
+    // Cursor-proximity gate: nearer endpoint must be within reveal radius.
+    // Smooth fade-in toward cursor so edges materialise rather than pop.
+    const dS = (sn.x - cx) ** 2 + (sn.y - cy) ** 2;
+    const dT = (tn.x - cx) ** 2 + (tn.y - cy) ** 2;
+    const minD2 = Math.min(dS, dT);
+    if (minD2 > r2) continue;
+    const reveal = 1 - Math.sqrt(minD2) / worldRadius;   // 1 at cursor, 0 at radius
 
     const tierMin = Math.min(mapLiveTier.get(sId) ?? 2, mapLiveTier.get(tId) ?? 2);
-    let alpha = tierMin === 0 ? 0.50 : tierMin === 1 ? 0.18 : 0.0;
-    if (alpha === 0) continue;
-    if (mapHoverId && (mapHoverId === sId || mapHoverId === tId)) alpha = 0.92;
-    else if (mapHoverId) alpha *= 0.25;
+    let alpha = (tierMin === 0 ? 0.92 : 0.55) * reveal;
+    if (mapHoverId && (mapHoverId === sId || mapHoverId === tId)) alpha = Math.max(alpha, 0.95);
     if (mapSearchQuery && (mapSearchMatches.has(sId) || mapSearchMatches.has(tId)))
-      alpha = Math.max(alpha, 0.65);
+      alpha = Math.max(alpha, 0.7);
+    if (alpha <= 0.02) continue;
 
-    mapEdgeGfx.lineStyle(Math.max(0.6, (e.strength || 0.5) * 1.6), _edgeColor(e.kind), alpha);
-    mapEdgeGfx.moveTo(s.gfx.x, s.gfx.y);
-    mapEdgeGfx.lineTo(t.gfx.x, t.gfx.y);
+    drawDashedLine(
+      mapEdgeGfx, s.gfx.x, s.gfx.y, t.gfx.x, t.gfx.y,
+      _edgeColor(e.kind), alpha, Math.max(1.0, (e.strength || 0.5) * 2.0),
+      dashLen, gapLen, dashOffset,
+    );
+  }
+}
+
+// Walks a line in dash + gap chunks. Direction unit vector (ux, uy) so each
+// dash sits along the segment; `offset` shifts the dash pattern, animated
+// from outside the function to make dashes appear to flow src → tgt.
+function drawDashedLine(gfx, x1, y1, x2, y2, color, alpha, width, dashLen, gapLen, offset) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return;
+  const ux = dx / len, uy = dy / len;
+  const cycle = dashLen + gapLen;
+  if (cycle <= 0) return;
+  const off = ((offset % cycle) + cycle) % cycle;
+  gfx.lineStyle(width, color, alpha);
+  let pos = -off;
+  while (pos < len) {
+    const a = Math.max(pos, 0);
+    const b = Math.min(pos + dashLen, len);
+    if (b > a) {
+      gfx.moveTo(x1 + ux * a, y1 + uy * a);
+      gfx.lineTo(x1 + ux * b, y1 + uy * b);
+    }
+    pos += cycle;
   }
 }
 
@@ -1685,20 +1713,29 @@ function applyDimAndHighlight() {
       else if (r >= 0.6) alpha = Math.min(alpha, 0.22);
     }
     sprite.gfx.alpha = alpha;
-    if (sprite.label) sprite.label.alpha = alpha * (tier === 0 ? 1 : 0.7);
+    const labelAlpha = alpha * (tier === 0 ? 1 : 0.7);
+    if (sprite.label) sprite.label.alpha = labelAlpha;
+    if (sprite.ticker) sprite.ticker.container.alpha = labelAlpha;
   }
 }
 
 // ── input ──────────────────────────────────────────────────────────────────
+//
+// Pan listeners live on `document`, NOT on mapHost — and we never call
+// setPointerCapture. Capturing the pointer on the host reroutes every
+// subsequent pointer event to it, which means PIXI never sees the pointerup
+// on the sprite and `pointertap` is never synthesized — so sprite clicks
+// silently die. Listening on document still gives us drag-when-cursor-leaves
+// behaviour without stealing events from PIXI sprites.
 function attachMapInputs() {
   let pan = null;
   mapHost.addEventListener('pointerdown', (e) => {
     if (mapWarping) return;
+    if (e.button !== 0 && e.pointerType !== 'touch') return;  // primary/touch only
     pan = { sx: e.clientX, sy: e.clientY, ix: mapCameraX, iy: mapCameraY, moved: false };
     mapHost.classList.add('panning');
-    try { mapHost.setPointerCapture(e.pointerId); } catch (_) {}
   });
-  mapHost.addEventListener('pointermove', (e) => {
+  document.addEventListener('pointermove', (e) => {
     if (!pan) return;
     const dx = e.clientX - pan.sx, dy = e.clientY - pan.sy;
     if (!pan.moved && (dx*dx + dy*dy) > 9) pan.moved = true;
@@ -1709,19 +1746,50 @@ function attachMapInputs() {
     }
   });
   function endPan(e) {
+    // `panStarted` distinguishes a click that began on the canvas-host (where
+    // mapHost.pointerdown set `pan`) from a click on an overlay panel (whose
+    // pointerdown never reaches mapHost — those bubble through tab-map only).
+    // Without this, clicking a card inside the detail panel triggers the
+    // empty-canvas branch below and closes the panel mid-interaction.
+    const panStarted = !!pan;
     const wasMoving = pan && pan.moved;
     pan = null;
     mapHost.classList.remove('panning');
-    if (!wasMoving && e) {
-      // Treat as click on empty canvas only if we didn't hit a sprite
-      // (sprites' pointertap fires before this).
-      const w = screenToWorld(e.clientX, e.clientY);
-      if (!hitTestWorld(w.x, w.y)) closeDetailPanel();
+    if (panStarted && !wasMoving && e && currentTab === 'map' && mapHost) {
+      // Click without drag. Sprite hits are handled by their own pointertap.
+      // For clicks that miss every sprite, try edge-hit-test next: if the
+      // click lands near a drawn edge, warp to the far endpoint (the one
+      // farther from camera centre — typically the off-screen end). If
+      // neither hits, close the detail panel.
+      const rect = mapHost.getBoundingClientRect();
+      const inside = e.clientX >= rect.left && e.clientX <= rect.right
+                  && e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (inside) {
+        const w = screenToWorld(e.clientX, e.clientY);
+        if (hitTestWorld(w.x, w.y)) return;       // sprite handler will fire
+        const eh = hitTestEdge(w.x, w.y);
+        if (eh) {
+          const cx = (mapHost.clientWidth / 2 - mapCameraX) / mapCameraK;
+          const cy = (mapHost.clientHeight / 2 - mapCameraY) / mapCameraK;
+          const dS = (eh.src.x - cx) ** 2 + (eh.src.y - cy) ** 2;
+          const dT = (eh.tgt.x - cx) ** 2 + (eh.tgt.y - cy) ** 2;
+          const target = dS > dT ? eh.src : eh.tgt;
+          warpToNode(target.id, Math.max(mapCameraK, 0.85));
+          selectGraphNode(target.id);
+          return;
+        }
+        closeDetailPanel();
+      }
     }
-    try { if (e) mapHost.releasePointerCapture(e.pointerId); } catch (_) {}
   }
-  mapHost.addEventListener('pointerup', endPan);
-  mapHost.addEventListener('pointercancel', endPan);
+  document.addEventListener('pointerup', endPan);
+  document.addEventListener('pointercancel', endPan);
+  // Track cursor in world space for the edge-reveal effect. Cleared on leave
+  // so edges hide entirely when the cursor isn't over the map.
+  mapHost.addEventListener('pointermove', (e) => {
+    mapCursorWorld = screenToWorld(e.clientX, e.clientY);
+  });
+  mapHost.addEventListener('pointerleave', () => { mapCursorWorld = null; });
   mapHost.addEventListener('wheel', (e) => {
     e.preventDefault();
     if (mapWarping) return;
@@ -1757,6 +1825,36 @@ function hitTestWorld(wx, wy) {
     if (d2 < r*r && d2 < bestD) { bestD = d2; best = id; }
   }
   return best;
+}
+
+// Edge hit-test — used when a click misses every node sprite. Threshold is
+// scale-aware (12 screen-px → world-units) so it stays clickable at any zoom.
+// Skipped below the edges-LOD threshold, since invisible edges shouldn't
+// catch clicks.
+function hitTestEdge(wx, wy) {
+  if (mapCameraK < MAP_LOD_EDGES_K) return null;
+  const threshold = 12 / mapCameraK;
+  let best = null, bestD = threshold;
+  for (const e of (DATA.edges || [])) {
+    const sId = typeof e.source === 'object' ? e.source.id : e.source;
+    const tId = typeof e.target === 'object' ? e.target.id : e.target;
+    const sn = mapNodesById.get(sId), tn = mapNodesById.get(tId);
+    if (!sn || !tn) continue;
+    if (sn.kind === 'user' || tn.kind === 'user') continue;  // hidden, not clickable
+    if (sn.x == null || tn.x == null) continue;
+    const d = pointToSegmentDist(wx, wy, sn.x, sn.y, tn.x, tn.y);
+    if (d < bestD) { bestD = d; best = { edge: e, src: sn, tgt: tn }; }
+  }
+  return best;
+}
+
+function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len2 = dx*dx + dy*dy;
+  if (len2 === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 
 // ── warp HUD ───────────────────────────────────────────────────────────────
@@ -1811,11 +1909,41 @@ function warpToNode(id, finalK) {
   const ty = h / 2 - n.y * k;
   warpCamera(tx, ty, k);
 }
+
+// Bring a node into view at the *current* zoom — no zoom change, no history
+// push, no streak overlay. Used after clicking an off-screen topic so the
+// user can still locate the selection while the detail panel is open.
+function softWarpIfOffscreen(id) {
+  const n = mapNodesById.get(id); if (!n || n.x == null || !mapHost) return;
+  const w = mapHost.clientWidth, h = mapHost.clientHeight;
+  const sx = n.x * mapCameraK + mapCameraX;
+  const sy = n.y * mapCameraK + mapCameraY;
+  // Reserve the right ~280px for the open detail panel so the node lands in
+  // the still-visible area.
+  const panelReserve = 300;
+  const margin = 60;
+  const okX = sx >= margin && sx <= w - panelReserve;
+  const okY = sy >= margin && sy <= h - margin;
+  if (okX && okY) return;
+  // Re-centre the visible window (excluding the panel reserve) on the node.
+  const visibleCx = (w - panelReserve) / 2;
+  const tx = visibleCx - n.x * mapCameraK;
+  const ty = h / 2 - n.y * mapCameraK;
+  warpCamera(tx, ty, mapCameraK);
+}
 function warpHome() {
   const u = (DATA.nodes || []).find(n => n.kind === 'user');
   if (u) warpToNode(u.id, 0.6);
 }
 function warpTo(id) { warpToNode(id, 0.95); }
+
+// Triggered by edge-list rows in the detail panel: warp + reopen the panel
+// for the neighbour. Stays on the map tab; preserves spatial context.
+function warpFromPanel(id) {
+  if (!id) return;
+  warpToNode(id, Math.max(mapCameraK, 0.95));
+  selectGraphNode(id);
+}
 function warpBack() {
   if (mapWarping || mapWarpHistory.length === 0) return;
   const prev = mapWarpHistory.pop();
@@ -1956,6 +2084,7 @@ function evaluateLod() {
         const n = mapNodesById.get(id);
         if (n && n.kind !== 'domain' && n.kind !== 'user') {
           const s = mapLiveNodes.get(id);
+          destroyTicker(s);
           if (s.gfx) s.gfx.destroy();
           if (s.label) s.label.destroy();
           mapLiveNodes.delete(id);
@@ -1964,14 +2093,8 @@ function evaluateLod() {
       }
     }
   }
-  // Topic-label visibility flips with zoom too.
-  const showTopicLabels = mapCameraK >= MAP_LOD_LABELS_K;
-  for (const [id, sprite] of mapLiveNodes) {
-    if (!sprite.label) continue;
-    const n = mapNodesById.get(id); if (!n) continue;
-    if (n.kind === 'domain' || n.kind === 'user') continue;
-    sprite.label.visible = showTopicLabels;
-  }
+  // Topic-label visibility (and ticker swap) is owned by the per-frame loop
+  // in onTick — see the labels-allowed branch there.
 }
 
 // ── selection helpers (shared with detail panel) ──────────────────────────
@@ -2014,6 +2137,42 @@ function openDetailPanel(n) {
   const projectsLine = (n.repos && n.repos.length > 1)
     ? `<p class="panel-label">Projects</p><p class="panel-value" style="font-size:11px">${n.repos.join(', ')}</p>`
     : `<p class="panel-label">Project</p><p class="panel-value">${n.repo||'—'}</p>`;
+
+  // Connections — every edge incident to this topic, hiding user/domain
+  // spokes. Each row warps the camera to the neighbour and reopens the
+  // detail panel for it.
+  const connections = (DATA.edges || [])
+    .map(e => {
+      const sId = typeof e.source === 'object' ? e.source.id : e.source;
+      const tId = typeof e.target === 'object' ? e.target.id : e.target;
+      let other = null, dir = null;
+      if (sId === n.id) { other = tId; dir = 'out'; }
+      else if (tId === n.id) { other = sId; dir = 'in'; }
+      else return null;
+      const o = DATA.nodes.find(x => x.id === other);
+      if (!o || o.kind === 'user' || o.kind === 'domain') return null;
+      return { edge: e, other: o, dir };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.edge.strength || 0) - (a.edge.strength || 0));
+
+  const connHTML = connections.length === 0
+    ? `<p class="panel-label">Connections</p>
+       <p style="font-size:11px;color:#555e7a;margin-top:4px">No connections yet — extraction passes haven't linked this topic to others.</p>`
+    : `<p class="panel-label">Connections (${connections.length})</p>
+       <div class="conn-list">${
+         connections.map(c => {
+           const arrow = c.dir === 'out' ? '→' : '←';
+           const kind = (c.edge.kind || '').replace(/_/g, ' ');
+           const desc = c.edge.description ? `<span class="conn-desc">${escapeHtml(c.edge.description)}</span>` : '';
+           return `<button class="conn-row" onclick="warpFromPanel('${escapeHtml(c.other.id)}')" title="Warp to ${escapeHtml(c.other.topic)}">
+             <span class="conn-kind k-${escapeHtml(c.edge.kind)}">${escapeHtml(kind)}</span>
+             <span class="conn-arrow">${arrow}</span>
+             <span class="conn-topic">${escapeHtml(c.other.topic)}</span>
+             ${desc}
+           </button>`;
+         }).join('')
+       }</div>`;
   const bankHeader = `<p class="panel-label" style="display:flex;align-items:center;justify-content:space-between">
       <span>Question Bank ${n.question_bank ? `(${n.question_bank.length})` : ''}</span>
       <button class="bank-gen-btn" data-node-id="${escapeHtml(n.id)}" onclick="bankGenerate(event, this)" title="Use the LLM to generate more questions for this topic">+ Generate</button>
@@ -2059,6 +2218,7 @@ function openDetailPanel(n) {
     <div class="r-bar"><div class="r-fill" style="width:${rPct}%;background:${rColor}"></div></div>
     <p class="panel-label">Reviews</p><p class="panel-value">${n.review_count||0}</p>
     ${revHTML}
+    ${connHTML}
     ${bankHTML}
     <button class="panel-quiz-btn" onclick="startQuizNodes(['${n.id}'])">Quiz me on this topic</button>`;
   document.getElementById('detail-panel').classList.add('open');
@@ -2818,29 +2978,92 @@ function renderQueue() {
 
   document.getElementById('queue-count').textContent = nodes.length + ' topics';
 
+  // Bucketing — each sort option carries an appropriate group axis so a long
+  // list collapses into a few skim-able sections. Keys are sortable strings
+  // for stable ordering; labels are user-facing.
+  const bucketOf = (n) => {
+    if (sortBy === 'recall') {
+      const pct = Math.floor((n.recall_now || 0) * 100);
+      const lo = Math.min(95, Math.floor(pct / 5) * 5);
+      const hi = Math.min(100, lo + 5);
+      return { key: String(lo).padStart(3, '0'), label: `${lo}–${hi}% recall` };
+    }
+    if (sortBy === 'recent') {
+      const d = (n.created_at || '').slice(0, 10);
+      return { key: d || '0000', label: d || 'unknown date' };
+    }
+    if (sortBy === 'reviews') {
+      const c = n.review_count || 0;
+      const k = c >= 10 ? '10' : String(c).padStart(2, '0');
+      return { key: k, label: c >= 10 ? '10+ reviews' : `${c} review${c === 1 ? '' : 's'}` };
+    }
+    if (sortBy === 'alpha') {
+      const ch = ((n.topic || '?').trim()[0] || '?').toUpperCase();
+      const k = /[A-Z]/.test(ch) ? ch : '#';
+      return { key: k, label: k };
+    }
+    return { key: '', label: '' };
+  };
+
+  // Pre-compute bucket sizes for the header counts.
+  const bucketSizes = new Map();
+  for (const n of nodes) {
+    const k = bucketOf(n).key;
+    bucketSizes.set(k, (bucketSizes.get(k) || 0) + 1);
+  }
+
   const table = document.getElementById('queue-table');
   table.innerHTML = '';
-  // Header
-  const hdr = document.createElement('div');
-  hdr.className = 'queue-row header';
-  hdr.innerHTML = `<span></span><span>Topic</span><span>Domain</span><span>Recall</span><span>Reviews</span><span>Last reviewed</span>`;
-  table.appendChild(hdr);
 
-  for (const n of nodes.slice(0, 200)) {
+  let lastBucketKey = null;
+  let bucketGrid = null;
+  let bucketIdx = 0;
+  const cap = 500;
+  for (let i = 0; i < Math.min(nodes.length, cap); i++) {
+    const n = nodes[i];
+    const b = bucketOf(n);
+    if (b.key !== lastBucketKey) {
+      lastBucketKey = b.key;
+      bucketIdx++;
+      const isFirst = bucketIdx === 1;
+      const size = bucketSizes.get(b.key) || 0;
+      const groupHdr = document.createElement('div');
+      groupHdr.className = 'queue-group-header' + (isFirst ? ' open' : '');
+      groupHdr.innerHTML =
+        `<span class="qg-chev">${isFirst ? '▾' : '▸'}</span>` +
+        `<span class="qg-label">${escapeHtml(b.label)}</span>` +
+        `<span class="qg-count">${size} topic${size === 1 ? '' : 's'}</span>`;
+      table.appendChild(groupHdr);
+      const body = document.createElement('div');
+      body.className = 'queue-group-body';
+      if (!isFirst) body.style.display = 'none';
+      table.appendChild(body);
+      bucketGrid = document.createElement('div');
+      bucketGrid.className = 'queue-cards-grid';
+      body.appendChild(bucketGrid);
+      groupHdr.addEventListener('click', () => {
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : '';
+        groupHdr.querySelector('.qg-chev').textContent = open ? '▸' : '▾';
+        groupHdr.classList.toggle('open', !open);
+      });
+    }
     const r = Math.round((n.recall_now || 0) * 100);
     const cls = r < 40 ? 'bad' : r < 70 ? 'warn' : 'ok';
     const trend = n.classification === 'gap' ? '↓↓' : n.classification === 'stale' ? '↓' : '·';
-    const row = document.createElement('div');
-    row.className = 'queue-row';
-    row.onclick = () => quizOne(n.id, n.topic);
-    row.innerHTML = `
-      <span class="qr-trend">${trend}</span>
-      <span class="qr-topic">${escapeHtml(n.topic)}</span>
-      <span class="qr-domain">${escapeHtml(n.domain || 'Other')}</span>
-      <span class="qr-recall ${cls}">${r}%</span>
-      <span class="qr-domain" style="text-align:right">${n.review_count || 0}</span>
-      <span class="qr-last">${escapeHtml(n.last_reviewed || '—')}</span>`;
-    table.appendChild(row);
+    const card = document.createElement('button');
+    card.className = 'queue-card';
+    card.onclick = () => quizOne(n.id, n.topic);
+    card.innerHTML = `
+      <span class="qc-topic" title="${escapeHtml(n.topic)}">${escapeHtml(n.topic)}</span>
+      <span class="qc-meta">
+        <span class="qc-domain">${escapeHtml(n.domain || 'Other')}</span>
+        <span class="qc-recall ${cls}">${r}%</span>
+        <span title="Reviews">↻ ${n.review_count || 0}</span>
+        <span class="qc-trend" title="${escapeHtml(n.classification || '')}">${trend}</span>
+      </span>
+      <span class="qc-last">${escapeHtml(n.last_reviewed || 'never reviewed')}</span>`;
+    bucketGrid.appendChild(card);
   }
 }
 
@@ -2941,777 +3164,6 @@ function formatDate(iso) {
   if (isNaN(d)) return iso;
   return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
-
-// ══════════════════════════════════════════════════════════
-// SAGA TAB — cinematic timelapse of the PKG growing
-// ══════════════════════════════════════════════════════════
-//
-// Memory budget:
-//   - SVG-only, single rAF loop, cleaned up on tab-switch.
-//   - Hard cap: SAGA_DOM_CAP. If PKG > cap, every Nth topic is sampled
-//     (preserving chronology) so the DOM never blows up.
-//   - All state lives in `saga` object — one place to release on stop.
-//
-// Future gating ("earned" reveal, Whoop-style):
-//   For alpha, sagaUnlocked() returns true. Later this should require
-//   SAGA_REQUIRED_DAYS + SAGA_REQUIRED_REVIEWS — see sagaUnlocked() below.
-
-const SAGA_DOM_CAP = 5000;          // hard ceiling on rendered nodes
-const SAGA_DURATION_MS = 30000;     // full timelapse length at 1× speed
-const SAGA_ACTIVE_WINDOW_MS = 1000 * 60 * 60 * 24 * 30 * 6; // last 6 months are "active"
-const SAGA_ACTIVE_LABELS = 30;      // max labelled active nodes at once
-const SAGA_SPAWN_DURATION_MS = 30 * 86400000; // 30 playhead-days of "drift in"
-const SAGA_NEB_FULL_AT = 10;        // nebula opacity ramps from 1 node → max at this count
-const SAGA_LABEL_LIFETIME_MS = 90 * 86400000; // 90 playhead-days of fly-off label trail
-const SAGA_LABEL_DRIFT_PX = 70;     // radial outward drift over a label's lifetime
-const SAGA_MAX_FLYING_LABELS = 8;   // cap concurrent fly-off labels (DOM + readability)
-const SAGA_DOMAIN_HUD_FULL_AT = 6;  // domain HUD label reaches full opacity at this node count
-const SAGA_REQUIRED_DAYS = 30;      // future gating: days since first node
-const SAGA_REQUIRED_REVIEWS = 50;   // future gating: total reviews recorded
-
-// 13 domains arranged around the circle so each gets its own "arm".
-const SAGA_DOMAIN_ORDER = ['Language','Database','Auth','API','Frontend','DevOps','Architecture','Performance','Security','Testing','Tooling','Data','Other'];
-const SAGA_DOMAIN_ANGLE = Object.fromEntries(SAGA_DOMAIN_ORDER.map((d, i) => [d, (i / SAGA_DOMAIN_ORDER.length) * Math.PI * 2 - Math.PI / 2]));
-
-const saga = {
-  rafId: null,
-  topics: [],            // sampled, sorted by created_at asc, with x/y assigned
-  startMs: 0,            // earliest topic time (ms epoch)
-  endMs: 0,              // latest topic time (ms epoch)
-  playheadMs: 0,         // current time on the timeline
-  speed: 1,
-  playing: false,
-  filter: '',            // repo filter ('' = all)
-  lastTick: 0,
-  built: false,
-  ended: false,
-  view: { x: -200, y: -200, w: 400, h: 400 },     // current viewBox
-  targetView: { x: -200, y: -200, w: 400, h: 400 },
-  explorerName: 'Explorer',
-};
-
-function sagaUnlocked() {
-  // Alpha: always on. Once we have a stable user base, replace with:
-  //   const { daysActive, totalReviews } = sagaUserProgress();
-  //   return daysActive >= SAGA_REQUIRED_DAYS && totalReviews >= SAGA_REQUIRED_REVIEWS;
-  return true;
-}
-
-function sagaUserProgress() {
-  if (!DATA) return { daysActive: 0, totalReviews: 0 };
-  const topics = DATA.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
-  if (topics.length === 0) return { daysActive: 0, totalReviews: 0 };
-  const earliest = topics.reduce((min, n) => {
-    const t = Date.parse(n.created_at);
-    return isNaN(t) ? min : Math.min(min, t);
-  }, Date.now());
-  const daysActive = Math.floor((Date.now() - earliest) / 86400000);
-  const totalReviews = topics.reduce((sum, n) => sum + (n.review_count || 0), 0);
-  return { daysActive, totalReviews };
-}
-
-function initSaga() {
-  if (!DATA) return;
-  if (!sagaUnlocked()) {
-    showSagaLocked();
-    return;
-  }
-  document.getElementById('saga-locked').style.display = 'none';
-  document.getElementById('saga-endcard').style.display = 'none';
-  // Explorer name: API exposes userName + a kind:'user' synthetic node.
-  const userNode = DATA.nodes.find(n => n.kind === 'user');
-  saga.explorerName = DATA.userName || (userNode && userNode.topic) || 'Explorer';
-  buildSagaTopics();
-  populateSagaProjects();
-  saga.playheadMs = saga.startMs;
-  saga.ended = false;
-  drawSagaFrame();         // initial frame = explorer + zero topics
-  // Auto-play once on first init.
-  if (!saga.built) {
-    saga.built = true;
-    sagaPlay();
-  }
-}
-
-function showSagaLocked() {
-  const el = document.getElementById('saga-locked');
-  el.style.display = 'flex';
-  document.getElementById('lock-need-days').textContent = SAGA_REQUIRED_DAYS;
-  document.getElementById('lock-need-reviews').textContent = SAGA_REQUIRED_REVIEWS;
-  const { daysActive, totalReviews } = sagaUserProgress();
-  document.getElementById('lock-progress').textContent =
-    `you: ${daysActive} day${daysActive === 1 ? '' : 's'} · ${totalReviews} review${totalReviews === 1 ? '' : 's'}`;
-}
-
-// Sample + position topics deterministically from DATA.
-function buildSagaTopics() {
-  const all = DATA.nodes
-    .filter(n => n.kind !== 'domain' && n.kind !== 'user')
-    .filter(n => !saga.filter || n.repo === saga.filter)
-    .map(n => ({ ...n, _t: Date.parse(n.created_at || '') }))
-    .filter(n => !isNaN(n._t))
-    .sort((a, b) => a._t - b._t);
-
-  // Cap the rendered set: sample every Nth if over the cap (keep first + last).
-  let topics = all;
-  if (all.length > SAGA_DOM_CAP) {
-    const stride = Math.ceil(all.length / SAGA_DOM_CAP);
-    topics = all.filter((_, i) => i % stride === 0 || i === all.length - 1);
-  }
-  if (topics.length === 0) {
-    saga.topics = []; saga.startMs = Date.now(); saga.endMs = Date.now();
-    return;
-  }
-
-  // Layout: each topic placed in its domain's angular sector, radius proportional
-  // to how many topics in that domain came before it. Log-scaled so the cloud
-  // doesn't run to infinity for big arms.
-  const domainCounts = {};
-  for (const t of topics) {
-    const dom = SAGA_DOMAIN_ANGLE[t.domain] !== undefined ? t.domain : 'Other';
-    const idx = (domainCounts[dom] || 0);
-    domainCounts[dom] = idx + 1;
-    const baseAngle = SAGA_DOMAIN_ANGLE[dom];
-    // 30°-wide sector around the base angle
-    const jitter = ((idx * 137.5) % 30 - 15) * Math.PI / 180; // golden-angle-ish jitter
-    const angle = baseAngle + jitter;
-    // log-scaled radius
-    const radius = 60 + Math.log(idx + 2) * 38;
-    t._x = Math.cos(angle) * radius;
-    t._y = Math.sin(angle) * radius;
-    t._dom = dom;
-    // Spawn origin: same direction as the final position but ~35% of the way out
-    // and slightly off-axis. Combined with a fade + grow, gives a "drift outward
-    // from near the explorer" feel as each new topic materialises.
-    const startR = radius * (0.30 + ((idx * 0.137) % 0.20));
-    const startAng = angle + (((idx * 0.193) % 1) - 0.5) * 0.5;
-    t._sx = Math.cos(startAng) * startR;
-    t._sy = Math.sin(startAng) * startR;
-    // Per-node phase for ambient bob — wall-time driven, makes the field feel alive.
-    t._phase = (idx * 1.7) % (Math.PI * 2);
-  }
-
-  saga.topics = topics;
-  saga.startMs = topics[0]._t;
-  saga.endMs = Math.max(topics[topics.length - 1]._t, saga.startMs + 86400000);
-}
-
-function populateSagaProjects() {
-  const sel = document.getElementById('saga-filter');
-  const repos = [...new Set(DATA.nodes.filter(n => n.repo).map(n => n.repo))].sort();
-  // preserve current selection
-  const cur = saga.filter;
-  sel.innerHTML = '<option value="">All projects</option>' +
-    repos.map(r => `<option value="${escapeHtml(r)}"${r === cur ? ' selected' : ''}>${escapeHtml(r)}</option>`).join('');
-}
-
-function sagaPlay() {
-  if (saga.ended) sagaReplay();
-  saga.playing = true;
-  document.getElementById('saga-play-btn').textContent = '❚❚';
-  saga.lastTick = performance.now();
-  // Loop is always running while on the Saga tab — pause just freezes the playhead.
-  if (!saga.rafId) loopSaga();
-}
-
-function sagaPause() {
-  saga.playing = false;
-  document.getElementById('saga-play-btn').textContent = '▶';
-  // Keep the rAF alive so ambient bob + warp streaks stay visible (dimmed).
-}
-
-function sagaPlayPause() {
-  if (saga.playing) sagaPause(); else sagaPlay();
-}
-
-function sagaReplay() {
-  saga.ended = false;
-  saga.playheadMs = saga.startMs;
-  document.getElementById('saga-endcard').style.display = 'none';
-  drawSagaFrame();
-  sagaPlay();
-}
-
-function sagaSetSpeed(s) { saga.speed = s; }
-
-function sagaSetProject(repo) {
-  saga.filter = repo;
-  buildSagaTopics();
-  saga.playheadMs = saga.startMs;
-  saga.ended = false;
-  document.getElementById('saga-endcard').style.display = 'none';
-  drawSagaFrame();
-  if (!saga.playing) sagaPlay();
-}
-
-function sagaScrub(value) {
-  const pct = parseFloat(value) / 1000;
-  saga.playheadMs = saga.startMs + (saga.endMs - saga.startMs) * pct;
-  if (saga.playheadMs >= saga.endMs) saga.playheadMs = saga.endMs;
-  drawSagaFrame();
-  document.getElementById('saga-endcard').style.display = 'none';
-  saga.ended = false;
-}
-
-function loopSaga() {
-  saga.rafId = requestAnimationFrame(loopSaga);
-  // Always render so ambient bob + warp streaks stay alive even when paused.
-  // Only the playhead is gated by saga.playing.
-  const now = performance.now();
-  const dt = now - saga.lastTick;
-  saga.lastTick = now;
-  if (saga.playing) {
-    const span = saga.endMs - saga.startMs;
-    const advance = (dt / SAGA_DURATION_MS) * span * saga.speed;
-    saga.playheadMs += advance;
-    if (saga.playheadMs >= saga.endMs) {
-      saga.playheadMs = saga.endMs;
-      sagaPause();
-      showEndCard();
-      saga.ended = true;
-    }
-  }
-  drawSagaFrame();
-  // smoothly tween the viewBox toward the target each frame
-  const k = 0.12;
-  saga.view.x += (saga.targetView.x - saga.view.x) * k;
-  saga.view.y += (saga.targetView.y - saga.view.y) * k;
-  saga.view.w += (saga.targetView.w - saga.view.w) * k;
-  saga.view.h += (saga.targetView.h - saga.view.h) * k;
-  applySagaViewBox();
-}
-
-function stopSagaAnimation() {
-  sagaPause();
-  // Tab-switch: actually cancel the rAF and clear DOM. Re-init next time the
-  // user opens the Saga tab.
-  if (saga.rafId) { cancelAnimationFrame(saga.rafId); saga.rafId = null; }
-  saga.built = false;
-}
-
-function applySagaViewBox() {
-  const svg = document.getElementById('saga-svg');
-  if (!svg) return;
-  svg.setAttribute('viewBox', `${saga.view.x.toFixed(1)} ${saga.view.y.toFixed(1)} ${saga.view.w.toFixed(1)} ${saga.view.h.toFixed(1)}`);
-}
-
-// Build the SVG for the current playhead. Splits into:
-//  - explorer (always)
-//  - revealed nodes (created_at <= playhead): rendered as cloud (faded dot)
-//  - active nodes (revealed AND in last 6 months from playhead): rendered with full color
-//  - active labels: top SAGA_ACTIVE_LABELS most recent, gets a label
-function drawSagaFrame() {
-  const svg = document.getElementById('saga-svg');
-  if (!svg) return;
-  const ph = saga.playheadMs;
-  const now = performance.now();
-
-  const revealed = saga.topics.filter(t => t._t <= ph);
-  const active = revealed.filter(t => ph - t._t <= SAGA_ACTIVE_WINDOW_MS);
-  const labelled = active.slice(-SAGA_ACTIVE_LABELS);
-
-  // Compute camera target: bounding box of active nodes (or revealed if none active),
-  // padded. If empty, sit at origin.
-  const camSet = active.length > 0 ? active : revealed;
-  const target = computeSagaViewBox(camSet);
-  saga.targetView = target;
-
-  // Build SVG content. Layer order (back → front):
-  //   nebulae → streaks → cloud dots → active dots → fly-off labels → domain HUD → explorer
-  // The HUD + fly-off labels are the textual surface; everything else is the cloud.
-  const parts = [];
-  parts.push(buildSagaNebulae(revealed, ph));
-  parts.push(buildSagaWarpStreaks(now, ph));
-  parts.push(buildSagaCloud(revealed, labelled, ph, now));
-  parts.push(buildSagaActive(labelled, ph, now));
-  parts.push(buildSagaFlyingLabels(revealed, ph));
-  parts.push(buildSagaDomainHUD(revealed, ph));
-  parts.push(buildSagaExplorer());
-
-  svg.innerHTML = parts.join('');
-
-  // Update meta line
-  document.getElementById('saga-current-date').textContent = formatSagaDate(ph);
-  const totalT = revealed.length;
-  const domains = new Set(revealed.map(t => t._dom)).size;
-  const repos = new Set(revealed.map(t => t.repo).filter(Boolean)).size;
-  // Encounter count = sum of review_counts on revealed nodes. Ticks live as the
-  // playhead advances and as you actually quiz things.
-  let encounters = 0;
-  for (const t of revealed) encounters += (t.review_count || 0) + 1; // +1 for the create encounter itself
-  document.getElementById('saga-counts').textContent =
-    `${totalT} topic${totalT === 1 ? '' : 's'} · ${domains} domain${domains === 1 ? '' : 's'} · ${repos} project${repos === 1 ? '' : 's'} · ${encounters} encounter${encounters === 1 ? '' : 's'}`;
-
-  // Sync scrub bar
-  const pct = saga.endMs > saga.startMs ? (ph - saga.startMs) / (saga.endMs - saga.startMs) : 0;
-  document.getElementById('saga-scrub').value = Math.round(pct * 1000);
-}
-
-// Forward-motion streaks: short fading lines radiating outward from the
-// explorer, drifting outward over wall-time. While paused they fade out
-// (no time is passing); while playing they're vivid.
-function buildSagaWarpStreaks(now, ph) {
-  // Quiet down when paused — keeps the field still when you're examining it.
-  const intensity = saga.playing ? 1 : 0.15;
-  if (intensity === 0) return '';
-  const COUNT = 16;
-  const PERIOD_MS = 2400;
-  const phase = (now % PERIOD_MS) / PERIOD_MS; // 0..1
-  let s = '<g class="saga-streaks" pointer-events="none">';
-  for (let i = 0; i < COUNT; i++) {
-    // each streak has its own fixed angle + offset phase
-    const ang = (i / COUNT) * Math.PI * 2 + (i * 0.31);
-    const off = (phase + i * 0.171) % 1;
-    const innerR = 28 + off * 60;
-    const outerR = innerR + 24;
-    const x1 = Math.cos(ang) * innerR, y1 = Math.sin(ang) * innerR;
-    const x2 = Math.cos(ang) * outerR, y2 = Math.sin(ang) * outerR;
-    // Fade in at start, fade out at end of each streak's life.
-    const env = Math.sin(off * Math.PI);
-    const op = (env * 0.55 * intensity).toFixed(3);
-    s += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#7c9ef3" stroke-width="0.8" stroke-opacity="${op}" stroke-linecap="round"/>`;
-  }
-  s += '</g>';
-  return s;
-}
-
-function buildSagaExplorer() {
-  return `<g class="saga-explorer">
-    <circle r="14" fill="#7c9ef3" opacity="0.92"/>
-    <circle r="22" fill="none" stroke="#7c9ef3" stroke-opacity="0.35" stroke-width="1"/>
-    <text y="34" text-anchor="middle" font-size="11" fill="#cfd6e8" font-weight="600">${escapeHtml(saga.explorerName)}</text>
-    <text y="46" text-anchor="middle" font-size="9" fill="#7c9ef3" letter-spacing="1">EXPLORER</text>
-  </g>`;
-}
-
-// Spawn factor [0..1] for a node — how "settled" it is at the current playhead.
-// Used to interpolate position, opacity, and radius so new nodes drift in
-// rather than pop in. Eased with cubic-out for a gentle deceleration.
-function sagaSpawnFactor(n, ph) {
-  const age = ph - n._t;
-  if (age <= 0) return 0;
-  if (age >= SAGA_SPAWN_DURATION_MS) return 1;
-  const t = age / SAGA_SPAWN_DURATION_MS;
-  return 1 - Math.pow(1 - t, 3);
-}
-
-// Tiny ambient bob — wall-time driven, per-node phase. Makes the field feel
-// alive between spawns without per-node animations.
-function sagaBob(n, now) {
-  const a = Math.sin(now * 0.0006 + n._phase) * 1.4;
-  const b = Math.cos(now * 0.0004 + n._phase * 1.3) * 1.0;
-  return { dx: a, dy: b };
-}
-
-// Linear interpolation from spawn origin to final position, plus ambient bob.
-function sagaPos(n, ph, now) {
-  const f = sagaSpawnFactor(n, ph);
-  const x = n._sx + (n._x - n._sx) * f;
-  const y = n._sy + (n._y - n._sy) * f;
-  // Bob fades in alongside the node so it doesn't jitter in from nothing.
-  const bob = sagaBob(n, now);
-  return { x: x + bob.dx * f, y: y + bob.dy * f, f };
-}
-
-function buildSagaActive(nodes, ph, now) {
-  // Active nodes = larger, brighter dots — but no static labels. Names live
-  // briefly in the fly-off layer, then dissolve. The cloud is the point, not
-  // the inventory.
-  let s = '';
-  for (const n of nodes) {
-    const col = CLASS_COLORS[n.classification || 'gap'] || '#607d8b';
-    const p = sagaPos(n, ph, now);
-    if (p.f <= 0) continue;
-    const r = (3.5 * p.f).toFixed(2);
-    const opacity = (0.95 * p.f).toFixed(2);
-    s += `<g class="saga-node saga-node-active" transform="translate(${p.x.toFixed(1)},${p.y.toFixed(1)})" style="color:${col}">
-      <circle r="${r}" fill="${col}" opacity="${opacity}"/>
-    </g>`;
-  }
-  return s;
-}
-
-// Topic name flashes briefly when the node first appears, then drifts radially
-// outward (away from the explorer) and fades. Capped at MAX_FLYING_LABELS so
-// busy bursts stay legible and the DOM stays small.
-function buildSagaFlyingLabels(revealed, ph) {
-  const candidates = [];
-  for (const n of revealed) {
-    const age = ph - n._t;
-    if (age < 0 || age > SAGA_LABEL_LIFETIME_MS) continue;
-    candidates.push({ n, age });
-  }
-  // Most recent first — those are the ones we keep.
-  candidates.sort((a, b) => b.n._t - a.n._t);
-  const visible = candidates.slice(0, SAGA_MAX_FLYING_LABELS);
-
-  let s = '<g class="saga-flylabels" pointer-events="none">';
-  for (const { n, age } of visible) {
-    const t = age / SAGA_LABEL_LIFETIME_MS; // 0 = fresh, 1 = gone
-    const drift = 1 - Math.pow(1 - t, 2);    // ease-out outward motion
-    const opacity = Math.max(0, 1 - t * t * 1.4); // fade faster at the end
-    if (opacity <= 0.02) continue;
-    const ang = Math.atan2(n._y, n._x) || 0;
-    const x = n._x + Math.cos(ang) * SAGA_LABEL_DRIFT_PX * drift;
-    const y = n._y + Math.sin(ang) * SAGA_LABEL_DRIFT_PX * drift;
-    const label = (n.topic || '').length > 28 ? n.topic.slice(0, 27) + '…' : n.topic;
-    s += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-size="9" fill="#cfd6e8" opacity="${opacity.toFixed(2)}" style="text-shadow:0 0 6px rgba(0,0,0,0.9)">${escapeHtml(label)}</text>`;
-  }
-  s += '</g>';
-  return s;
-}
-
-// HUD-style domain anchors: big tracking-letter-spaced labels at each arm's
-// outer centroid, color-coded, opacity ramps in by accumulated node count.
-function buildSagaDomainHUD(revealed, ph) {
-  const byDom = {};
-  for (const n of revealed) {
-    (byDom[n._dom] ||= []).push(n);
-  }
-  let s = '<g class="saga-hud" pointer-events="none">';
-  for (const dom in byDom) {
-    const items = byDom[dom];
-    let sumX = 0, sumY = 0, sumF = 0;
-    for (const it of items) {
-      const f = sagaSpawnFactor(it, ph);
-      sumX += it._x * f; sumY += it._y * f; sumF += f;
-    }
-    if (sumF < 0.05) continue;
-    const cx = sumX / sumF, cy = sumY / sumF;
-    // Push the label outward beyond the cloud so it hovers at the perimeter.
-    const r = Math.hypot(cx, cy);
-    const ang = Math.atan2(cy, cx);
-    const labelR = r + 30;
-    const lx = Math.cos(ang) * labelR;
-    const ly = Math.sin(ang) * labelR;
-    const opacity = (Math.min(1, sumF / SAGA_DOMAIN_HUD_FULL_AT) * 0.55).toFixed(3);
-    const col = DOMAIN_COLORS[dom] || '#a4adc4';
-    s += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="10" letter-spacing="2.5" fill="${col}" opacity="${opacity}" style="text-transform:uppercase;font-weight:300;text-shadow:0 0 8px rgba(0,0,0,0.9)">${escapeHtml(dom)}</text>`;
-  }
-  s += '</g>';
-  return s;
-}
-
-function buildSagaCloud(revealed, labelledSet, ph, now) {
-  const labelledIds = new Set(labelledSet.map(n => n.id));
-  let s = '<g class="saga-cloud">';
-  for (const n of revealed) {
-    if (labelledIds.has(n.id)) continue;
-    const col = (DOMAIN_COLORS[n._dom] || '#607d8b');
-    const p = sagaPos(n, ph, now);
-    if (p.f <= 0) continue;
-    const r = (1.6 * Math.max(0.5, p.f)).toFixed(2);  // cloud dots stay slightly visible even mid-spawn
-    const op = (0.55 * p.f).toFixed(2);
-    s += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}" fill="${col}" opacity="${op}"/>`;
-  }
-  s += '</g>';
-  return s;
-}
-
-function buildSagaNebulae(revealed, ph) {
-  // Per-domain soft radial gradient, opacity ramps smoothly from 1 → SAGA_NEB_FULL_AT
-  // nodes (no hard threshold). Domain centroid weighted by per-node spawn factor so
-  // the nebula drifts as new nodes coalesce.
-  const byDom = {};
-  for (const n of revealed) {
-    (byDom[n._dom] ||= []).push(n);
-  }
-  let s = '<defs>';
-  let bodies = '';
-  for (const dom in byDom) {
-    const items = byDom[dom];
-    let sumX = 0, sumY = 0, sumF = 0;
-    for (const it of items) {
-      const f = sagaSpawnFactor(it, ph);
-      sumX += it._x * f; sumY += it._y * f; sumF += f;
-    }
-    if (sumF < 0.05) continue;
-    const cx = sumX / sumF, cy = sumY / sumF;
-    // Spread radius: stddev of nodes weighted by spawn factor.
-    let varAcc = 0;
-    for (const it of items) {
-      const f = sagaSpawnFactor(it, ph);
-      varAcc += f * ((it._x - cx) ** 2 + (it._y - cy) ** 2);
-    }
-    const spread = Math.sqrt(varAcc / sumF);
-    const r = Math.max(40, spread * 1.6);
-    // Opacity ramps with effective node count (sum of spawn factors).
-    const opacity = (Math.min(1, sumF / SAGA_NEB_FULL_AT) * 0.22).toFixed(3);
-    const id = 'neb-' + dom.replace(/[^a-z0-9]/gi, '');
-    const col = DOMAIN_COLORS[dom] || '#607d8b';
-    s += `<radialGradient id="${id}"><stop offset="0%" stop-color="${col}" stop-opacity="${opacity}"/><stop offset="100%" stop-color="${col}" stop-opacity="0"/></radialGradient>`;
-    bodies += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="url(#${id})"/>`;
-  }
-  s += '</defs>' + bodies;
-  return s;
-}
-
-function computeSagaViewBox(nodes) {
-  // Always include the explorer at origin; pad to 80px around the cloud.
-  let minX = -40, minY = -40, maxX = 40, maxY = 40;
-  for (const n of nodes) {
-    if (n._x < minX) minX = n._x;
-    if (n._y < minY) minY = n._y;
-    if (n._x > maxX) maxX = n._x;
-    if (n._y > maxY) maxY = n._y;
-  }
-  const padX = (maxX - minX) * 0.18 + 60;
-  const padY = (maxY - minY) * 0.18 + 60;
-  let w = (maxX - minX) + padX * 2;
-  let h = (maxY - minY) + padY * 2;
-  // Maintain aspect ratio of the SVG container
-  const svg = document.getElementById('saga-svg');
-  if (svg) {
-    const cw = svg.clientWidth || 1, ch = svg.clientHeight || 1;
-    const aspect = cw / ch;
-    if (w / h < aspect) w = h * aspect;
-    else h = w / aspect;
-  }
-  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-  return { x: cx - w / 2, y: cy - h / 2, w, h };
-}
-
-function formatSagaDate(ms) {
-  const d = new Date(ms);
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
-}
-
-function showEndCard() {
-  const card = document.getElementById('saga-endcard');
-  const titleEl = document.getElementById('ec-title');
-  const totalT = saga.topics.length;
-  const domains = new Set(saga.topics.map(t => t._dom)).size;
-  const repos = new Set(saga.topics.map(t => t.repo).filter(Boolean)).size;
-  const span = Math.max(1, Math.round((saga.endMs - saga.startMs) / 86400000));
-  titleEl.textContent = `${saga.explorerName}'s PKG`;
-  document.getElementById('ec-stats').innerHTML = `
-    <div class="ec-stat"><span class="ec-num">${totalT}</span><span class="ec-lbl">topics</span></div>
-    <div class="ec-stat"><span class="ec-num">${domains}</span><span class="ec-lbl">domains</span></div>
-    <div class="ec-stat"><span class="ec-num">${repos}</span><span class="ec-lbl">projects</span></div>
-    <div class="ec-stat"><span class="ec-num">${span}</span><span class="ec-lbl">day${span === 1 ? '' : 's'}</span></div>`;
-  card.style.display = 'flex';
-}
-
-// ── Export ─────────────────────────────────────────────────
-function serializeSagaSVG() {
-  const svg = document.getElementById('saga-svg');
-  if (!svg) return null;
-  const clone = svg.cloneNode(true);
-  // Inline a black background rect so the export looks right outside the page.
-  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  const vb = (clone.getAttribute('viewBox') || '0 0 800 600').split(/\s+/).map(parseFloat);
-  rect.setAttribute('x', vb[0]); rect.setAttribute('y', vb[1]);
-  rect.setAttribute('width', vb[2]); rect.setAttribute('height', vb[3]);
-  rect.setAttribute('fill', '#0a0c14');
-  clone.insertBefore(rect, clone.firstChild);
-  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-  // Match the page font (SVG text inherits `font-family` from the root).
-  clone.setAttribute('font-family', "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif");
-  return new XMLSerializer().serializeToString(clone);
-}
-
-// Share dropdown — click toggles, hover reveals (CSS handles hover).
-function toggleShareMenu(ev, btn) {
-  ev.stopPropagation();
-  const wrap = btn.closest('.share-wrap');
-  const open = wrap.classList.toggle('open');
-  // Close any other open menus.
-  document.querySelectorAll('.share-wrap.open').forEach(w => { if (w !== wrap) w.classList.remove('open'); });
-  if (open) {
-    // Close on next outside-click.
-    setTimeout(() => document.addEventListener('click', closeShareMenus, { once: true }), 0);
-  }
-}
-function closeShareMenus() {
-  document.querySelectorAll('.share-wrap.open').forEach(w => w.classList.remove('open'));
-}
-
-function exportSagaSVG() {
-  const text = serializeSagaSVG();
-  if (!text) return;
-  const blob = new Blob([text], { type: 'image/svg+xml' });
-  triggerDownload(blob, `rocky-saga-${formatSagaDate(saga.playheadMs).replace(/\s+/g, '_')}.svg`);
-}
-
-function exportSagaPNG() {
-  const text = serializeSagaSVG();
-  if (!text) return;
-  const blob = new Blob([text], { type: 'image/svg+xml' });
-  const url = URL.createObjectURL(blob);
-  const img = new Image();
-  img.onload = () => {
-    // Render at 2× device for retina-friendly PNG, capped at 4096px.
-    const svg = document.getElementById('saga-svg');
-    const w = Math.min(4096, (svg.clientWidth || 1200) * 2);
-    const h = Math.min(4096, (svg.clientHeight || 800) * 2);
-    const cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#0a0c14';
-    ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(img, 0, 0, w, h);
-    cv.toBlob(b => {
-      if (b) triggerDownload(b, `rocky-saga-${formatSagaDate(saga.playheadMs).replace(/\s+/g, '_')}.png`);
-      URL.revokeObjectURL(url);
-    }, 'image/png');
-  };
-  img.onerror = () => { URL.revokeObjectURL(url); };
-  img.src = url;
-}
-
-function triggerDownload(blob, filename) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-}
-
-// ── GIF export (lazy-loads gif.js from CDN) ────────────────
-const SAGA_GIF_W = 1080;
-const SAGA_GIF_H = 1080;
-const SAGA_GIF_FRAMES = 120;    // 120 frames at 15fps = 8s GIF (full timelapse, smoother)
-const SAGA_GIF_FPS = 15;
-
-let _gifLib = null;
-let _gifWorkerUrl = null;
-function loadGifLib() {
-  if (_gifLib && _gifWorkerUrl) return Promise.resolve({ GIF: _gifLib, workerScript: _gifWorkerUrl });
-  // gif.js spawns a Web Worker from `workerScript`. Browsers block cross-origin
-  // worker scripts, so load the worker source as text and wrap it in a Blob URL
-  // (same-origin) to bypass that restriction.
-  const libUrl = 'https://cdn.jsdelivr.net/npm/gif.js.optimized@1.0.1/dist/gif.js';
-  const workerUrl = 'https://cdn.jsdelivr.net/npm/gif.js.optimized@1.0.1/dist/gif.worker.js';
-  const libPromise = new Promise((resolve, reject) => {
-    if (window.GIF) { resolve(window.GIF); return; }
-    const s = document.createElement('script');
-    s.src = libUrl;
-    s.onload = () => resolve(window.GIF);
-    s.onerror = () => reject(new Error('could not load gif.js script'));
-    document.head.appendChild(s);
-  });
-  const workerPromise = fetch(workerUrl)
-    .then(r => { if (!r.ok) throw new Error('worker fetch ' + r.status); return r.text(); })
-    .then(txt => URL.createObjectURL(new Blob([txt], { type: 'application/javascript' })));
-  return Promise.all([libPromise, workerPromise]).then(([G, wu]) => {
-    _gifLib = G; _gifWorkerUrl = wu;
-    return { GIF: G, workerScript: wu };
-  });
-}
-
-function loadImage(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = url;
-  });
-}
-
-function showGifProgress(pct, msg) {
-  let el = document.getElementById('saga-gif-overlay');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'saga-gif-overlay';
-    el.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(7,8,17,.85);z-index:50;backdrop-filter:blur(4px)';
-    el.innerHTML = `<div style="background:#1a1d27;border:1px solid #2d3148;border-radius:10px;padding:24px 30px;min-width:300px;text-align:center">
-      <p id="gif-msg" style="font-size:12px;color:#c4cde0;margin-bottom:14px;letter-spacing:.6px;text-transform:uppercase">preparing…</p>
-      <div style="height:6px;background:#0f1117;border-radius:3px;overflow:hidden">
-        <div id="gif-bar" style="height:100%;background:#7c9ef3;width:0%;transition:width .15s"></div>
-      </div>
-      <p id="gif-pct" style="font-size:11px;color:#555e7a;margin-top:8px;font-family:monospace">0%</p>
-    </div>`;
-    document.getElementById('tab-saga').appendChild(el);
-  }
-  document.getElementById('gif-msg').textContent = msg;
-  document.getElementById('gif-bar').style.width = `${pct.toFixed(0)}%`;
-  document.getElementById('gif-pct').textContent = `${pct.toFixed(0)}%`;
-}
-
-function hideGifProgress() {
-  const el = document.getElementById('saga-gif-overlay');
-  if (el) el.remove();
-}
-
-async function exportSagaGIF() {
-  if (!saga.topics || saga.topics.length === 0) return;
-  showGifProgress(0, 'loading encoder…');
-  let GIF, workerScript;
-  try { ({ GIF, workerScript } = await loadGifLib()); }
-  catch (e) {
-    hideGifProgress();
-    alert('Could not load GIF encoder. ' + e.message);
-    return;
-  }
-
-  const wasPlaying = saga.playing;
-  sagaPause();
-  const savedPlayhead = saga.playheadMs;
-  const svg = document.getElementById('saga-svg');
-
-  // Snap viewBox to the final state so the GIF doesn't tween mid-export.
-  // Compute the all-revealed bounding box once and lock both view + targetView.
-  const finalBox = computeSagaViewBox(saga.topics);
-  saga.view = { ...finalBox };
-  saga.targetView = { ...finalBox };
-  applySagaViewBox();
-
-  const gif = new GIF({
-    workers: 2, quality: 10,
-    width: SAGA_GIF_W, height: SAGA_GIF_H,
-    workerScript,        // same-origin Blob URL (loaded above)
-    background: '#0a0c14',
-    transparent: null,
-  });
-
-  // Hide overlay + restore state — used by both finished and error paths.
-  const finalize = () => {
-    hideGifProgress();
-    saga.playheadMs = savedPlayhead;
-    drawSagaFrame();
-    if (wasPlaying) sagaPlay();
-  };
-
-  gif.on('progress', p => showGifProgress(50 + p * 50, 'encoding…'));
-  gif.on('finished', blob => {
-    finalize();
-    triggerDownload(blob, `rocky-saga-${formatSagaDate(saga.endMs).replace(/\s+/g, '_')}.gif`);
-  });
-  gif.on('abort', () => { finalize(); console.warn('gif export aborted'); });
-
-  // Capture frames by stepping the playhead. Each frame: render → serialize → rasterise.
-  const span = saga.endMs - saga.startMs;
-  for (let i = 0; i < SAGA_GIF_FRAMES; i++) {
-    const pct = i / (SAGA_GIF_FRAMES - 1);
-    saga.playheadMs = saga.startMs + span * pct;
-    drawSagaFrame();
-    showGifProgress((i / SAGA_GIF_FRAMES) * 50, `capturing ${i + 1}/${SAGA_GIF_FRAMES}…`);
-
-    const text = serializeSagaSVG();
-    const blob = new Blob([text], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    let img;
-    try { img = await loadImage(url); }
-    catch (_) { URL.revokeObjectURL(url); continue; }
-    URL.revokeObjectURL(url);
-
-    const cv = document.createElement('canvas');
-    cv.width = SAGA_GIF_W; cv.height = SAGA_GIF_H;
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#0a0c14';
-    ctx.fillRect(0, 0, SAGA_GIF_W, SAGA_GIF_H);
-    ctx.drawImage(img, 0, 0, SAGA_GIF_W, SAGA_GIF_H);
-    gif.addFrame(ctx, { copy: true, delay: 1000 / SAGA_GIF_FPS });
-    // Yield to keep the UI responsive between frames.
-    await new Promise(r => setTimeout(r, 0));
-  }
-
-  gif.render();
-}
-
 
 // ══════════════════════════════════════════════════════════
 // VOICE: push-to-hold mic → /api/transcribe (whisper-cpp)

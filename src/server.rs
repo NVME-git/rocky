@@ -256,22 +256,51 @@ async fn quiz_start(
         let mut qs = Vec::new();
         for nid in &req.node_ids {
             if let Some(node) = db.get_node_by_id(nid)? {
-                let question = if !node.canonical_question.is_empty() {
-                    node.canonical_question.clone()
-                } else if !node.description.is_empty() {
-                    format!("Explain: {} — {}", node.topic, node.description)
-                } else {
-                    format!("What do you know about {}?", node.topic)
-                };
+                // Priority order: pick from the question_bank (rotation by
+                // least-asked), then canonical, then "Explain:", then a bare
+                // prompt. The bank is the user-facing pool — they spent LLM
+                // calls building it, so it should win over the placeholder.
+                let mut question = String::new();
+                let mut answer = String::new();
+                let mut clue = String::new();
+                let mut from_bank = false;
+                if !node.question_bank.is_empty() {
+                    let pick_idx = (0..node.question_bank.len())
+                        .min_by_key(|&i| node.question_bank[i].asked_count)
+                        .unwrap_or(0);
+                    let q = &node.question_bank[pick_idx];
+                    question = q.question.clone();
+                    answer = q.answer.clone();
+                    clue = q.clue.clone();
+                    from_bank = true;
+                    // Bump asked_count so the next quiz session rotates to a
+                    // different question. Best-effort — failure to persist
+                    // doesn't break the quiz response.
+                    let mut bank = node.question_bank.clone();
+                    bank[pick_idx].asked_count += 1;
+                    let _ = db.set_question_bank(&node.topic, &bank);
+                }
+                if question.is_empty() && !node.canonical_question.is_empty() {
+                    question = node.canonical_question.clone();
+                    answer = node.canonical_answer.clone();
+                    clue = node.canonical_clue.clone();
+                }
+                if question.is_empty() {
+                    question = if !node.description.is_empty() {
+                        format!("Explain: {} — {}", node.topic, node.description)
+                    } else {
+                        format!("What do you know about {}?", node.topic)
+                    };
+                }
                 qs.push(QuizQuestion {
                     node_id: nid.clone(),
                     topic: node.topic.clone(),
                     domain: node.domain.clone(),
                     description: node.description.clone(),
                     question,
-                    answer: node.canonical_answer.clone(),
-                    clue: node.canonical_clue.clone(),
-                    has_canonical: !node.canonical_question.is_empty(),
+                    answer,
+                    clue,
+                    has_canonical: from_bank || !node.canonical_question.is_empty(),
                 });
             }
         }
@@ -855,7 +884,7 @@ fn compute_space_layout(
 
     // Cluster footprint scales with topic count. Inter-domain ring radius is
     // sized so the largest cluster never touches its neighbour.
-    let cluster_outer = |n: usize| -> f64 { 110.0 + 38.0 * ((n + 1) as f64).sqrt() };
+    let cluster_outer = |n: usize| -> f64 { 150.0 + 58.0 * ((n + 1) as f64).sqrt() };
     let max_topics = by_domain.values().map(|v| v.len()).max().unwrap_or(0);
     let max_outer = cluster_outer(max_topics);
 
@@ -889,7 +918,7 @@ fn compute_space_layout(
         let (cx, cy) = *domain_centre.get(domain).unwrap_or(&(0.0, 0.0));
         let phase = (fnv1a(domain) % 6283) as f64 / 1000.0;
         for (i, n) in topics.iter().enumerate() {
-            let r = 110.0 + 38.0 * ((i + 1) as f64).sqrt();
+            let r = 150.0 + 58.0 * ((i + 1) as f64).sqrt();
             let theta = (i as f64) * golden + phase;
             let h = fnv1a(&n.id);
             let bob_phase = (h % 6283) as f64 / 1000.0;
