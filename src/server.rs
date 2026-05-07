@@ -524,11 +524,50 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
         .collect();
 
     // ── full node/edge arrays for graph
-    let active_domains: std::collections::HashSet<&str> = topic_nodes
-        .iter()
-        .map(|n| n.domain.as_str())
-        .filter(|d| !d.is_empty())
-        .collect();
+    // Active domain *names* — every distinct domain that has at least one
+    // topic. We build stars from this set even if the DB has no kind=domain
+    // rows for them (in which case we synthesise the star).
+    let mut active_domain_names: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    for n in &topic_nodes {
+        let d = if n.domain.is_empty() { "Other".to_string() } else { n.domain.clone() };
+        active_domain_names.insert(d);
+    }
+
+    // Build the unified list of stars (one per active domain). Real Node rows
+    // win; missing names get synthesised IDs so the front-end can render them.
+    let stars: Vec<StarRef> = {
+        let mut out: Vec<StarRef> = Vec::new();
+        let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for dn in &domain_nodes {
+            if active_domain_names.contains(&dn.topic) {
+                out.push(StarRef {
+                    id: dn.id.clone(),
+                    name: dn.topic.clone(),
+                    description: dn.description.clone(),
+                    last_reviewed: dn.last_reviewed.to_string(),
+                    created_at: dn.created_at.to_string(),
+                });
+                covered.insert(dn.topic.clone());
+            }
+        }
+        for name in &active_domain_names {
+            if !covered.contains(name) {
+                out.push(StarRef {
+                    id: format!("__star_{}", name),
+                    name: name.clone(),
+                    description: String::new(),
+                    last_reviewed: String::new(),
+                    created_at: String::new(),
+                });
+            }
+        }
+        out
+    };
+
+    // Deterministic spatial layout — every node gets (x, y) and bob params.
+    let layout = compute_space_layout(&topic_nodes, &stars, user_id);
+    let pos_of = |id: &str| layout.get(id).copied().unwrap_or_default();
 
     let mut nodes_json: Vec<Value> = topic_nodes
         .iter()
@@ -546,6 +585,7 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
                     })
                 })
                 .collect();
+            let p = pos_of(&n.id);
             json!({
                 "id": n.id, "topic": n.topic, "kind": n.kind.as_str(),
                 "domain": n.domain, "description": n.description,
@@ -561,21 +601,21 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
                 "canonical_clue": n.canonical_clue,
                 "question_bank": n.question_bank,
                 "reviews": reviews,
+                "x": p.x, "y": p.y, "bob_phase": p.bob_phase, "bob_speed": p.bob_speed,
             })
         })
         .collect();
 
-    for dn in &domain_nodes {
-        if !active_domains.contains(dn.topic.as_str()) {
-            continue;
-        }
+    for s in &stars {
+        let p = pos_of(&s.id);
         nodes_json.push(json!({
-            "id": dn.id, "topic": dn.topic, "kind": "domain",
-            "domain": dn.topic, "description": dn.description,
+            "id": s.id, "topic": s.name, "kind": "domain",
+            "domain": s.name, "description": s.description,
             "stability": 999.0, "difficulty": 0.0,
             "retrievability": 1.0, "classification": "known",
-            "last_reviewed": dn.last_reviewed.to_string(),
-            "review_count": 0, "created_at": dn.created_at.to_string(),
+            "last_reviewed": s.last_reviewed,
+            "review_count": 0, "created_at": s.created_at,
+            "x": p.x, "y": p.y, "bob_phase": 0.0, "bob_speed": 0.0,
         }));
     }
 
@@ -585,18 +625,16 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
         "stability": 999.0, "difficulty": 0.0,
         "retrievability": 1.0, "classification": "known",
         "last_reviewed": "", "review_count": 0, "created_at": "",
+        "x": 0.0, "y": 0.0, "bob_phase": 0.0, "bob_speed": 0.0,
     }));
 
     let topic_ids: std::collections::HashSet<&str> =
         topic_nodes.iter().map(|n| n.id.as_str()).collect();
-    let domain_ids: std::collections::HashSet<&str> = domain_nodes
-        .iter()
-        .filter(|n| active_domains.contains(n.topic.as_str()))
-        .map(|n| n.id.as_str())
-        .collect();
+    let star_ids: std::collections::HashSet<&str> =
+        stars.iter().map(|s| s.id.as_str()).collect();
     let all_visible: std::collections::HashSet<&str> = topic_ids
         .iter()
-        .chain(domain_ids.iter())
+        .chain(star_ids.iter())
         .chain(std::iter::once(&user_id))
         .copied()
         .collect();
@@ -616,13 +654,10 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
             })
             .collect();
 
-        for dn in &domain_nodes {
-            if !active_domains.contains(dn.topic.as_str()) {
-                continue;
-            }
+        for s in &stars {
             ej.push(json!({
-                "id": format!("{}-user", dn.id),
-                "source": dn.id, "target": user_id,
+                "id": format!("{}-user", s.id),
+                "source": s.id, "target": user_id,
                 "kind": "part_of", "description": "", "strength": 1.0,
             }));
         }
@@ -766,6 +801,109 @@ fn recently_added_list(nodes: &[&crate::node::Node], limit: usize) -> Vec<Value>
         "created_at": n.created_at.to_string(),
         "kind": n.kind.as_str(),
     })).collect()
+}
+
+// ── space-map layout (deterministic) ─────────────────────────────────────────
+//
+// Domains sit on a circle around the user (the only thing at origin).
+// Topics fill a Vogel sunflower around their parent domain. Every position is
+// derived from a stable per-id hash, so the same topic lands in the same place
+// across reloads — important for spatial memory while learning.
+
+#[derive(Clone, Copy, Default)]
+struct LayoutPos { x: f64, y: f64, bob_phase: f64, bob_speed: f64 }
+
+/// A "star" — one per active domain. Real domain Node rows win; missing ones
+/// get a synthesised StarRef so the front-end can still render them.
+struct StarRef {
+    id: String,
+    name: String,
+    description: String,
+    last_reviewed: String,
+    created_at: String,
+}
+
+fn fnv1a(s: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in s.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+fn compute_space_layout(
+    topic_nodes: &[&crate::node::Node],
+    stars: &[StarRef],
+    user_id: &str,
+) -> std::collections::HashMap<String, LayoutPos> {
+    use std::collections::HashMap;
+    use std::f64::consts::{PI, TAU, FRAC_PI_2};
+
+    let mut out: HashMap<String, LayoutPos> = HashMap::new();
+    out.insert(user_id.to_string(), LayoutPos::default());
+
+    // Group topics by domain (empty → "Other") and sort each cluster by id-hash.
+    let mut by_domain: HashMap<String, Vec<&crate::node::Node>> = HashMap::new();
+    for n in topic_nodes {
+        let d = if n.domain.is_empty() { "Other".to_string() } else { n.domain.clone() };
+        by_domain.entry(d).or_default().push(n);
+    }
+    for v in by_domain.values_mut() {
+        v.sort_by_key(|n| fnv1a(&n.id));
+    }
+
+    // Cluster footprint scales with topic count. Inter-domain ring radius is
+    // sized so the largest cluster never touches its neighbour.
+    let cluster_outer = |n: usize| -> f64 { 110.0 + 38.0 * ((n + 1) as f64).sqrt() };
+    let max_topics = by_domain.values().map(|v| v.len()).max().unwrap_or(0);
+    let max_outer = cluster_outer(max_topics);
+
+    // Stable angular slot per star — alphabetical by name.
+    let mut star_idx: Vec<&StarRef> = stars.iter().collect();
+    star_idx.sort_by(|a, b| a.name.cmp(&b.name));
+    let n_dom = star_idx.len();
+
+    let r_dom: f64 = if n_dom == 0 {
+        0.0
+    } else if n_dom == 1 {
+        900.0_f64.max(max_outer + 200.0)
+    } else {
+        let chord = max_outer * 2.0 + 120.0;
+        let needed = chord / (2.0 * (PI / n_dom as f64).sin());
+        900.0_f64.max(needed)
+    };
+
+    let mut domain_centre: HashMap<String, (f64, f64)> = HashMap::new();
+    for (i, s) in star_idx.iter().enumerate() {
+        let theta = (i as f64) / (n_dom.max(1) as f64) * TAU - FRAC_PI_2;
+        let x = r_dom * theta.cos();
+        let y = r_dom * theta.sin();
+        out.insert(s.id.clone(), LayoutPos { x, y, bob_phase: 0.0, bob_speed: 0.0 });
+        domain_centre.insert(s.name.clone(), (x, y));
+    }
+
+    // Place topics around their domain — Vogel sunflower with per-domain phase.
+    let golden = PI * (3.0 - 5.0_f64.sqrt());
+    for (domain, topics) in &by_domain {
+        let (cx, cy) = *domain_centre.get(domain).unwrap_or(&(0.0, 0.0));
+        let phase = (fnv1a(domain) % 6283) as f64 / 1000.0;
+        for (i, n) in topics.iter().enumerate() {
+            let r = 110.0 + 38.0 * ((i + 1) as f64).sqrt();
+            let theta = (i as f64) * golden + phase;
+            let h = fnv1a(&n.id);
+            let bob_phase = (h % 6283) as f64 / 1000.0;
+            let bob_speed = 0.30 + ((h >> 16) % 1000) as f64 / 1000.0 * 0.50;
+            out.insert(n.id.clone(), LayoutPos {
+                x: cx + r * theta.cos(),
+                y: cy + r * theta.sin(),
+                bob_phase,
+                bob_speed,
+            });
+        }
+    }
+
+    out
 }
 
 fn build_sessions_json(db: &Db) -> Result<Value> {

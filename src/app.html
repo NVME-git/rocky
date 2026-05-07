@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rocky</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.3/pixi.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;height:100vh;display:flex;flex-direction:row;overflow:hidden}
@@ -103,12 +104,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .session-chip .sc-meta .sc-domain{color:#8892a4}
 .session-chip .sc-meta .sc-encounters{color:#F59E0B}
 
-/* ── planning-mode toggle on graph ── */
-#planning-toggle{display:flex;align-items:center;gap:6px;font-size:11px;color:#8892a4;background:#1a1d27;padding:5px 10px;border-radius:6px;border:1px solid #2d3148;cursor:pointer;user-select:none}
-#planning-toggle:hover{border-color:#7c9ef3}
-#planning-toggle.active{background:#1e2340;border-color:#9b59b6;color:#c39bd3}
-#planning-toggle input{accent-color:#9b59b6;cursor:pointer}
-
 /* ── feedback tab ── */
 #tab-feedback{overflow-y:auto;padding:32px;justify-content:center}
 .fb-wrap{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:14px;width:100%}
@@ -171,10 +166,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .viz-full .timeline-mode-btn.active{background:#1e2340;border-color:#7c9ef3;color:#7c9ef3;font-weight:600}
 .viz-full .timeline-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 
-/* ── graph tab ── */
+/* ── space map tab ── */
 #tab-map{flex-direction:row;overflow:hidden;position:relative;background:radial-gradient(ellipse at center,#0f1117 0%,#070811 70%,#000 100%)}
 
-/* starfield via tiny dots in background using a layered radial-gradient */
+/* deep-space starfield (parallax-static decoration). PIXI canvas sits above. */
 #tab-map::before{content:"";position:absolute;inset:0;background-image:
   radial-gradient(1.5px 1.5px at 12% 18%,#fff 50%,transparent 51%),
   radial-gradient(1px 1px at 78% 32%,#fff 50%,transparent 51%),
@@ -184,19 +179,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   radial-gradient(1px 1px at 56% 8%,#fff 50%,transparent 51%),
   radial-gradient(1px 1px at 64% 48%,#fff 50%,transparent 51%),
   radial-gradient(1.2px 1.2px at 8% 56%,#fff 50%,transparent 51%);
-  background-repeat:repeat;background-size:600px 600px;opacity:.18;pointer-events:none}
+  background-repeat:repeat;background-size:600px 600px;opacity:.2;pointer-events:none}
 
-#wormhole-svg{flex:1;display:block;position:relative;z-index:1;transition:opacity .35s;text-rendering:geometricPrecision;shape-rendering:geometricPrecision}
-#wormhole-svg text{text-rendering:geometricPrecision}
+#map-canvas-host{position:absolute;inset:0;z-index:1;cursor:grab;overflow:hidden}
+#map-canvas-host.panning{cursor:grabbing}
+#map-canvas-host.warping{cursor:wait}
+#map-canvas-host canvas{display:block;position:relative;z-index:1}
 
-/* top bar: search + warp history */
+/* warp-transit overlay — pulses on during camera tween */
+.warp-streak{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:0;transition:opacity .18s;background:
+  radial-gradient(ellipse at center,transparent 38%,rgba(124,158,243,.10) 70%,rgba(124,158,243,.22) 100%),
+  repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0 1px,transparent 1px 6px)}
+.warp-streak.on{opacity:1}
+
+/* top-left: search */
 #map-top{position:absolute;top:12px;left:12px;z-index:20;display:flex;flex-direction:column;gap:6px;pointer-events:none}
 #map-top>*{pointer-events:all}
-#map-search-wrap{position:relative;width:240px}
-#map-search{background:#1a1d27;border:1px solid #2d3148;border-radius:6px;padding:6px 10px;color:#e2e8f0;font-size:12px;width:100%;outline:none}
+#map-search-wrap{position:relative;width:260px}
+#map-search{background:rgba(26,29,39,.85);border:1px solid #2d3148;border-radius:6px;padding:6px 10px;color:#e2e8f0;font-size:12px;width:100%;outline:none;backdrop-filter:blur(6px)}
 #map-search:focus{border-color:#7c9ef3}
 #map-search::placeholder{color:#555e7a}
-#map-results{position:absolute;top:34px;left:0;right:0;background:#1a1d27;border:1px solid #2d3148;border-radius:6px;max-height:240px;overflow-y:auto;display:none;z-index:30}
+#map-results{position:absolute;top:34px;left:0;right:0;background:#1a1d27;border:1px solid #2d3148;border-radius:6px;max-height:240px;overflow-y:auto;display:none;z-index:30;box-shadow:0 6px 20px rgba(0,0,0,.5)}
 #map-results.open{display:block}
 .search-hit{padding:6px 10px;border-bottom:1px solid #161823;cursor:pointer;font-size:11px}
 .search-hit:hover{background:#232740}
@@ -205,62 +208,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .hit-sub{display:block;color:#555e7a;font-size:10px;margin-top:1px}
 .no-match{padding:6px 10px;color:#555e7a;font-size:11px}
 
-#warp-history{display:flex;align-items:center;gap:8px;font-size:11px;color:#555e7a}
-.warp-back{background:#1a1d27;border:1px solid #2d3148;border-radius:5px;padding:4px 9px;color:#7c9ef3;font-size:11px;cursor:pointer}
-.warp-back:hover{border-color:#7c9ef3}
-.warp-trail{font-size:10px;color:#555e7a}
+/* bottom-center: warp HUD */
+#warp-hud{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:6px;background:rgba(15,17,23,.82);border:1px solid #2d3148;border-radius:24px;padding:6px 10px;backdrop-filter:blur(8px);max-width:calc(100% - 32px)}
+#warp-stars{display:flex;align-items:center;gap:4px;overflow-x:auto;max-width:60vw;scrollbar-width:thin}
+.warp-btn{display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid transparent;border-radius:14px;padding:5px 11px;color:#c4cde0;font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s,color .12s}
+.warp-btn:hover{background:#1e2340;border-color:#3d4468;color:#e2e8f0}
+.warp-btn.active{background:#1e2340;border-color:var(--star-color,#7c9ef3);color:var(--star-color,#7c9ef3)}
+.warp-btn[disabled]{opacity:.4;cursor:default}
+.warp-btn .warp-dot{width:7px;height:7px;border-radius:50%;background:var(--star-color,#3d4468);box-shadow:0 0 6px var(--star-color,#3d4468);flex-shrink:0}
+.warp-home{color:#F59E0B}
+.warp-home .warp-dot{background:#F59E0B;box-shadow:0 0 8px #F59E0B}
+.warp-back-btn{color:#7c9ef3}
+.warp-sep{width:1px;height:18px;background:#2d3148;flex-shrink:0}
 
-/* wormhole filter bar — top-center horizontal pills */
-#wormhole-panel{position:absolute;top:12px;left:50%;transform:translateX(-50%);max-width:calc(100% - 540px);background:rgba(26,29,39,.92);border:1px solid #2d3148;border-radius:8px;padding:6px 8px;z-index:15;backdrop-filter:blur(4px);display:flex;align-items:center;gap:8px}
-#wormhole-list{display:flex;flex-direction:row;align-items:center;gap:6px;flex-wrap:wrap}
-.wormhole-portal{display:inline-flex;align-items:center;gap:6px;background:#1a1d27;border:1px solid #2d3148;border-radius:14px;padding:4px 10px;cursor:pointer;transition:background .12s,border-color .12s,color .12s;text-align:left;color:#e2e8f0;line-height:1;--portal-color:#3d4468}
-.wormhole-portal:hover{background:#232740;border-color:var(--portal-color)}
-.wormhole-portal .wp-dot{width:7px;height:7px;border-radius:50%;background:var(--portal-color);flex-shrink:0}
-.wormhole-portal .wp-label{font-size:11px;font-weight:600}
-.wormhole-portal .wp-sub{font-size:9px;color:#6b7594;text-transform:uppercase;letter-spacing:.4px}
-.wormhole-portal.active{background:var(--portal-color);border-color:var(--portal-color);color:#0f1117}
-.wormhole-portal.active .wp-dot{background:#0f1117}
-.wormhole-portal.active .wp-sub{color:rgba(15,17,23,.7)}
-.wormhole-portal.danger{--portal-color:#e74c3c}
-#wormhole-panel .wp-divider{width:1px;height:18px;background:#2d3148;flex-shrink:0}
-#wormhole-help{background:#1a1d27;border:1px solid #2d3148;color:#7c9ef3;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:inherit;padding:0}
-#wormhole-help:hover{border-color:#7c9ef3;background:#1e2340}
-#wormhole-help-popover{position:absolute;top:42px;right:0;width:260px;background:#1a1d27;border:1px solid #2d3148;border-radius:8px;padding:12px 14px;font-size:11px;color:#a4adc4;line-height:1.5;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:20}
-#wormhole-help-popover.visible{display:block}
-#wormhole-help-popover h4{font-size:11px;color:#c4cde0;margin:0 0 6px;text-transform:uppercase;letter-spacing:.5px}
-#wormhole-help-popover .help-row{display:flex;align-items:center;gap:6px;margin:4px 0}
-#wormhole-help-popover .help-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-#planning-toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#8892a4;cursor:pointer;padding:4px 8px;border-radius:14px;border:1px solid transparent;white-space:nowrap}
+/* planning toggle (lives inside the HUD) */
+#planning-toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#8892a4;cursor:pointer;padding:4px 8px;border-radius:12px;border:1px solid transparent;white-space:nowrap}
 #planning-toggle:hover{background:#1e2340;color:#e2e8f0}
-#planning-toggle input{accent-color:#7c9ef3;cursor:pointer}
+#planning-toggle.active{background:#1e2340;border-color:#9b59b6;color:#c39bd3}
+#planning-toggle input{accent-color:#9b59b6;cursor:pointer}
 
-/* wormhole node visuals */
-.warp-node{cursor:pointer;opacity:0;animation:warp-node-in .7s cubic-bezier(.18,.89,.32,1.28) forwards}
-.warp-node.focus{animation-duration:.55s}
-.warp-node circle{transition:r .25s,opacity .25s}
-.warp-node:hover circle{stroke-opacity:.9!important}
-.warp-halo{animation:halo-pulse 2.4s ease-in-out infinite}
-@keyframes halo-pulse{0%,100%{opacity:.12}50%{opacity:.28}}
-@keyframes warp-node-in{0%{opacity:0}100%{opacity:1}}
-/* Per-node bob — applied to an inner <g> so the outer node's position transform is preserved. */
-.warp-bob{animation:warp-bob 3.2s ease-in-out infinite;will-change:transform}
-@keyframes warp-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
-
-/* Edges fade in once, then dashes flow continuously outward (focus → neighbor)
-   to read as energy/connection traveling along the wormhole link. */
-.warp-edge{
-  opacity:0;
-  animation:warp-edge-in .6s ease-out forwards, warp-edge-flow 1.4s linear infinite;
-  animation-delay:.25s, .25s;
-}
-@keyframes warp-edge-in{to{opacity:1}}
-@keyframes warp-edge-flow{to{stroke-dashoffset:-12}}
-
-.edge-label{pointer-events:none;opacity:0;animation:fadein .5s ease forwards;animation-delay:.7s;text-transform:uppercase;letter-spacing:.5px}
-@keyframes fadein{to{opacity:.7}}
-
-/* empty state */
-.warp-empty{font-size:13px;fill:#555e7a;text-anchor:middle}
+/* hint shown briefly after entering tab */
+#map-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,calc(-50% + 100px));z-index:18;pointer-events:none;font-size:11px;color:#8892a4;text-transform:uppercase;letter-spacing:.6px;text-align:center;opacity:0;transition:opacity .35s}
+#map-hint.visible{opacity:.7}
 
 /* ── SAGA TAB ── cinematic timelapse */
 #tab-saga{flex-direction:column;overflow:hidden;position:relative;background:radial-gradient(ellipse at center,#0f1117 0%,#070811 70%,#000 100%)}
@@ -640,36 +609,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div id="sessions-body"></div>
 </div>
 
-<!-- KNOWLEDGE MAP TAB (graph) -->
+<!-- KNOWLEDGE MAP TAB (space view) -->
 <div id="tab-map" class="tab-content">
-  <svg id="wormhole-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="map-canvas-host"></div>
+  <div id="map-hint">drag to pan · scroll to zoom · click a star below to warp</div>
 
-  <!-- top-left: search + warp history -->
+  <!-- top-left: search -->
   <div id="map-top">
     <div id="map-search-wrap">
-      <input id="map-search" type="text" placeholder="Search topics — warp to one…" oninput="onMapSearch()" autocomplete="off">
+      <input id="map-search" type="text" placeholder="Search topics — dims others, highlights matches…" oninput="onMapSearch()" autocomplete="off">
       <div id="map-results"></div>
     </div>
-    <div id="warp-history"></div>
   </div>
 
-  <!-- top-center: filter pills (warp targets + planning toggle) -->
-  <div id="wormhole-panel">
-    <div id="wormhole-list"></div>
-    <span class="wp-divider"></span>
-    <label id="planning-toggle" title="Dim nodes you already know well; highlight unreviewed neighbors.">
+  <!-- bottom-center: warp HUD -->
+  <div id="warp-hud">
+    <button class="warp-btn warp-home" onclick="warpHome()" title="Warp to you (centre of the map)">
+      <span class="warp-dot"></span><span>You</span>
+    </button>
+    <span class="warp-sep"></span>
+    <div id="warp-stars"></div>
+    <span class="warp-sep"></span>
+    <button class="warp-btn warp-back-btn" onclick="warpBack()" title="Previous location" id="warp-back-btn">← back</button>
+    <label id="planning-toggle" title="Dim topics you already know; highlight unreviewed ones.">
       <input type="checkbox" id="planning-mode" onchange="togglePlanningMode()">
       <span>Planning</span>
     </label>
-    <button id="wormhole-help" type="button" onclick="toggleWormholeHelp(event)" aria-label="What do these pills mean?">?</button>
-    <div id="wormhole-help-popover">
-      <h4>What these pills do</h4>
-      <div class="help-row"><span class="help-dot" style="background:#e74c3c"></span><span><b>Weakest</b> — your lowest-recall topic. Warp here to drill it.</span></div>
-      <div class="help-row"><span class="help-dot" style="background:#3498db"></span><span><b>Domain</b> — jump to the most-recent topic in another knowledge area.</span></div>
-      <div class="help-row"><span class="help-dot" style="background:#9b59b6"></span><span><b>Project</b> — jump to the most-recent topic in another project.</span></div>
-      <div class="help-row" style="margin-top:8px;border-top:1px solid #2d3148;padding-top:8px"><span><b>Active pill</b> = the area you're currently in. Click another to warp.</span></div>
-      <div class="help-row"><span><b>Planning</b> dims known nodes so unreviewed neighbors stand out.</span></div>
-    </div>
   </div>
 
   <div id="taxonomy-panel">
@@ -885,12 +850,7 @@ async function refreshData() {
   if (currentTab === 'dashboard') renderDashboard();
   else if (currentTab === 'projects') renderProjects();
   else if (currentTab === 'queue') renderQueue();
-  else if (currentTab === 'map' && focusId && !currentProject) {
-    // Re-pull scene in case data changed.
-    currentScene = computeScene(focusId);
-    renderScene(currentScene);
-    buildWormholePanel();
-  }
+  else if (currentTab === 'map') mapOnDataRefresh();
   updateStats();
 }
 
@@ -921,24 +881,9 @@ function switchTab(name) {
   if (target) target.classList.add('active');
 
   if (name === 'map') {
-    // Wait two frames so the SVG is laid out before measuring it.
+    // Wait two frames so the canvas-host has its measured size.
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (pendingProjectMode) {
-        enterProjectMode(pendingProjectMode);
-        pendingProjectMode = null;
-      } else if (focusId === null) {
-        initWormhole();
-      } else if (currentProject) {
-        // Coming back to the tab while in project mode — re-render the hub.
-        renderProjectScene(currentProject);
-      } else {
-        currentScene = computeScene(focusId);
-        renderScene(currentScene);
-      }
-      if (pendingWarpTarget) {
-        warpTo(pendingWarpTarget);
-        pendingWarpTarget = null;
-      }
+      initSpaceMap();
     }));
   } else if (name === 'queue') {
     renderQueue();
@@ -1004,10 +949,16 @@ function renderProjects() {
 }
 
 function drillIntoProject(repo) {
-  // Open the project hub view (project name at centre, domains around it,
-  // top-3 topics per domain on the outer ring). Click a topic to travel into
-  // the standard wormhole at that topic.
-  pendingProjectMode = repo;
+  // Switch to the map tab and warp to the most-recently-touched topic in the
+  // requested repo. The map shows everything in spatial context, so a
+  // project-specific scene isn't needed — landing the camera on a topic from
+  // the repo is enough to orient the user.
+  if (!DATA) return;
+  const items = (DATA.nodes || [])
+    .filter(n => n.kind !== 'domain' && n.kind !== 'user' && n.repo === repo);
+  if (items.length === 0) { switchTab('map'); return; }
+  items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  pendingWarpTarget = items[0].id;
   switchTab('map');
 }
 
@@ -1219,933 +1170,811 @@ function moveTip(ev) {
 function hideTip() { document.getElementById('tooltip').style.display='none'; }
 
 // ══════════════════════════════════════════════════════════
-// MAP TAB — Wormhole (SVG, bounded)
+// MAP TAB — Space (PIXI canvas, deterministic layout, viewport-culled)
 // ══════════════════════════════════════════════════════════
 //
-// Replaces the unbounded PIXI/d3-force graph. Bounded memory: never more
-// than 10 nodes on screen (focus + up to 9 1-hop neighbors). Click a
-// neighbor to warp; click a wormhole portal to jump elsewhere.
-const NEIGHBOR_CAP = 9;
-let focusId = null;
-let warpHistory = [];
-let currentScene = null;          // { centerId, positions:{id:{x,y,tier}}, edges, nodes }
-let warpAnimating = false;
-let selectedNode = null;
-let selectedSet = new Set();
-let pendingWarpTarget = null;
-let pendingProjectMode = null;
-let currentProject = null;
-let cursorReady = false;
-let lastSize = { w: 0, h: 0 };
-
-// 2-hop preload caps. Total visible ≈ 1 + 9 + 18 = 28 nodes max.
-const HOP2_TOTAL_CAP = 18;
-const HOP2_PER_PARENT_CAP = 4;
-
-function pickInitialFocus() {
-  if (!DATA) return null;
-  const topics = DATA.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user');
-  if (topics.length === 0) return null;
-  topics.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-  return topics[0].id;
-}
-
-function initWormhole() {
-  if (!DATA) return;
-  setupSpaceshipCursor();
-  if (!focusId) {
-    focusId = pendingWarpTarget || pickInitialFocus();
-    pendingWarpTarget = null;
-  }
-  currentScene = computeScene(focusId);
-  renderScene(currentScene);
-  buildWormholePanel();
-  renderBreadcrumb();
-  if (!initWormhole._wired) {
-    window.addEventListener('resize', () => {
-      if (currentTab !== 'map') return;
-      if (currentProject) renderProjectScene(currentProject);
-      else if (currentScene) {
-        currentScene = computeScene(focusId);
-        renderScene(currentScene);
-      }
-    });
-    initWormhole._wired = true;
-  }
-}
-
-// Compute a 2-hop scene rooted at centerId. Returns deterministic positions
-// laid out as: focus at canvas centre, hop-1 in inner ring (R1), hop-2 in outer
-// ring (R2) grouped near each hop-1 parent's angular sector.
-function computeScene(centerId) {
-  const center = (DATA?.nodes || []).find(n => n.id === centerId);
-  if (!center) return null;
-  const nodeById = new Map(DATA.nodes.map(n => [n.id, n]));
-
-  // hop1 = direct neighbors of centre, capped + sorted by edge strength.
-  const hop1Edge = new Map();
-  for (const e of (DATA.edges || [])) {
-    let other = null;
-    if (e.source === centerId) other = e.target;
-    else if (e.target === centerId) other = e.source;
-    if (!other) continue;
-    const cur = hop1Edge.get(other);
-    if (!cur || (e.strength || 0) > (cur.strength || 0)) hop1Edge.set(other, e);
-  }
-  const hop1Items = [...hop1Edge.entries()]
-    .map(([id, edge]) => ({ node: nodeById.get(id), edge }))
-    .filter(x => x.node && x.node.kind !== 'domain' && x.node.kind !== 'user')
-    .sort((a, b) => (b.edge.strength || 0) - (a.edge.strength || 0))
-    .slice(0, NEIGHBOR_CAP);
-  const hop1Ids = new Set([centerId, ...hop1Items.map(x => x.node.id)]);
-
-  // hop2 = neighbors of hop1, excluding centre + hop1, deduped, capped.
-  const hop2List = [];
-  const hop2Seen = new Set();
-  for (const h1 of hop1Items) {
-    const cands = [];
-    for (const e of (DATA.edges || [])) {
-      let other = null;
-      if (e.source === h1.node.id) other = e.target;
-      else if (e.target === h1.node.id) other = e.source;
-      if (!other || hop1Ids.has(other) || hop2Seen.has(other)) continue;
-      const node = nodeById.get(other);
-      if (!node || node.kind === 'domain' || node.kind === 'user') continue;
-      cands.push({ node, edge: e, parentH1Id: h1.node.id });
-    }
-    cands
-      .sort((a, b) => (b.edge.strength || 0) - (a.edge.strength || 0))
-      .slice(0, HOP2_PER_PARENT_CAP)
-      .forEach(c => {
-        if (hop2Seen.has(c.node.id)) return;
-        hop2Seen.add(c.node.id);
-        hop2List.push(c);
-      });
-  }
-  const hop2Items = hop2List.slice(0, HOP2_TOTAL_CAP);
-
-  // Layout
-  const svg = document.getElementById('wormhole-svg');
-  const W = (svg && svg.clientWidth) || 800;
-  const H = (svg && svg.clientHeight) || 600;
-  const cx = W / 2, cy = H / 2;
-  const R1 = Math.min(W, H) * 0.22;
-  const R2 = Math.min(W, H) * 0.32;
-
-  const positions = {};
-  positions[centerId] = { x: cx, y: cy, tier: 0 };
-  const N1 = hop1Items.length;
-  const angleByH1 = {};
-  for (let i = 0; i < N1; i++) {
-    const ang = (i / Math.max(N1, 1)) * Math.PI * 2 - Math.PI / 2;
-    angleByH1[hop1Items[i].node.id] = ang;
-    positions[hop1Items[i].node.id] = { x: cx + Math.cos(ang) * R1, y: cy + Math.sin(ang) * R1, tier: 1 };
-  }
-  // hop2 grouped near their parent's angle
-  const childrenByParent = {};
-  for (const h2 of hop2Items) (childrenByParent[h2.parentH1Id] ||= []).push(h2);
-  for (const parentId in childrenByParent) {
-    const kids = childrenByParent[parentId];
-    const baseAng = angleByH1[parentId];
-    if (baseAng === undefined) continue;
-    for (let j = 0; j < kids.length; j++) {
-      const offset = (j - (kids.length - 1) / 2) * 0.22;
-      const ang = baseAng + offset;
-      positions[kids[j].node.id] = { x: cx + Math.cos(ang) * R2, y: cy + Math.sin(ang) * R2, tier: 2 };
-    }
-  }
-
-  // Edges: focus→hop1 + parent→hop2 (always source = upstream, so dashes flow outward).
-  const edges = [];
-  for (const h1 of hop1Items) {
-    edges.push({ source: centerId, target: h1.node.id, kind: h1.edge.kind, strength: h1.edge.strength || 0.5 });
-  }
-  for (const h2 of hop2Items) {
-    edges.push({ source: h2.parentH1Id, target: h2.node.id, kind: h2.edge.kind, strength: h2.edge.strength || 0.5 });
-  }
-
-  const nodes = {};
-  nodes[centerId] = nodeById.get(centerId);
-  for (const h1 of hop1Items) nodes[h1.node.id] = h1.node;
-  for (const h2 of hop2Items) nodes[h2.node.id] = h2.node;
-
-  return { centerId, positions, edges, nodes };
-}
-
-// warpTo routes through shiftToFocus when we have a current scene to diff
-// against — the click-to-shift smooth animation. Called from clicks, panel
-// portals, search hits, etc. Pass {noHistory:true} for back navigation.
-function warpTo(id, opts) {
-  opts = opts || {};
-  if (!id || warpAnimating || focusId === id) return;
-  if (!opts.noHistory && focusId) {
-    warpHistory.push(focusId);
-    if (warpHistory.length > 30) warpHistory.shift();
-  }
-  if (currentScene && !currentProject) {
-    shiftToFocus(id);
-  } else {
-    // No scene to diff against (first load, or coming out of project mode).
-    focusId = id;
-    currentScene = computeScene(id);
-    renderScene(currentScene);
-    buildWormholePanel();
-    renderBreadcrumb();
-  }
-}
-
-function warpBack() {
-  if (warpHistory.length === 0 || warpAnimating) return;
-  const prev = warpHistory.pop();
-  warpTo(prev, { noHistory: true });
-}
-
-function svgEl(name, attrs) {
-  const el = document.createElementNS('http://www.w3.org/2000/svg', name);
-  if (attrs) for (const k in attrs) el.setAttribute(k, attrs[k]);
-  return el;
-}
-
-// Wrap node visuals in an inner <g class="warp-bob"> so they bob independently of
-// the outer <g>'s position transform. Random delay + duration desyncs nodes.
-function bobInner(parent) {
-  const inner = svgEl('g', { class: 'warp-bob' });
-  inner.style.animationDelay = (-Math.random() * 3.2).toFixed(2) + 's';
-  inner.style.animationDuration = (2.6 + Math.random() * 1.6).toFixed(2) + 's';
-  parent.appendChild(inner);
-  return inner;
-}
-
-function nodeColorFor(n) {
-  return CLASS_COLORS[n.classification || 'gap'] || '#607d8b';
-}
-
-function edgeStyle(kind) {
-  switch (kind) {
-    case 'implies':        return { color: '#7c9ef3', dash: '0' };
-    case 'depends_on':     return { color: '#e6a817', dash: '4 3' };
-    case 'conflicts_with': return { color: '#e74c3c', dash: '2 4' };
-    case 'part_of':        return { color: '#1d9e75', dash: '0' };
-    default:               return { color: '#3d4468', dash: '0' };
-  }
-}
-
-function nodeRadiusForTier(tier) {
-  return tier === 0 ? 26 : tier === 1 ? 14 : 7;
-}
-
-function cssEscape(s) {
-  return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/(["\\])/g, '\\$1');
-}
-
-function renderScene(scene) {
-  const svg = document.getElementById('wormhole-svg');
-  if (!svg || !scene) return;
-  const W = svg.clientWidth, H = svg.clientHeight;
-  if (W < 50 || H < 50) {
-    requestAnimationFrame(() => renderScene(scene));
-    return;
-  }
-  lastSize = { w: W, h: H };
-  svg.innerHTML = '';
-
-  if (!scene.nodes[scene.centerId]) {
-    const cx = W / 2, cy = H / 2;
-    const t = svgEl('text', { x: cx, y: cy, class: 'warp-empty' });
-    t.textContent = 'PKG empty — extract some topics first.';
-    svg.appendChild(t);
-    return;
-  }
-
-  for (const e of scene.edges) addSceneEdge(svg, scene, e);
-
-  drawSceneNode(svg, scene.nodes[scene.centerId], scene.positions[scene.centerId], 0);
-  let i = 0;
-  const ringIds = Object.keys(scene.positions)
-    .filter(id => id !== scene.centerId)
-    .sort((a, b) => scene.positions[a].tier - scene.positions[b].tier);
-  for (const id of ringIds) {
-    drawSceneNode(svg, scene.nodes[id], scene.positions[id], 0.2 + i * 0.05);
-    i++;
-  }
-  applyPlanningStyle();
-}
-
-function addSceneEdge(svg, scene, e, opts) {
-  opts = opts || {};
-  const a = scene.positions[e.source];
-  const b = scene.positions[e.target];
-  if (!a || !b) return;
-  const style = edgeStyle(e.kind);
-  // Edge tier = max of its endpoint tiers. Hop-1 edges (focus→hop1) are
-  // bright; hop-2 edges (parent→hop2) are dimmer to push them visually behind
-  // the active neighborhood.
-  const edgeTier = Math.max(a.tier || 0, b.tier || 0);
-  const baseOpacity = edgeTier <= 1 ? 0.55 : 0.22;
-  const line = svgEl('line', {
-    x1: a.x, y1: a.y, x2: b.x, y2: b.y,
-    stroke: style.color,
-    'stroke-width': edgeTier <= 1 ? 1 + (e.strength || 0.5) * 1.6 : 1 + (e.strength || 0.5) * 0.8,
-    'stroke-opacity': baseOpacity,
-    'stroke-dasharray': '5 7',
-    'stroke-linecap': 'round',
-    'data-edge-id': e.source + '|' + e.target,
-    'data-edge-tier': edgeTier,
-    class: 'warp-edge'
-  });
-  if (opts.startInvisible) line.style.opacity = '0';
-  svg.appendChild(line);
-}
-
-function drawSceneNode(svg, n, pos, animDelay, opts) {
-  opts = opts || {};
-  const tier = pos.tier;
-  const isFocus = (tier === 0);
-  const r = nodeRadiusForTier(tier);
-  const col = nodeColorFor(n);
-  const g = svgEl('g', {
-    transform: `translate(${pos.x},${pos.y})`,
-    class: 'warp-node' + (isFocus ? ' focus' : ''),
-    'data-id': n.id,
-    'data-tier': tier
-  });
-  if (animDelay) g.style.animationDelay = animDelay + 's';
-  if (opts.startInvisible) g.style.opacity = '0';
-
-  // Inner bob group — all visuals attach here so they bob together.
-  const inner = bobInner(g);
-
-  // Halo: focus keeps the original two-ring treatment; hop-1 / hop-2 get a
-  // single softer halo proportional to their radius.
-  if (isFocus) {
-    inner.appendChild(svgEl('circle', { r: r + 14, fill: col, opacity: 0.18, class: 'warp-halo' }));
-    inner.appendChild(svgEl('circle', { r: r + 6, fill: 'none', stroke: col, 'stroke-opacity': 0.35, 'stroke-width': 1 }));
-  } else {
-    const haloR = tier === 1 ? r + 9 : r + 5;
-    const haloOp = tier === 1 ? 0.22 : 0.28;
-    inner.appendChild(svgEl('circle', { r: haloR, fill: col, opacity: haloOp, class: 'warp-halo' }));
-  }
-  if (selectedSet.has(n.id)) {
-    inner.appendChild(svgEl('circle', { r: r + 4, fill: 'none', stroke: '#f39c12', 'stroke-width': 2, 'stroke-opacity': 0.7 }));
-  }
-  inner.appendChild(svgEl('circle', {
-    r, fill: col,
-    opacity: tier === 0 ? 0.95 : tier === 1 ? 0.85 : 0.7,
-    stroke: '#fff', 'stroke-opacity': isFocus ? 0.7 : 0.25,
-    'stroke-width': isFocus ? 2 : 1,
-    class: 'main-circle'
-  }));
-
-  // Label only for focus + hop1 (hop2 dots are unlabelled — keeps the field clean).
-  if (tier <= 1) {
-    const text = svgEl('text', {
-      y: r + 14, 'text-anchor': 'middle',
-      'font-size': isFocus ? 13 : 11,
-      fill: isFocus ? '#e2e8f0' : '#a4adc4',
-      'font-weight': isFocus ? 600 : 400
-    });
-    const max = isFocus ? 32 : 20;
-    text.textContent = (n.topic || '').length > max ? n.topic.slice(0, max - 1) + '…' : n.topic;
-    inner.appendChild(text);
-    if (isFocus) {
-      const sub = svgEl('text', {
-        y: r + 28, 'text-anchor': 'middle', 'font-size': 10, fill: '#555e7a'
-      });
-      sub.textContent = `${n.domain || '—'} · ${Math.round((n.recall_now || 0) * 100)}% recall`;
-      inner.appendChild(sub);
-    }
-  }
-
-  // Single click → open detail panel · double click → warp focus + open details.
-  g.style.cursor = 'pointer';
-  let clickTimer = null;
-  g.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    if (ev.shiftKey) { toggleSelect(n.id); renderScene(currentScene); return; }
-    if (clickTimer) return; // 2nd click of a double — let dblclick handle it
-    clickTimer = setTimeout(() => {
-      clickTimer = null;
-      selectGraphNode(n.id);
-    }, 220);
-  });
-  g.addEventListener('dblclick', (ev) => {
-    ev.stopPropagation();
-    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-    if (!isFocus) warpTo(n.id);
-    selectGraphNode(n.id);
-  });
-  g.addEventListener('mouseover', () => showNodeTooltip(n, null));
-  g.addEventListener('mouseout', hideTip);
-
-  svg.appendChild(g);
-}
-
-// Smooth-shift from currentScene to a new scene centered on newId.
+// Domain stars + topic planets on a fixed spatial layout shipped from the
+// server. Camera-only navigation: drag to pan, wheel to zoom, click a star
+// in the bottom HUD to warp. Filters dim non-matches and pulse matches —
+// nothing is hidden, so spatial memory stays intact.
 //
-//   PHASE 1 — PAN:    every visible node translates by the same delta so the
-//                     clicked node ends up at the centre. All survivors keep
-//                     their relative positions during this slide. Arriving
-//                     hop-2 nodes (not in the old scene) stay hidden.
-//   PHASE 2 — SETTLE: arriving nodes fade in at their canonical positions;
-//                     out-of-2-hop departers fade out where they landed; common
-//                     nodes drift from their post-pan spots to the new
-//                     canonical ring positions; edges follow throughout.
-function shiftToFocus(newId) {
-  if (warpAnimating) return;
-  warpAnimating = true;
-  const oldScene = currentScene;
-  const newScene = computeScene(newId);
-  if (!newScene) { warpAnimating = false; return; }
-  if (!oldScene) {
-    focusId = newId;
-    currentScene = newScene;
-    renderScene(newScene);
-    buildWormholePanel();
-    renderBreadcrumb();
-    warpAnimating = false;
-    return;
-  }
-  focusId = newId;
+// Bounded RAM: only nodes inside the viewport (+ 1-hop & 2-hop neighbours)
+// have PIXI graphics. Beyond that, graphics are destroyed; pan back and
+// they're recreated. Nothing is ever simulated — positions are static, only
+// a tiny vertical bob keeps the map alive.
 
-  const svg = document.getElementById('wormhole-svg');
+let mapApp = null, mapWorld = null;
+let mapEdgeGfx = null, mapNodeLayer = null, mapLabelLayer = null, mapHaloGfx = null;
+let mapStarfieldGfx = null;
+let mapCameraX = 0, mapCameraY = 0, mapCameraK = 0.5;
+let mapHost = null;
+let mapNodesById = new Map();
+let mapAdj = new Map();
+let mapLiveNodes = new Map();   // id → { gfx, label, labelOff, radius }
+let mapLiveTier = new Map();    // id → 0 inView · 1 oneHop · 2 twoHop
+let mapHoverId = null;
+let mapWarping = false;
+let mapWarpHistory = [];
+let mapInitialised = false;
+let mapStarBtns = new Map();
+let mapSearchQuery = '';
+let mapSearchMatches = new Set();
+let mapPlanningMode = false;
+let mapHintTimer = null;
+let mapResizeQueued = false;
 
-  const oldIds = new Set(Object.keys(oldScene.positions));
-  const newIds = new Set(Object.keys(newScene.positions));
-  const movers = [];
-  const departing = [];
-  const arriving = [];
-  for (const id of oldIds) {
-    if (!newIds.has(id)) {
-      departing.push(id);
-    } else if (oldScene.positions[id].tier !== newScene.positions[id].tier) {
-      departing.push(id);
-      arriving.push(id);
-    } else {
-      movers.push(id);
-    }
-  }
-  for (const id of newIds) if (!oldIds.has(id) && arriving.indexOf(id) < 0) arriving.push(id);
+// External entry-points referenced by switchTab() etc.
+let pendingWarpTarget = null;
+let pendingProjectMode = null;       // legacy compat — drillIntoProject uses warp instead
+let selectedNode = null;             // id of node shown in detail panel
+let selectedSet = new Set();         // multi-select for "Quiz selected"
 
-  const ekey = e => e.source + '|' + e.target;
-  const oldE = new Map(oldScene.edges.map(e => [ekey(e), e]));
-  const newE = new Map(newScene.edges.map(e => [ekey(e), e]));
-  const edgeMovers = [];
-  const edgeDeparting = [];
-  const edgeArriving = [];
-  for (const [k, e] of oldE) {
-    if (newE.has(k)) edgeMovers.push({ key: k, oldEdge: e, newEdge: newE.get(k) });
-    else edgeDeparting.push({ key: k, edge: e });
-  }
-  for (const [k, e] of newE) if (!oldE.has(k)) edgeArriving.push({ key: k, edge: e });
+const MAP_BOB_AMP_BASE = 2.0;
+const MAP_BOB_AMP_MATCH = 6.0;
+const MAP_K_MIN = 0.08, MAP_K_MAX = 2.4;
+const MAP_INITIAL_K = 0.45;
+const MAP_VIEWPORT_PAD = 220;
+const MAP_WARP_MS = 750;
 
-  // Pre-render arrivers at their canonical (new-scene) positions, invisible.
-  // They're in the DOM throughout but only become visible during phase 2.
-  for (const id of arriving) {
-    drawSceneNode(svg, newScene.nodes[id], newScene.positions[id], 0, { startInvisible: true });
-  }
-  for (const ae of edgeArriving) {
-    addSceneEdge(svg, newScene, ae.edge, { startInvisible: true });
-  }
+// Render-budget caps. Live PIXI sprites never exceed (CAP_INVIEW + CAP_1HOP +
+// CAP_2HOP + #stars + 1). Tier sets are filled by proximity to the viewport
+// centre and then expanded one hop at a time.
+const MAP_CAP_INVIEW = 400;
+const MAP_CAP_1HOP   = 150;
+const MAP_CAP_2HOP   = 100;
 
-  // Pan delta: how far must we slide everything so the clicked node ends up at
-  // the new scene's centre? If newId wasn't in the old scene (e.g. search hit),
-  // pan delta is zero — phase 1 is a no-op and we go straight to settling.
-  const oldFocusP = oldScene.positions[newId];
-  const newFocusP = newScene.positions[newId];
-  const dx = oldFocusP ? (newFocusP.x - oldFocusP.x) : 0;
-  const dy = oldFocusP ? (newFocusP.y - oldFocusP.y) : 0;
+// LOD thresholds. Hysteresis on the starfield boundary so wiggling at the
+// edge doesn't thrash the sprite pool.
+const MAP_LOD_LABELS_K     = 0.55;
+const MAP_LOD_EDGES_K      = 0.40;
+const MAP_LOD_STARFIELD_IN = 0.22;   // below this → starfield
+const MAP_LOD_STARFIELD_OUT= 0.28;   // above this → individual sprites
+let mapStarfieldMode = false;
 
-  const PHASE1_DUR = 550; // pan
-  const PHASE2_DUR = 550; // settle + fade
-  const TOTAL = PHASE1_DUR + PHASE2_DUR;
-  const start = performance.now();
-
-  const moverEls = movers.map(id => ({ id, el: svg.querySelector(`g.warp-node[data-id="${cssEscape(id)}"]`) }));
-  const departingEls = departing.map(id => {
-    const all = svg.querySelectorAll(`g.warp-node[data-id="${cssEscape(id)}"]`);
-    const match = [...all].find(el => parseInt(el.getAttribute('data-tier')) === oldScene.positions[id].tier);
-    return { id, el: match };
-  });
-  const arrivingEls = arriving.map(id => {
-    const all = svg.querySelectorAll(`g.warp-node[data-id="${cssEscape(id)}"]`);
-    const match = [...all].find(el => parseInt(el.getAttribute('data-tier')) === newScene.positions[id].tier);
-    return { id, el: match };
-  });
-  const edgeMoverEls = edgeMovers.map(em => ({ ...em, el: svg.querySelector(`line[data-edge-id="${em.key}"]`) }));
-  const edgeDepartingEls = edgeDeparting.map(de => ({ ...de, el: svg.querySelector(`line[data-edge-id="${de.key}"]`) }));
-  const edgeArrivingEls = edgeArriving.map(ae => ({ ...ae, el: svg.querySelector(`line[data-edge-id="${ae.key}"]`) }));
-
-  // Position of any node at (eased1, eased2):
-  //   movers:    pan by delta * eased1; then drift from (oldP+delta) to newP by eased2.
-  //   departers: pan by delta * eased1; freeze at (oldP+delta) in phase 2.
-  //   arrivers:  always at newP (canonical).
-  function endpointPos(id, eased1, eased2) {
-    const oldP = oldScene.positions[id];
-    const newP = newScene.positions[id];
-    if (oldP && newP) {
-      const px = oldP.x + dx * eased1;
-      const py = oldP.y + dy * eased1;
-      const panEndX = oldP.x + dx;
-      const panEndY = oldP.y + dy;
-      return [px + (newP.x - panEndX) * eased2, py + (newP.y - panEndY) * eased2];
-    }
-    if (oldP) return [oldP.x + dx * eased1, oldP.y + dy * eased1];
-    if (newP) return [newP.x, newP.y];
-    return null;
-  }
-
-  function tick(now) {
-    const elapsed = now - start;
-    let eased1, eased2;
-    if (elapsed < PHASE1_DUR) {
-      const t1 = elapsed / PHASE1_DUR;
-      eased1 = 1 - Math.pow(1 - t1, 3);
-      eased2 = 0;
-    } else if (elapsed < TOTAL) {
-      eased1 = 1;
-      const t2 = (elapsed - PHASE1_DUR) / PHASE2_DUR;
-      eased2 = 1 - Math.pow(1 - t2, 3);
-    } else {
-      finalize();
-      return;
-    }
-
-    for (const m of moverEls) {
-      if (!m.el) continue;
-      const p = endpointPos(m.id, eased1, eased2);
-      if (p) m.el.setAttribute('transform', `translate(${p[0].toFixed(2)},${p[1].toFixed(2)})`);
-    }
-    for (const d of departingEls) {
-      if (!d.el) continue;
-      const p = endpointPos(d.id, eased1, eased2);
-      if (p) d.el.setAttribute('transform', `translate(${p[0].toFixed(2)},${p[1].toFixed(2)})`);
-      d.el.style.opacity = String(1 - eased2);
-    }
-    for (const a of arrivingEls) if (a.el) a.el.style.opacity = String(eased2);
-
-    for (const em of edgeMoverEls) {
-      if (!em.el) continue;
-      const a = endpointPos(em.oldEdge.source, eased1, eased2);
-      const b = endpointPos(em.oldEdge.target, eased1, eased2);
-      if (!a || !b) continue;
-      em.el.setAttribute('x1', a[0].toFixed(2)); em.el.setAttribute('y1', a[1].toFixed(2));
-      em.el.setAttribute('x2', b[0].toFixed(2)); em.el.setAttribute('y2', b[1].toFixed(2));
-    }
-    for (const de of edgeDepartingEls) {
-      if (!de.el) continue;
-      const a = endpointPos(de.edge.source, eased1, eased2);
-      const b = endpointPos(de.edge.target, eased1, eased2);
-      if (a && b) {
-        de.el.setAttribute('x1', a[0].toFixed(2)); de.el.setAttribute('y1', a[1].toFixed(2));
-        de.el.setAttribute('x2', b[0].toFixed(2)); de.el.setAttribute('y2', b[1].toFixed(2));
-      }
-      de.el.style.opacity = String(1 - eased2);
-    }
-    for (const ae of edgeArrivingEls) {
-      if (!ae.el) continue;
-      const a = endpointPos(ae.edge.source, eased1, eased2);
-      const b = endpointPos(ae.edge.target, eased1, eased2);
-      if (a && b) {
-        ae.el.setAttribute('x1', a[0].toFixed(2)); ae.el.setAttribute('y1', a[1].toFixed(2));
-        ae.el.setAttribute('x2', b[0].toFixed(2)); ae.el.setAttribute('y2', b[1].toFixed(2));
-      }
-      ae.el.style.opacity = String(eased2);
-    }
-
-    requestAnimationFrame(tick);
-  }
-
-  function finalize() {
-    for (const d of departingEls) if (d.el) d.el.remove();
-    for (const de of edgeDepartingEls) if (de.el) de.el.remove();
-    for (const a of arrivingEls) if (a.el) a.el.style.opacity = '';
-    for (const ae of edgeArrivingEls) if (ae.el) ae.el.style.opacity = '';
-    currentScene = newScene;
-    buildWormholePanel();
-    renderBreadcrumb();
-    warpAnimating = false;
-  }
-
-  requestAnimationFrame(tick);
-}
-
-// ── Project hub mode ──────────────────────────────────────
-// Project name at centre, domain hubs around it, ≤3 most-recent topics per
-// domain on the outer ring. Clicking a topic warps into the wormhole at that
-// topic (drops out of project mode).
-function enterProjectMode(repo) {
-  currentProject = repo;
-  focusId = null;
-  currentScene = null;
-  warpHistory = [];
-  renderProjectScene(repo);
-  buildWormholePanel();
-  renderBreadcrumb();
-}
-
-function renderProjectScene(repo) {
-  const svg = document.getElementById('wormhole-svg');
-  if (!svg) return;
-  const W = svg.clientWidth, H = svg.clientHeight;
-  if (W < 50 || H < 50) {
-    requestAnimationFrame(() => renderProjectScene(repo));
-    return;
-  }
-  const cx = W / 2, cy = H / 2;
-  const R1 = Math.min(W, H) * 0.20;
-  const R2 = Math.min(W, H) * 0.40;
-  svg.innerHTML = '';
-
-  const projectTopics = (DATA.nodes || [])
-    .filter(n => n.kind !== 'domain' && n.kind !== 'user')
-    .filter(n => n.repo === repo || (Array.isArray(n.repos) && n.repos.indexOf(repo) >= 0));
-  if (projectTopics.length === 0) {
-    const t = svgEl('text', { x: cx, y: cy, class: 'warp-empty' });
-    t.textContent = `No topics for "${repo}" yet.`;
-    svg.appendChild(t);
-    return;
-  }
-
-  const byDomain = {};
-  for (const t of projectTopics) {
-    const d = t.domain || 'Other';
-    (byDomain[d] ||= []).push(t);
-  }
-  const fullCounts = {};
-  for (const d in byDomain) {
-    fullCounts[d] = byDomain[d].length;
-    byDomain[d].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-    byDomain[d] = byDomain[d].slice(0, 3);
-  }
-  const domains = Object.keys(byDomain).sort();
-  const N = domains.length;
-
-  for (let i = 0; i < N; i++) {
-    const ang = (i / N) * Math.PI * 2 - Math.PI / 2;
-    const dx = cx + Math.cos(ang) * R1;
-    const dy = cy + Math.sin(ang) * R1;
-    addProjectEdge(svg, cx, cy, dx, dy, '#7c9ef3');
-    const topics = byDomain[domains[i]];
-    for (let j = 0; j < topics.length; j++) {
-      const offset = (j - (topics.length - 1) / 2) * 0.22;
-      const tang = ang + offset;
-      const tx = cx + Math.cos(tang) * R2;
-      const ty = cy + Math.sin(tang) * R2;
-      addProjectEdge(svg, dx, dy, tx, ty, DOMAIN_COLORS[domains[i]] || '#607d8b');
-    }
-  }
-
-  drawProjectHub(svg, repo, cx, cy);
-
-  for (let i = 0; i < N; i++) {
-    const ang = (i / N) * Math.PI * 2 - Math.PI / 2;
-    const dx = cx + Math.cos(ang) * R1;
-    const dy = cy + Math.sin(ang) * R1;
-    drawDomainHub(svg, domains[i], dx, dy, byDomain[domains[i]], fullCounts[domains[i]], 0.18 + i * 0.04);
-    const topics = byDomain[domains[i]];
-    for (let j = 0; j < topics.length; j++) {
-      const offset = (j - (topics.length - 1) / 2) * 0.22;
-      const tang = ang + offset;
-      const tx = cx + Math.cos(tang) * R2;
-      const ty = cy + Math.sin(tang) * R2;
-      drawProjectTopic(svg, topics[j], tx, ty, 0.4 + i * 0.04 + j * 0.05);
-    }
-  }
-}
-
-function addProjectEdge(svg, x1, y1, x2, y2, color) {
-  svg.appendChild(svgEl('line', {
-    x1, y1, x2, y2,
-    stroke: color, 'stroke-width': 1.4, 'stroke-opacity': 0.5,
-    'stroke-dasharray': '5 7', 'stroke-linecap': 'round',
-    class: 'warp-edge'
-  }));
-}
-
-function drawProjectHub(svg, repo, x, y) {
-  const g = svgEl('g', {
-    transform: `translate(${x},${y})`,
-    class: 'warp-node focus',
-    'data-id': '__project__'
-  });
-  const inner = bobInner(g);
-  inner.appendChild(svgEl('circle', { r: 38, fill: '#7c9ef3', opacity: 0.15, class: 'warp-halo' }));
-  inner.appendChild(svgEl('circle', { r: 28, fill: '#1e2340', stroke: '#7c9ef3', 'stroke-width': 2, 'stroke-opacity': 0.55 }));
-  const t = svgEl('text', { y: 4, 'text-anchor': 'middle', 'font-size': 12, fill: '#cfd6e8', 'font-weight': 600 });
-  t.textContent = (repo || '').length > 20 ? (repo || '').slice(0, 19) + '…' : repo;
-  inner.appendChild(t);
-  const sub = svgEl('text', { y: 46, 'text-anchor': 'middle', 'font-size': 9, fill: '#7c9ef3', 'letter-spacing': 1.5 });
-  sub.textContent = 'PROJECT';
-  inner.appendChild(sub);
-  svg.appendChild(g);
-}
-
-function drawDomainHub(svg, domain, x, y, topics, fullCount, animDelay) {
-  const col = DOMAIN_COLORS[domain] || '#607d8b';
-  const g = svgEl('g', {
-    transform: `translate(${x},${y})`,
-    class: 'warp-node',
-    'data-id': '__domain__:' + domain
-  });
-  if (animDelay) g.style.animationDelay = animDelay + 's';
-  const inner = bobInner(g);
-  inner.appendChild(svgEl('circle', { r: 23, fill: col, opacity: 0.22, class: 'warp-halo' }));
-  inner.appendChild(svgEl('circle', { r: 14, fill: col, opacity: 0.85, stroke: '#fff', 'stroke-opacity': 0.3, 'stroke-width': 1 }));
-  const t = svgEl('text', {
-    y: -22, 'text-anchor': 'middle', 'font-size': 9, fill: col, 'letter-spacing': 1.5,
-    style: 'text-transform:uppercase;font-weight:600'
-  });
-  t.textContent = domain;
-  inner.appendChild(t);
-  const cnt = svgEl('text', { y: 4, 'text-anchor': 'middle', 'font-size': 9, fill: '#0a0c14', 'font-weight': 700 });
-  cnt.textContent = String(fullCount);
-  inner.appendChild(cnt);
-  if (topics && topics.length) {
-    g.style.cursor = 'pointer';
-    g.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      exitProjectModeAndWarpTo(topics[0].id);
-    });
-    g.addEventListener('mouseover', () => {
-      const tip = document.getElementById('tooltip');
-      tip.innerHTML = `<b>${escapeHtml(domain)}</b><br><span style="color:#555e7a">${fullCount} topic${fullCount === 1 ? '' : 's'} · click to enter</span>`;
-      tip.style.display = 'block';
-    });
-    g.addEventListener('mouseout', hideTip);
-  }
-  svg.appendChild(g);
-}
-
-function drawProjectTopic(svg, n, x, y, animDelay) {
-  const col = nodeColorFor(n);
-  const g = svgEl('g', {
-    transform: `translate(${x},${y})`,
-    class: 'warp-node',
-    'data-id': n.id
-  });
-  if (animDelay) g.style.animationDelay = animDelay + 's';
-  const inner = bobInner(g);
-  inner.appendChild(svgEl('circle', { r: 18, fill: col, opacity: 0.22, class: 'warp-halo' }));
-  inner.appendChild(svgEl('circle', { r: 10, fill: col, opacity: 0.9, stroke: '#fff', 'stroke-opacity': 0.25, 'stroke-width': 1 }));
-  const t = svgEl('text', { y: 24, 'text-anchor': 'middle', 'font-size': 10, fill: '#a4adc4' });
-  const max = 22;
-  t.textContent = (n.topic || '').length > max ? n.topic.slice(0, max - 1) + '…' : n.topic;
-  inner.appendChild(t);
-  g.style.cursor = 'pointer';
-  g.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    exitProjectModeAndWarpTo(n.id);
-  });
-  g.addEventListener('mouseover', () => showNodeTooltip(n, null));
-  g.addEventListener('mouseout', hideTip);
-  svg.appendChild(g);
-}
-
-// Project hub → wormhole transition: fade the hub out, then warp to the topic.
-// (Direct shiftToFocus would be diffing project-hub IDs against wormhole IDs,
-//  which doesn't make sense — these are different scene types.)
-function exitProjectModeAndWarpTo(id) {
-  if (warpAnimating) return;
-  warpAnimating = true;
-  const svg = document.getElementById('wormhole-svg');
-  svg.style.transition = 'opacity .4s ease-out';
-  svg.style.opacity = '0';
-  setTimeout(() => {
-    currentProject = null;
-    currentScene = null;
-    focusId = null;
-    svg.style.transition = '';
-    svg.style.opacity = '';
-    warpAnimating = false;
-    warpTo(id);
-  }, 420);
-}
-
-function buildWormholePanel() {
-  const list = document.getElementById('wormhole-list');
-  if (!list) return;
-  list.innerHTML = '';
-  const portals = computePortals();
-  if (portals.length === 0) {
-    list.innerHTML = '<div style="font-size:10px;color:#555e7a;padding:0 4px">no other regions yet</div>';
-    return;
-  }
-  for (const p of portals) {
-    const btn = document.createElement('button');
-    btn.className = 'wormhole-portal' + (p.kind === 'danger' ? ' danger' : '') + (p.active ? ' active' : '');
-    if (p.color) btn.style.setProperty('--portal-color', p.color);
-    btn.title = p.active ? `You're here · ${p.sub}` : `Warp to ${p.label} · ${p.sub}`;
-    btn.innerHTML = `<span class="wp-dot"></span><span class="wp-label">${escapeHtml(p.label)}</span><span class="wp-sub">${escapeHtml(p.sub)}</span>`;
-    btn.onclick = () => warpTo(p.targetId);
-    list.appendChild(btn);
-  }
-}
-
-function toggleWormholeHelp(ev) {
-  if (ev) ev.stopPropagation();
-  const pop = document.getElementById('wormhole-help-popover');
-  if (!pop) return;
-  const showing = pop.classList.toggle('visible');
-  if (showing) {
-    setTimeout(() => {
-      document.addEventListener('click', closeWormholeHelp, { once: true });
-    }, 0);
-  }
-}
-function closeWormholeHelp() {
-  const pop = document.getElementById('wormhole-help-popover');
-  if (pop) pop.classList.remove('visible');
-}
+// Per-domain accent colour for HUD pills + star fills. Falls back to a soft
+// blue for unknown domains.
+const DOMAIN_HUE = {
+  'Language': '#7c9ef3', 'Database': '#1d9e75', 'Auth': '#e74c3c',
+  'API': '#9b59b6', 'Frontend': '#f59e0b', 'DevOps': '#06b6d4',
+  'Architecture': '#c39bd3', 'Performance': '#ef9f27',
+  'Security': '#e24b4a', 'Testing': '#1abc9c', 'Tooling': '#95a5a6',
+  'Data': '#3498db', 'Other': '#607d8b',
+};
 
 function escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function computePortals() {
-  if (!DATA) return [];
-  const focus = currentScene?.nodes?.[currentScene.centerId];
-  const others = DATA.nodes.filter(n => n.kind !== 'domain' && n.kind !== 'user' && n.id !== focusId);
-  const portals = [];
-
-  // 1. Weakest-topic danger portal
-  if (others.length) {
-    const weakest = others.slice().sort((a, b) => (a.recall_now || 0) - (b.recall_now || 0))[0];
-    portals.push({
-      kind: 'danger', icon: '⚠', label: weakest.topic,
-      sub: `weakest · ${Math.round((weakest.recall_now || 0) * 100)}%`,
-      color: '#e74c3c', targetId: weakest.id
-    });
-  }
-
-  // 2. Top domains — include the current focus's domain so it can be marked active.
-  const byDomain = {};
-  for (const n of others) {
-    if (!n.domain) continue;
-    (byDomain[n.domain] ||= []).push(n);
-  }
-  // If the current focus belongs to a domain, ensure that domain is in the bucket
-  // even if it has no other topics (so the user always sees a "you are here" pill).
-  if (focus?.domain && !byDomain[focus.domain]) byDomain[focus.domain] = [focus];
-  const domains = Object.entries(byDomain)
-    .sort((a, b) => {
-      // Current domain first, then by topic count
-      if (a[0] === focus?.domain) return -1;
-      if (b[0] === focus?.domain) return 1;
-      return b[1].length - a[1].length;
-    })
-    .slice(0, 4);
-  for (const [d, items] of domains) {
-    items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-    portals.push({
-      kind: 'domain', icon: '◆', label: d,
-      sub: `${items.length} topic${items.length === 1 ? '' : 's'}`,
-      color: DOMAIN_COLORS[d] || '#3d4468',
-      targetId: items[0].id,
-      active: d === focus?.domain
-    });
-  }
-
-  // 3. Top projects — include current focus's repo so it can be marked active.
-  const byRepo = {};
-  for (const n of others) {
-    if (!n.repo) continue;
-    (byRepo[n.repo] ||= []).push(n);
-  }
-  if (focus?.repo && !byRepo[focus.repo]) byRepo[focus.repo] = [focus];
-  const repos = Object.entries(byRepo)
-    .sort((a, b) => {
-      if (a[0] === focus?.repo) return -1;
-      if (b[0] === focus?.repo) return 1;
-      return b[1].length - a[1].length;
-    })
-    .slice(0, 3);
-  for (const [r, items] of repos) {
-    items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-    portals.push({
-      kind: 'repo', icon: '▣', label: r,
-      sub: `${items.length} topic${items.length === 1 ? '' : 's'}`,
-      color: '#9b59b6',
-      targetId: items[0].id,
-      active: r === focus?.repo
-    });
-  }
-
-  return portals;
+function _hexFromCss(c) { return parseInt(c.slice(1), 16); }
+function _lerpHex(a, b, t) {
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  return ((Math.round(ar + (br - ar) * t) << 16) |
+          (Math.round(ag + (bg - ag) * t) << 8) |
+           Math.round(ab + (bb - ab) * t));
+}
+function _topicColorHex(n) {
+  const r = n.recall_now != null ? n.recall_now : 0;
+  if (r >= 0.7) return _lerpHex(0xef9f27, 0x1d9e75, (r - 0.7) / 0.3);
+  return _lerpHex(0xe24b4a, 0xef9f27, r / 0.7);
+}
+function _topicRadius(n) {
+  return Math.max(6, Math.min(22, 6 + (n.stability || 1) * 1.2));
+}
+function _edgeColor(kind) {
+  if (kind === 'implies') return 0x06b6d4;
+  if (kind === 'depends_on') return 0xf59e0b;
+  if (kind === 'conflicts_with') return 0xe24b4a;
+  if (kind === 'part_of') return 0x1d9e75;
+  return 0x3d4468;
 }
 
-function renderBreadcrumb() {
-  const el = document.getElementById('warp-history');
-  if (!el) return;
-  if (warpHistory.length === 0) { el.innerHTML = ''; return; }
-  el.innerHTML = `<button class="warp-back" onclick="warpBack()">← back</button>
-                  <span class="warp-trail">jumped ${warpHistory.length}×</span>`;
-}
-
-// Entry point used by drillIntoProject() — warps the wormhole to the most-recent
-// topic in the requested repo.
-function applyProjectFilter(repo) {
+// ── boot ───────────────────────────────────────────────────────────────────
+function initSpaceMap() {
   if (!DATA) return;
-  const items = DATA.nodes
-    .filter(n => n.kind !== 'domain' && n.kind !== 'user' && n.repo === repo);
-  if (items.length === 0) return;
-  items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-  warpTo(items[0].id);
+  if (mapInitialised) {
+    onMapResize();
+    if (pendingWarpTarget) {
+      const id = pendingWarpTarget; pendingWarpTarget = null;
+      requestAnimationFrame(() => warpTo(id));
+    }
+    return;
+  }
+  mapHost = document.getElementById('map-canvas-host');
+  if (!mapHost) return;
+  buildMapDataIndices();
+  initMapPixi();
+  buildStarfield();
+  buildWarpHud();
+  attachMapInputs();
+  // Initial camera: home (user node @ origin) at modest zoom.
+  mapCameraK = MAP_INITIAL_K;
+  centerCameraOnWorld(0, 0, /*animate=*/false);
+  evaluateLod();
+  reconcileLiveNodes();
+  updateWarpHudActive();
+  mapInitialised = true;
+  showMapHint();
+  if (pendingWarpTarget) {
+    const id = pendingWarpTarget; pendingWarpTarget = null;
+    requestAnimationFrame(() => warpTo(id));
+  }
 }
 
-// Search — typeahead. Click a hit → warp to it.
+function buildMapDataIndices() {
+  mapNodesById.clear();
+  mapAdj.clear();
+  for (const n of (DATA.nodes || [])) {
+    mapNodesById.set(n.id, n);
+    if (!mapAdj.has(n.id)) mapAdj.set(n.id, new Set());
+  }
+  for (const e of (DATA.edges || [])) {
+    const s = typeof e.source === 'object' ? e.source.id : e.source;
+    const t = typeof e.target === 'object' ? e.target.id : e.target;
+    if (!mapAdj.has(s)) mapAdj.set(s, new Set());
+    if (!mapAdj.has(t)) mapAdj.set(t, new Set());
+    mapAdj.get(s).add(t); mapAdj.get(t).add(s);
+  }
+}
+
+function initMapPixi() {
+  mapApp = new PIXI.Application({
+    backgroundAlpha: 0,
+    resizeTo: mapHost,
+    antialias: true,
+    resolution: window.devicePixelRatio || 1,
+    autoDensity: true,
+  });
+  mapHost.appendChild(mapApp.view);
+  mapWorld = new PIXI.Container();
+  mapApp.stage.addChild(mapWorld);
+  // z-order: starfield (cheap dots, far back) → edges → topic sprites → labels → halos.
+  mapStarfieldGfx = new PIXI.Graphics(); mapWorld.addChild(mapStarfieldGfx);
+  mapStarfieldGfx.visible = false;
+  mapEdgeGfx = new PIXI.Graphics(); mapWorld.addChild(mapEdgeGfx);
+  mapNodeLayer = new PIXI.Container(); mapWorld.addChild(mapNodeLayer);
+  mapLabelLayer = new PIXI.Container(); mapWorld.addChild(mapLabelLayer);
+  mapHaloGfx = new PIXI.Graphics(); mapWorld.addChild(mapHaloGfx);
+  mapApp.ticker.add(onTick);
+}
+
+// Static dot-render of every topic. Built once at init and on data refresh —
+// positions never change, so this never needs to redraw on pan/zoom.
+function buildStarfield() {
+  if (!mapStarfieldGfx) return;
+  mapStarfieldGfx.clear();
+  for (const n of (DATA.nodes || [])) {
+    if (n.kind === 'domain' || n.kind === 'user') continue;
+    if (n.x == null) continue;
+    mapStarfieldGfx.beginFill(_topicColorHex(n), 0.85);
+    mapStarfieldGfx.drawCircle(n.x, n.y, 3);
+    mapStarfieldGfx.endFill();
+  }
+}
+
+function applyCameraTransform() {
+  if (!mapWorld) return;
+  mapWorld.position.set(mapCameraX, mapCameraY);
+  mapWorld.scale.set(mapCameraK);
+}
+
+function centerCameraOnWorld(wx, wy, animate) {
+  if (!mapHost) return;
+  const tx = mapHost.clientWidth / 2 - wx * mapCameraK;
+  const ty = mapHost.clientHeight / 2 - wy * mapCameraK;
+  if (animate) warpCamera(tx, ty, mapCameraK);
+  else { mapCameraX = tx; mapCameraY = ty; applyCameraTransform(); }
+}
+
+function onMapResize() {
+  if (!mapApp || !mapHost) return;
+  if (mapResizeQueued) return;
+  mapResizeQueued = true;
+  requestAnimationFrame(() => {
+    mapResizeQueued = false;
+    mapApp.resize();
+    reconcileLiveNodes();
+  });
+}
+
+// ── ticker: bob + edges + halos ────────────────────────────────────────────
+function onTick() {
+  if (!mapNodesById.size || !mapLiveNodes.size) {
+    drawMapEdges();
+    drawMapHalos();
+    return;
+  }
+  const t = performance.now() / 1000;
+  for (const [id, sprite] of mapLiveNodes) {
+    const n = mapNodesById.get(id);
+    if (!n) continue;
+    let yOff = 0;
+    if (n.kind !== 'domain' && n.kind !== 'user' && n.bob_speed) {
+      const amp = mapSearchMatches.has(id) ? MAP_BOB_AMP_MATCH : MAP_BOB_AMP_BASE;
+      yOff = Math.sin(t * n.bob_speed * 2 * Math.PI + (n.bob_phase || 0)) * amp;
+    }
+    sprite.gfx.position.set(n.x, n.y + yOff);
+    if (sprite.label) sprite.label.position.set(n.x, n.y + yOff + (sprite.labelOff || 0));
+  }
+  drawMapEdges();
+  drawMapHalos();
+}
+
+// ── viewport culling ───────────────────────────────────────────────────────
+//
+// Tiered visibility:
+//   tier 0 (inView)  — geometric viewport (with padding)
+//   tier 1 (oneHop)  — graph-neighbours of inView
+//   tier 2 (twoHop)  — neighbours-of-neighbours (preloaded, drawn invisible)
+//
+// Each tier is hard-capped. inView candidates exceeding MAP_CAP_INVIEW are
+// trimmed by distance to viewport-centre. Stars + user always pass — they're
+// cheap and structural.
+function computeVisibilityBuckets() {
+  const inView = new Set(), oneHop = new Set(), twoHop = new Set();
+  if (!mapHost) return { inView, oneHop, twoHop };
+  const w = mapHost.clientWidth, h = mapHost.clientHeight;
+  const wMinX = (-mapCameraX - MAP_VIEWPORT_PAD) / mapCameraK;
+  const wMaxX = (w - mapCameraX + MAP_VIEWPORT_PAD) / mapCameraK;
+  const wMinY = (-mapCameraY - MAP_VIEWPORT_PAD) / mapCameraK;
+  const wMaxY = (h - mapCameraY + MAP_VIEWPORT_PAD) / mapCameraK;
+  const cwx = (w / 2 - mapCameraX) / mapCameraK;
+  const cwy = (h / 2 - mapCameraY) / mapCameraK;
+
+  // Stars + user always live (very few, cheap).
+  for (const n of DATA.nodes) {
+    if (n.x == null) continue;
+    if (n.kind === 'domain' || n.kind === 'user') {
+      if (n.x >= wMinX && n.x <= wMaxX && n.y >= wMinY && n.y <= wMaxY) inView.add(n.id);
+    }
+  }
+
+  // Topic candidates inside viewport, ranked by distance to viewport centre.
+  const cands = [];
+  for (const n of DATA.nodes) {
+    if (n.x == null) continue;
+    if (n.kind === 'domain' || n.kind === 'user') continue;
+    if (n.x >= wMinX && n.x <= wMaxX && n.y >= wMinY && n.y <= wMaxY) {
+      const dx = n.x - cwx, dy = n.y - cwy;
+      cands.push([dx*dx + dy*dy, n.id]);
+    }
+  }
+  if (cands.length > MAP_CAP_INVIEW) {
+    cands.sort((a, b) => a[0] - b[0]);
+    cands.length = MAP_CAP_INVIEW;
+  }
+  for (const [, id] of cands) inView.add(id);
+
+  // 1-hop expansion, capped.
+  outer1: for (const id of inView) {
+    const adj = mapAdj.get(id); if (!adj) continue;
+    for (const nb of adj) {
+      if (!inView.has(nb) && !oneHop.has(nb)) {
+        oneHop.add(nb);
+        if (oneHop.size >= MAP_CAP_1HOP) break outer1;
+      }
+    }
+  }
+
+  // 2-hop expansion, capped.
+  outer2: for (const id of oneHop) {
+    const adj = mapAdj.get(id); if (!adj) continue;
+    for (const nb of adj) {
+      if (!inView.has(nb) && !oneHop.has(nb) && !twoHop.has(nb)) {
+        twoHop.add(nb);
+        if (twoHop.size >= MAP_CAP_2HOP) break outer2;
+      }
+    }
+  }
+
+  return { inView, oneHop, twoHop };
+}
+
+function reconcileLiveNodes() {
+  // Starfield mode — only stars + user live; topics are batched in mapStarfieldGfx.
+  if (mapStarfieldMode) {
+    for (const id of [...mapLiveNodes.keys()]) {
+      const n = mapNodesById.get(id);
+      if (!n || (n.kind !== 'domain' && n.kind !== 'user')) {
+        const s = mapLiveNodes.get(id);
+        if (s.gfx) s.gfx.destroy();
+        if (s.label) s.label.destroy();
+        mapLiveNodes.delete(id);
+        mapLiveTier.delete(id);
+      }
+    }
+    for (const n of (DATA.nodes || [])) {
+      if ((n.kind === 'domain' || n.kind === 'user') && !mapLiveNodes.has(n.id)) {
+        mapLiveNodes.set(n.id, createNodeSprite(n));
+        mapLiveTier.set(n.id, 0);
+      }
+    }
+    applyDimAndHighlight();
+    updateWarpHudActive();
+    return;
+  }
+
+  const { inView, oneHop, twoHop } = computeVisibilityBuckets();
+  const desired = new Set([...inView, ...oneHop, ...twoHop]);
+  for (const id of [...mapLiveNodes.keys()]) {
+    if (!desired.has(id)) {
+      const s = mapLiveNodes.get(id);
+      if (s.gfx) s.gfx.destroy();
+      if (s.label) s.label.destroy();
+      mapLiveNodes.delete(id);
+      mapLiveTier.delete(id);
+    }
+  }
+  for (const id of desired) {
+    const tier = inView.has(id) ? 0 : oneHop.has(id) ? 1 : 2;
+    mapLiveTier.set(id, tier);
+    if (!mapLiveNodes.has(id)) {
+      const n = mapNodesById.get(id); if (!n) continue;
+      mapLiveNodes.set(id, createNodeSprite(n));
+    }
+  }
+  applyDimAndHighlight();
+  updateWarpHudActive();
+}
+
+function tierAlpha(tier) {
+  if (tier === 0) return 1.0;
+  if (tier === 1) return 0.55;
+  return 0.0;
+}
+
+function createNodeSprite(n) {
+  const isUser = n.kind === 'user';
+  const isDomain = n.kind === 'domain';
+  let radius, fillHex, strokeHex, strokeWidth;
+  if (isUser) {
+    radius = 28; fillHex = 0xF59E0B; strokeHex = 0xF59E0B; strokeWidth = 2;
+  } else if (isDomain) {
+    radius = 22;
+    fillHex = _hexFromCss(DOMAIN_HUE[n.topic] || '#7c9ef3');
+    strokeHex = 0x000000; strokeWidth = 0;
+  } else {
+    radius = _topicRadius(n);
+    fillHex = _topicColorHex(n);
+    strokeHex = 0x0a0e1a; strokeWidth = 1.2;
+  }
+
+  const g = new PIXI.Graphics();
+  if (isDomain) {
+    g.beginFill(fillHex, 0.16); g.drawCircle(0, 0, radius + 18); g.endFill();
+    g.beginFill(fillHex, 0.30); g.drawCircle(0, 0, radius + 8); g.endFill();
+  } else if (isUser) {
+    g.beginFill(fillHex, 0.20); g.drawCircle(0, 0, radius + 12); g.endFill();
+  }
+  g.lineStyle(strokeWidth, strokeHex, 1);
+  g.beginFill(fillHex);
+  g.drawCircle(0, 0, radius);
+  g.endFill();
+  g.position.set(n.x, n.y);
+  g.eventMode = 'static';
+  g.cursor = 'pointer';
+  g.hitArea = new PIXI.Circle(0, 0, radius + 4);
+  g.on('pointerover', () => { mapHoverId = n.id; });
+  g.on('pointerout',  () => { if (mapHoverId === n.id) mapHoverId = null; });
+  g.on('pointertap', (ev) => {
+    const orig = ev.data && ev.data.originalEvent;
+    if (orig && orig.shiftKey && !isUser && !isDomain) {
+      toggleSelect(n.id);
+      return;
+    }
+    selectGraphNode(n.id);
+    if (isDomain) warpToNode(n.id, 0.7);
+    else if (!isUser) warpToNode(n.id, Math.max(mapCameraK, 0.85));
+  });
+  mapNodeLayer.addChild(g);
+
+  const labelText = isUser ? (DATA.userName || 'You') :
+                    isDomain ? n.topic :
+                    (n.topic.length > 26 ? n.topic.slice(0, 24) + '…' : n.topic);
+  const fontSize = isUser ? 14 : isDomain ? 13 : 11;
+  const fontWeight = (isUser || isDomain) ? '700' : '500';
+  const fillColor = isUser ? '#0a0e1a' : isDomain ? '#0a0e1a' : '#cbd5e1';
+  const txt = new PIXI.Text(labelText, {
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontSize, fontWeight, fill: fillColor,
+  });
+  txt.resolution = 2;
+  let labelOff;
+  if (isUser || isDomain) { txt.anchor.set(0.5, 0.5); labelOff = 0; }
+  else { txt.anchor.set(0.5, 0); labelOff = radius + 6; }
+  txt.position.set(n.x, n.y + labelOff);
+  mapLabelLayer.addChild(txt);
+
+  return { gfx: g, label: txt, labelOff, radius };
+}
+
+// ── edges ──────────────────────────────────────────────────────────────────
+function drawMapEdges() {
+  if (!mapEdgeGfx || !DATA || !DATA.edges) return;
+  mapEdgeGfx.clear();
+  // Below the edges-LOD threshold edges are unreadable anyway — skip the
+  // whole walk for a free perf win on big graphs.
+  if (mapCameraK < MAP_LOD_EDGES_K) return;
+  for (const e of DATA.edges) {
+    const sId = typeof e.source === 'object' ? e.source.id : e.source;
+    const tId = typeof e.target === 'object' ? e.target.id : e.target;
+    const s = mapLiveNodes.get(sId), t = mapLiveNodes.get(tId);
+    if (!s || !t) continue;
+    const sn = mapNodesById.get(sId), tn = mapNodesById.get(tId);
+    if (!sn || !tn) continue;
+    if (sn.kind === 'user' || tn.kind === 'user') continue;  // hide user→domain spokes
+
+    const tierMin = Math.min(mapLiveTier.get(sId) ?? 2, mapLiveTier.get(tId) ?? 2);
+    let alpha = tierMin === 0 ? 0.50 : tierMin === 1 ? 0.18 : 0.0;
+    if (alpha === 0) continue;
+    if (mapHoverId && (mapHoverId === sId || mapHoverId === tId)) alpha = 0.92;
+    else if (mapHoverId) alpha *= 0.25;
+    if (mapSearchQuery && (mapSearchMatches.has(sId) || mapSearchMatches.has(tId)))
+      alpha = Math.max(alpha, 0.65);
+
+    mapEdgeGfx.lineStyle(Math.max(0.6, (e.strength || 0.5) * 1.6), _edgeColor(e.kind), alpha);
+    mapEdgeGfx.moveTo(s.gfx.x, s.gfx.y);
+    mapEdgeGfx.lineTo(t.gfx.x, t.gfx.y);
+  }
+}
+
+function drawMapHalos() {
+  if (!mapHaloGfx) return;
+  mapHaloGfx.clear();
+  if (mapHoverId) {
+    const s = mapLiveNodes.get(mapHoverId);
+    if (s) {
+      mapHaloGfx.lineStyle(2, 0xF59E0B, 0.95);
+      mapHaloGfx.drawCircle(s.gfx.x, s.gfx.y, (s.radius || 12) + 4);
+    }
+  }
+  if (selectedNode) {
+    const s = mapLiveNodes.get(selectedNode);
+    if (s) {
+      mapHaloGfx.lineStyle(2.5, 0xF59E0B, 0.9);
+      mapHaloGfx.drawCircle(s.gfx.x, s.gfx.y, (s.radius || 12) + 7);
+    }
+  }
+  // Multi-select rings
+  if (selectedSet.size) {
+    for (const id of selectedSet) {
+      const s = mapLiveNodes.get(id); if (!s) continue;
+      mapHaloGfx.lineStyle(2, 0xF59E0B, 0.65);
+      mapHaloGfx.drawCircle(s.gfx.x, s.gfx.y, (s.radius || 12) + 5);
+    }
+  }
+  // Search-match pulse — works in both modes. In starfield mode the per-topic
+  // sprites don't exist, so we draw a filled glow at the world position
+  // straight from `mapNodesById` — the only way matches stay visible when
+  // zoomed all the way out.
+  if (mapSearchQuery && mapSearchMatches.size) {
+    const pulse = Math.sin(performance.now() / 280) * 2;
+    if (mapStarfieldMode) {
+      const r = 9 + pulse;
+      for (const id of mapSearchMatches) {
+        const n = mapNodesById.get(id); if (!n || n.x == null) continue;
+        mapHaloGfx.beginFill(0x7c9ef3, 0.55);
+        mapHaloGfx.drawCircle(n.x, n.y, r);
+        mapHaloGfx.endFill();
+      }
+    } else {
+      for (const id of mapSearchMatches) {
+        const s = mapLiveNodes.get(id); if (!s) continue;
+        mapHaloGfx.lineStyle(1.5, 0x7c9ef3, 0.9);
+        mapHaloGfx.drawCircle(s.gfx.x, s.gfx.y, (s.radius || 12) + 6 + pulse);
+      }
+    }
+  }
+}
+
+function applyDimAndHighlight() {
+  for (const [id, sprite] of mapLiveNodes) {
+    const tier = mapLiveTier.get(id) ?? 0;
+    let alpha = tierAlpha(tier);
+    const n = mapNodesById.get(id);
+    if (mapSearchQuery) {
+      if (mapSearchMatches.has(id)) alpha = 1.0;
+      else alpha = Math.min(alpha, 0.16);
+    }
+    if (mapPlanningMode && n && n.kind !== 'domain' && n.kind !== 'user') {
+      const r = n.recall_now || 0;
+      const reviewed = (n.review_count || 0) > 0;
+      if (!reviewed) alpha = Math.max(alpha, 0.95);
+      else if (r >= 0.6) alpha = Math.min(alpha, 0.22);
+    }
+    sprite.gfx.alpha = alpha;
+    if (sprite.label) sprite.label.alpha = alpha * (tier === 0 ? 1 : 0.7);
+  }
+}
+
+// ── input ──────────────────────────────────────────────────────────────────
+function attachMapInputs() {
+  let pan = null;
+  mapHost.addEventListener('pointerdown', (e) => {
+    if (mapWarping) return;
+    pan = { sx: e.clientX, sy: e.clientY, ix: mapCameraX, iy: mapCameraY, moved: false };
+    mapHost.classList.add('panning');
+    try { mapHost.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  mapHost.addEventListener('pointermove', (e) => {
+    if (!pan) return;
+    const dx = e.clientX - pan.sx, dy = e.clientY - pan.sy;
+    if (!pan.moved && (dx*dx + dy*dy) > 9) pan.moved = true;
+    if (pan.moved) {
+      mapCameraX = pan.ix + dx; mapCameraY = pan.iy + dy;
+      applyCameraTransform();
+      reconcileLiveNodes();
+    }
+  });
+  function endPan(e) {
+    const wasMoving = pan && pan.moved;
+    pan = null;
+    mapHost.classList.remove('panning');
+    if (!wasMoving && e) {
+      // Treat as click on empty canvas only if we didn't hit a sprite
+      // (sprites' pointertap fires before this).
+      const w = screenToWorld(e.clientX, e.clientY);
+      if (!hitTestWorld(w.x, w.y)) closeDetailPanel();
+    }
+    try { if (e) mapHost.releasePointerCapture(e.pointerId); } catch (_) {}
+  }
+  mapHost.addEventListener('pointerup', endPan);
+  mapHost.addEventListener('pointercancel', endPan);
+  mapHost.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (mapWarping) return;
+    const rect = mapHost.getBoundingClientRect();
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    const wx = (sx - mapCameraX) / mapCameraK;
+    const wy = (sy - mapCameraY) / mapCameraK;
+    const factor = Math.exp(-e.deltaY * 0.0014);
+    let newK = mapCameraK * factor;
+    newK = Math.max(MAP_K_MIN, Math.min(MAP_K_MAX, newK));
+    mapCameraK = newK;
+    mapCameraX = sx - wx * mapCameraK;
+    mapCameraY = sy - wy * mapCameraK;
+    applyCameraTransform();
+    evaluateLod();
+    reconcileLiveNodes();
+  }, { passive: false });
+  window.addEventListener('resize', () => {
+    if (currentTab === 'map' && mapInitialised) onMapResize();
+  });
+}
+
+function screenToWorld(cx, cy) {
+  const rect = mapHost.getBoundingClientRect();
+  const sx = cx - rect.left, sy = cy - rect.top;
+  return { x: (sx - mapCameraX) / mapCameraK, y: (sy - mapCameraY) / mapCameraK };
+}
+function hitTestWorld(wx, wy) {
+  let best = null, bestD = Infinity;
+  for (const [id, s] of mapLiveNodes) {
+    const r = (s.radius || 12) + 4;
+    const dx = wx - s.gfx.x, dy = wy - s.gfx.y, d2 = dx*dx + dy*dy;
+    if (d2 < r*r && d2 < bestD) { bestD = d2; best = id; }
+  }
+  return best;
+}
+
+// ── warp HUD ───────────────────────────────────────────────────────────────
+function buildWarpHud() {
+  const stars = document.getElementById('warp-stars');
+  if (!stars) return;
+  stars.innerHTML = '';
+  mapStarBtns.clear();
+  const domainNodes = (DATA.nodes || []).filter(n => n.kind === 'domain');
+  domainNodes.sort((a, b) => a.topic.localeCompare(b.topic));
+  for (const d of domainNodes) {
+    const btn = document.createElement('button');
+    btn.className = 'warp-btn';
+    btn.style.setProperty('--star-color', DOMAIN_HUE[d.topic] || '#7c9ef3');
+    btn.innerHTML = `<span class="warp-dot"></span><span>${escapeHtml(d.topic)}</span>`;
+    btn.title = `Warp to the ${d.topic} system`;
+    btn.onclick = () => warpToNode(d.id, 0.7);
+    stars.appendChild(btn);
+    mapStarBtns.set(d.topic, btn);
+  }
+  // Disable back button if history empty.
+  const back = document.getElementById('warp-back-btn');
+  if (back) back.disabled = mapWarpHistory.length === 0;
+}
+
+function updateWarpHudActive() {
+  if (!mapHost || !mapStarBtns.size) return;
+  const cw = mapHost.clientWidth / 2, ch = mapHost.clientHeight / 2;
+  const wx = (cw - mapCameraX) / mapCameraK;
+  const wy = (ch - mapCameraY) / mapCameraK;
+  let best = null, bestD = Infinity;
+  for (const n of (DATA.nodes || [])) {
+    if (n.kind !== 'domain' || n.x == null) continue;
+    const dx = wx - n.x, dy = wy - n.y, d2 = dx*dx + dy*dy;
+    if (d2 < bestD) { bestD = d2; best = n; }
+  }
+  // "active" only when reasonably close to a star (else camera is in open space).
+  const close = best && bestD < 600 * 600;
+  for (const [topic, btn] of mapStarBtns) {
+    btn.classList.toggle('active', !!(close && best && best.topic === topic));
+  }
+  const back = document.getElementById('warp-back-btn');
+  if (back) back.disabled = mapWarpHistory.length === 0;
+}
+
+// ── warp animation ────────────────────────────────────────────────────────
+function warpToNode(id, finalK) {
+  const n = mapNodesById.get(id); if (!n || n.x == null) return;
+  const w = mapHost.clientWidth, h = mapHost.clientHeight;
+  const k = finalK != null ? finalK : Math.max(0.7, mapCameraK);
+  const tx = w / 2 - n.x * k;
+  const ty = h / 2 - n.y * k;
+  warpCamera(tx, ty, k);
+}
+function warpHome() {
+  const u = (DATA.nodes || []).find(n => n.kind === 'user');
+  if (u) warpToNode(u.id, 0.6);
+}
+function warpTo(id) { warpToNode(id, 0.95); }
+function warpBack() {
+  if (mapWarping || mapWarpHistory.length === 0) return;
+  const prev = mapWarpHistory.pop();
+  warpCamera(prev.x, prev.y, prev.k, /*pushHistory=*/false);
+  updateWarpHudActive();
+}
+
+function warpCamera(targetX, targetY, targetK, pushHistory) {
+  if (mapWarping) return;
+  if (pushHistory !== false) {
+    mapWarpHistory.push({ x: mapCameraX, y: mapCameraY, k: mapCameraK });
+    if (mapWarpHistory.length > 20) mapWarpHistory.shift();
+  }
+  mapWarping = true;
+  mapHost.classList.add('warping');
+  showWarpStreak(true);
+  const x0 = mapCameraX, y0 = mapCameraY, k0 = mapCameraK;
+  const t0 = performance.now();
+  function step(now) {
+    let p = (now - t0) / MAP_WARP_MS; if (p > 1) p = 1;
+    const e = p < 0.5 ? 4*p*p*p : 1 - Math.pow(-2*p+2, 3)/2;
+    mapCameraX = x0 + (targetX - x0) * e;
+    mapCameraY = y0 + (targetY - y0) * e;
+    mapCameraK = k0 + (targetK - k0) * e;
+    applyCameraTransform();
+    evaluateLod();
+    if (p < 1) requestAnimationFrame(step);
+    else {
+      mapWarping = false;
+      mapHost.classList.remove('warping');
+      showWarpStreak(false);
+      reconcileLiveNodes();
+      updateWarpHudActive();
+    }
+  }
+  requestAnimationFrame(step);
+  // Mid-flight reconcile so the destination's neighbourhood is loaded
+  // by the time the camera arrives.
+  setTimeout(() => { if (mapWarping) reconcileLiveNodes(); }, MAP_WARP_MS / 2);
+}
+
+function showWarpStreak(on) {
+  let el = document.getElementById('map-warp-streak');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'map-warp-streak'; el.className = 'warp-streak';
+    mapHost.appendChild(el);
+  }
+  el.classList.toggle('on', !!on);
+}
+
+function showMapHint() {
+  const hint = document.getElementById('map-hint');
+  if (!hint) return;
+  hint.classList.add('visible');
+  clearTimeout(mapHintTimer);
+  mapHintTimer = setTimeout(() => hint.classList.remove('visible'), 2800);
+}
+
+// ── search ────────────────────────────────────────────────────────────────
 function onMapSearch() {
-  const q = document.getElementById('map-search').value.trim().toLowerCase();
+  const q = (document.getElementById('map-search').value || '').trim().toLowerCase();
+  mapSearchQuery = q;
+  mapSearchMatches.clear();
   const results = document.getElementById('map-results');
-  if (!q) { results.innerHTML = ''; results.classList.remove('open'); return; }
+  if (!q) {
+    results.innerHTML = ''; results.classList.remove('open');
+    applyDimAndHighlight(); return;
+  }
   const matches = (DATA?.nodes || [])
     .filter(n => n.kind !== 'domain' && n.kind !== 'user')
     .filter(n => (n.topic || '').toLowerCase().includes(q))
-    .slice(0, 8);
+    .slice(0, 12);
+  for (const m of matches) mapSearchMatches.add(m.id);
   if (matches.length === 0) {
     results.innerHTML = '<div class="no-match">no matches</div>';
     results.classList.add('open');
-    return;
+  } else {
+    results.innerHTML = matches.map(n => `<div class="search-hit" data-id="${escapeHtml(n.id)}">
+      <span class="hit-title">${escapeHtml(n.topic)}</span>
+      <span class="hit-sub">${escapeHtml(n.repo || '—')} · ${Math.round((n.recall_now||0)*100)}%</span>
+    </div>`).join('');
+    results.classList.add('open');
+    results.querySelectorAll('.search-hit').forEach(el => {
+      el.addEventListener('click', () => {
+        results.classList.remove('open');
+        const id = el.dataset.id;
+        warpTo(id);
+        selectGraphNode(id);
+      });
+    });
   }
-  results.innerHTML = matches.map(n => `<div class="search-hit" data-id="${n.id}">
-    <span class="hit-title">${escapeHtml(n.topic)}</span>
-    <span class="hit-sub">${escapeHtml(n.repo || '—')} · ${Math.round((n.recall_now || 0) * 100)}%</span>
-  </div>`).join('');
-  results.classList.add('open');
-  results.querySelectorAll('.search-hit').forEach(el => {
-    el.onclick = () => {
-      warpTo(el.dataset.id);
-      document.getElementById('map-search').value = '';
-      results.innerHTML = '';
-      results.classList.remove('open');
-    };
-  });
+  applyDimAndHighlight();
+  reconcileLiveNodes();
 }
 
-// 🚀 cursor — render emoji to a 32×32 canvas, use as cursor: url(...).
-function setupSpaceshipCursor() {
-  if (cursorReady) return;
-  try {
-    const c = document.createElement('canvas');
-    c.width = 32; c.height = 32;
-    const ctx = c.getContext('2d');
-    ctx.font = '24px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🚀', 16, 18);
-    const url = c.toDataURL();
-    document.getElementById('wormhole-svg').style.cursor = `url(${url}) 16 16, crosshair`;
-    cursorReady = true;
-  } catch (_) { /* canvas unavailable — leave default cursor */ }
+// ── planning mode ─────────────────────────────────────────────────────────
+function togglePlanningMode() {
+  mapPlanningMode = document.getElementById('planning-mode').checked;
+  document.getElementById('planning-toggle').classList.toggle('active', mapPlanningMode);
+  applyDimAndHighlight();
 }
 
-function showNodeTooltip(n, pos) {
-  const tip = document.getElementById('tooltip');
-  tip.innerHTML = `<b>${n.topic}</b><br><span style="color:#555e7a">${n.domain||''}</span>`;
-  tip.style.display='block';
-  if (pos) { tip.style.left=(pos.x+14)+'px'; tip.style.top=(pos.y-8)+'px'; }
+// ── data refresh hook ─────────────────────────────────────────────────────
+function mapOnDataRefresh() {
+  if (!mapInitialised) return;
+  buildMapDataIndices();
+  for (const id of [...mapLiveNodes.keys()]) {
+    const s = mapLiveNodes.get(id);
+    if (s.gfx) s.gfx.destroy();
+    if (s.label) s.label.destroy();
+  }
+  mapLiveNodes.clear(); mapLiveTier.clear();
+  buildStarfield();
+  buildWarpHud();
+  evaluateLod();
+  reconcileLiveNodes();
+  updateWarpHudActive();
 }
 
-// ── Selection
+// ── LOD: starfield mode + label/edge thresholds ───────────────────────────
+//
+// Below MAP_LOD_STARFIELD_IN we render every topic as a single batched dot in
+// `mapStarfieldGfx` and tear down per-topic sprites. This keeps RAM flat
+// regardless of how zoomed-out the user goes — the cost of the starfield is
+// one Graphics draw built once at init, not per-frame.
+//
+// Hysteresis: enter starfield at IN, leave at OUT.
+function evaluateLod() {
+  let nextStarfield = mapStarfieldMode;
+  if (mapCameraK <= MAP_LOD_STARFIELD_IN) nextStarfield = true;
+  else if (mapCameraK >= MAP_LOD_STARFIELD_OUT) nextStarfield = false;
+  if (nextStarfield !== mapStarfieldMode) {
+    mapStarfieldMode = nextStarfield;
+    if (mapStarfieldGfx) mapStarfieldGfx.visible = mapStarfieldMode;
+    if (mapStarfieldMode) {
+      // Drop every topic sprite — only stars + user keep their full graphics.
+      for (const id of [...mapLiveNodes.keys()]) {
+        const n = mapNodesById.get(id);
+        if (n && n.kind !== 'domain' && n.kind !== 'user') {
+          const s = mapLiveNodes.get(id);
+          if (s.gfx) s.gfx.destroy();
+          if (s.label) s.label.destroy();
+          mapLiveNodes.delete(id);
+          mapLiveTier.delete(id);
+        }
+      }
+    }
+  }
+  // Topic-label visibility flips with zoom too.
+  const showTopicLabels = mapCameraK >= MAP_LOD_LABELS_K;
+  for (const [id, sprite] of mapLiveNodes) {
+    if (!sprite.label) continue;
+    const n = mapNodesById.get(id); if (!n) continue;
+    if (n.kind === 'domain' || n.kind === 'user') continue;
+    sprite.label.visible = showTopicLabels;
+  }
+}
+
+// ── selection helpers (shared with detail panel) ──────────────────────────
 function toggleSelect(id) {
   if (selectedSet.has(id)) selectedSet.delete(id);
   else selectedSet.add(id);
@@ -2156,7 +1985,7 @@ function updateMultiBar() {
   const bar = document.getElementById('multi-bar');
   if (selectedSet.size > 0) {
     bar.classList.add('visible');
-    document.getElementById('multi-label').textContent = selectedSet.size+' selected';
+    document.getElementById('multi-label').textContent = selectedSet.size + ' selected';
   } else {
     bar.classList.remove('visible');
   }
@@ -2941,10 +2770,6 @@ function renderDashboard() {
       <span class="dl-recall ${cls}">${knownPct}%</span>`;
     dpl.appendChild(row);
   }
-}
-
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
 
 function quizOne(nodeId, topic) {
@@ -3887,37 +3712,6 @@ async function exportSagaGIF() {
   gif.render();
 }
 
-
-// ══════════════════════════════════════════════════════════
-// PLANNING MODE (wormhole)
-// ══════════════════════════════════════════════════════════
-//
-// In the wormhole there are only ~10 nodes on screen, so planning mode is a
-// pure styling overlay: keep the focus, full-opacity any unreviewed
-// neighbor, dim anything you already know well, half-dim the rest.
-let planningMode = false;
-function togglePlanningMode() {
-  planningMode = document.getElementById('planning-mode').checked;
-  document.getElementById('planning-toggle').classList.toggle('active', planningMode);
-  applyPlanningStyle();
-}
-
-function applyPlanningStyle() {
-  if (!currentScene) return;
-  const centerId = currentScene.centerId;
-  document.querySelectorAll('#wormhole-svg .warp-node').forEach(g => {
-    const id = g.getAttribute('data-id');
-    let alpha = 1.0;
-    if (planningMode) {
-      const node = (DATA.nodes || []).find(n => n.id === id);
-      if (id === centerId) alpha = 1.0;
-      else if (node && (node.review_count || 0) === 0) alpha = 1.0;     // unreviewed neighbor → highlight
-      else if (node && (node.recall_now || 0) >= 0.6) alpha = 0.25;    // already known → dim
-      else alpha = 0.55;
-    }
-    g.style.opacity = alpha;
-  });
-}
 
 // ══════════════════════════════════════════════════════════
 // VOICE: push-to-hold mic → /api/transcribe (whisper-cpp)
