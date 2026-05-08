@@ -48,6 +48,23 @@ struct TomlFile {
     privacy: Option<PrivacySection>,
     voice: Option<VoiceSection>,
     promptiq: Option<PromptIqSection>,
+    teach: Option<TeachSection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TeachSection {
+    /// Student-mode template — the user asks the LLM to teach them.
+    /// Placeholders: {topic} {question} {answer} {clue} {domain}
+    student_prompt: Option<String>,
+    /// Teacher-mode template — the user explains the topic to the LLM
+    /// (Feynman technique). Same placeholders.
+    teacher_prompt: Option<String>,
+    /// Backwards-compatible alias for student_prompt.
+    prompt: Option<String>,
+    /// Which LLMs to surface as Copy & Go buttons. Any subset of:
+    ///   chatgpt | claude | gemini | perplexity | copilot | deepseek
+    /// Empty = hide the row entirely.
+    targets: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -151,6 +168,55 @@ pub struct Config {
     pub privacy_strict: bool,
     pub voice: VoiceConfig,
     pub promptiq: PromptIqConfig,
+    pub teach: TeachConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct TeachConfig {
+    /// Student-mode template. Placeholders {topic} {question} {answer} {clue}
+    /// {domain} are replaced before the string lands on the clipboard.
+    pub student_prompt: String,
+    /// Teacher-mode template (user explains; LLM critiques).
+    pub teacher_prompt: String,
+    /// Ordered list of LLM IDs to render as Copy & Go buttons.
+    pub targets: Vec<String>,
+}
+
+/// LLM IDs known to the front-end (matches TEACH_AGENTS in app.html).
+const TEACH_TARGET_IDS: &[&str] =
+    &["chatgpt", "claude", "gemini", "perplexity", "copilot", "deepseek"];
+
+impl Default for TeachConfig {
+    fn default() -> Self {
+        Self {
+            student_prompt: "I'm reviewing the topic \"{topic}\" from my Rocky knowledge \
+graph and want a deeper explanation.\n\n\
+Question: {question}\n\
+Canonical answer: {answer}\n\n\
+Please teach me this topic step-by-step — explain why the answer is what it \
+is, walk through the underlying concepts, and add concrete examples or edge \
+cases I might be missing.".into(),
+            teacher_prompt: "Let me teach you about \"{topic}\" — pretend you're a \
+student trying to learn this concept. I'm going to explain it in my own \
+words to test my understanding (Feynman technique).\n\n\
+Reference Q&A from my knowledge graph:\n\
+Q: {question}\n\
+A: {answer}\n\n\
+After I explain (in my next message), please:\n\
+1. Tell me what I got right.\n\
+2. Point out any inaccuracies, missing nuance, or weak analogies.\n\
+3. Ask one follow-up question that probes the part I explained least \
+clearly.".into(),
+            targets: vec![
+                "chatgpt".into(),
+                "claude".into(),
+                "gemini".into(),
+                "perplexity".into(),
+                "copilot".into(),
+                "deepseek".into(),
+            ],
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -216,6 +282,7 @@ impl Default for Config {
             privacy_strict: false,
             voice: VoiceConfig::default(),
             promptiq: PromptIqConfig::default(),
+            teach: TeachConfig::default(),
         }
     }
 }
@@ -341,6 +408,31 @@ impl Config {
         if let Some(p) = file.promptiq {
             if let Some(v) = p.enabled { self.promptiq.enabled = v; }
             if let Some(v) = p.feedback { self.promptiq.feedback = v; }
+        }
+        if let Some(t) = file.teach {
+            // `prompt` is a legacy alias for `student_prompt` — applied first
+            // so an explicit `student_prompt` still wins.
+            if let Some(v) = t.prompt { self.teach.student_prompt = v; }
+            if let Some(v) = t.student_prompt { self.teach.student_prompt = v; }
+            if let Some(v) = t.teacher_prompt { self.teach.teacher_prompt = v; }
+            if let Some(v) = t.targets {
+                let mut cleaned: Vec<String> = Vec::new();
+                for id in v {
+                    let lower = id.trim().to_ascii_lowercase();
+                    if lower.is_empty() { continue; }
+                    if TEACH_TARGET_IDS.contains(&lower.as_str()) {
+                        if !cleaned.iter().any(|x| x == &lower) {
+                            cleaned.push(lower);
+                        }
+                    } else {
+                        eprintln!(
+                            "rocky: ignoring unknown teach.target \"{id}\" (known: {})",
+                            TEACH_TARGET_IDS.join(", ")
+                        );
+                    }
+                }
+                self.teach.targets = cleaned;
+            }
         }
     }
 

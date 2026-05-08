@@ -385,6 +385,13 @@ a.nav-btn:hover{color:#e2e8f0}
 .bank-flip.scored .bank-flip-inner{opacity:.55}
 .bank-face{grid-area:1/1;backface-visibility:hidden;-webkit-backface-visibility:hidden;padding:10px 12px;font-size:11px;line-height:1.45;border-radius:6px}
 .bank-back{transform:rotateY(180deg);background:rgba(20,26,46,.78)}
+/* The face that's rotated away must not receive pointer events — backface-
+   visibility:hidden suppresses rendering but absolutely-positioned children
+   (the mic button) still leak clicks/mousedowns through. Without this, a
+   click on the back-side toggle also fires mousedown on the front-side mic
+   button positioned underneath. */
+.bank-flip:not(.flipped) .bank-back{pointer-events:none}
+.bank-flip.flipped .bank-q{pointer-events:none}
 .bank-q{color:#cfd6e8}
 .bank-q .bank-hint{display:block;margin-top:6px;font-size:9px;color:#555e7a;text-transform:uppercase;letter-spacing:.5px}
 .bank-a{color:#a4adc4}
@@ -400,6 +407,37 @@ a.nav-btn:hover{color:#e2e8f0}
 .bank-score-btn:disabled{cursor:default}
 .bank-score-feedback{font-size:10px;color:#7c9ef3;margin-top:6px;text-align:center;display:none}
 .bank-score-feedback.visible{display:block}
+.bank-teach-row{margin-top:8px;padding-top:8px;border-top:1px solid rgba(45,49,72,.7);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bank-teach-btn{width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;background:rgba(30,35,64,.6);border:1px solid #3d4468;border-radius:50%;cursor:pointer;color:#cfd6e8;transition:transform .14s,border-color .14s,background .14s,color .14s;flex-shrink:0}
+.bank-teach-btn:hover{background:#1e2340;border-color:#7c9ef3;transform:scale(1.08)}
+.bank-teach-btn:focus-visible{outline:none;border-color:#7c9ef3;box-shadow:0 0 0 2px rgba(124,158,243,.25)}
+.bank-teach-btn svg{width:14px;height:14px;display:block}
+.bank-teach-btn.copied{background:rgba(46,204,113,.18)!important;border-color:#2ecc71!important;color:#2ecc71!important;transform:scale(1.08)}
+.bank-teach-btn.copy-failed{background:rgba(231,76,60,.15)!important;border-color:#e74c3c!important;color:#e74c3c!important}
+.bank-teach-btn[data-agent="chatgpt"]{color:#00e5a0}
+.bank-teach-btn[data-agent="chatgpt"]:hover{border-color:#00e5a0}
+.bank-teach-btn[data-agent="gemini"]{color:#4da6ff}
+.bank-teach-btn[data-agent="gemini"]:hover{border-color:#4da6ff}
+.bank-teach-btn[data-agent="claude"]{color:#cc9b7a}
+.bank-teach-btn[data-agent="claude"]:hover{border-color:#cc9b7a}
+.bank-teach-btn[data-agent="perplexity"]{color:#20b2aa}
+.bank-teach-btn[data-agent="perplexity"]:hover{border-color:#20b2aa}
+.bank-teach-btn[data-agent="copilot"]{color:#7eb8ff}
+.bank-teach-btn[data-agent="copilot"]:hover{border-color:#7eb8ff}
+.bank-teach-btn[data-agent="deepseek"]{color:#5b8def}
+.bank-teach-btn[data-agent="deepseek"]:hover{border-color:#5b8def}
+.bank-mode-toggle{position:relative;width:46px;height:24px;border-radius:12px;border:none;padding:0;cursor:pointer;flex-shrink:0;background:#e67e22;box-shadow:inset 0 1px 3px rgba(0,0,0,.35);transition:background .35s cubic-bezier(.4,0,.2,1),box-shadow .35s ease;-webkit-tap-highlight-color:transparent}
+.bank-mode-toggle[data-mode="teacher"]{background:#2ecc71}
+.bank-mode-toggle:hover{box-shadow:inset 0 1px 3px rgba(0,0,0,.35),0 0 12px rgba(230,126,34,.35)}
+.bank-mode-toggle[data-mode="teacher"]:hover{box-shadow:inset 0 1px 3px rgba(0,0,0,.35),0 0 12px rgba(46,204,113,.35)}
+.bank-mode-toggle:focus-visible{outline:none;box-shadow:inset 0 1px 3px rgba(0,0,0,.35),0 0 0 2px rgba(124,158,243,.45)}
+.bank-mode-knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;transition:transform .35s cubic-bezier(.4,0,.2,1)}
+.bank-mode-toggle[data-mode="teacher"] .bank-mode-knob{transform:translateX(22px)}
+.bank-mode-svg{position:absolute;width:11px;height:11px;transition:opacity .25s ease,transform .3s cubic-bezier(.4,0,.2,1)}
+.bank-mode-svg-student{color:#e67e22;opacity:1;transform:scale(1) rotate(0)}
+.bank-mode-svg-teacher{color:#2ecc71;opacity:0;transform:scale(.5) rotate(-90deg)}
+.bank-mode-toggle[data-mode="teacher"] .bank-mode-svg-student{opacity:0;transform:scale(.5) rotate(90deg)}
+.bank-mode-toggle[data-mode="teacher"] .bank-mode-svg-teacher{opacity:1;transform:scale(1) rotate(0)}
 
 #tax-list{list-style:none}
 #tax-list li{padding:4px 8px;border-radius:4px;cursor:pointer;color:#8892a4;font-size:12px;display:flex;justify-content:space-between}
@@ -2544,6 +2582,7 @@ function openDetailPanel(n) {
               <button class="bank-score-btn" data-score="1.0" data-node-id="${escapeHtml(n.id)}" data-q-idx="${idx}" title="Mastered" onclick="bankScore(event, this)">★</button>
             </div>
             <div class="bank-score-feedback"></div>
+            ${renderTeachRow(n.id, idx)}
           </div>
         </div>
       </div>`).join('')
@@ -2999,6 +3038,193 @@ function scoreLabel(s) {
   if (s>=.7) return '✓ Known';
   if (s>=.4) return '~ Partly';
   return '✗ Gap';
+}
+
+// "Teach me this" — Copy & Go mechanic for the question bank.
+// Clicking an LLM button copies a prompt template (configured under [teach]
+// in ~/.config/rocky/config.toml) to the clipboard with the question/answer
+// interpolated, then opens the chosen LLM in a new tab so the user can paste
+// straight in. Same flow as NOTES/lab/llm-export-tester.html, scoped to a
+// single bank flashcard. Targets are configurable — [teach].targets is a
+// subset of: chatgpt, claude, gemini, perplexity, copilot, deepseek.
+//
+// Mode toggle (Student vs Teacher) picks which prompt template fires:
+//   Student → "Teach me about {topic}…"  (LLM teaches user)
+//   Teacher → "Let me teach you {topic}…" (user explains, LLM critiques)
+// Both templates are independently configurable via [teach].student_prompt
+// and [teach].teacher_prompt in the TOML. The selected mode persists in
+// localStorage so it carries across page reloads.
+const DEFAULT_STUDENT_PROMPT =
+  'I\'m reviewing the topic "{topic}" from my Rocky knowledge graph and ' +
+  'want a deeper explanation.\n\n' +
+  'Question: {question}\n' +
+  'Canonical answer: {answer}\n\n' +
+  'Please teach me this topic step-by-step — explain why the answer is what ' +
+  'it is, walk through the underlying concepts, and add concrete examples ' +
+  'or edge cases I might be missing.';
+const DEFAULT_TEACHER_PROMPT =
+  'Let me teach you about "{topic}" — pretend you\'re a student trying to ' +
+  'learn this concept. I\'m going to explain it in my own words to test my ' +
+  'understanding (Feynman technique).\n\n' +
+  'Reference Q&A from my knowledge graph:\n' +
+  'Q: {question}\n' +
+  'A: {answer}\n\n' +
+  'After I explain (in my next message), please:\n' +
+  '1. Tell me what I got right.\n' +
+  '2. Point out any inaccuracies, missing nuance, or weak analogies.\n' +
+  '3. Ask one follow-up question that probes the part I explained least clearly.';
+const DEFAULT_TEACH_TARGETS = ['chatgpt', 'claude', 'gemini', 'perplexity', 'copilot', 'deepseek'];
+
+let teachMode = (localStorage.getItem('teachMode') === 'teacher') ? 'teacher' : 'student';
+
+function teachModeTip() {
+  return teachMode === 'teacher'
+    ? 'Teacher mode — you explain the topic, the LLM critiques (Feynman). Click to switch to Student.'
+    : 'Student mode — the LLM teaches you. Click to switch to Teacher.';
+}
+
+function toggleTeachMode(ev) {
+  // Stop the click bubbling to the card's flip handler.
+  if (ev) ev.stopPropagation();
+  teachMode = teachMode === 'teacher' ? 'student' : 'teacher';
+  try { localStorage.setItem('teachMode', teachMode); } catch (_) {}
+  // Sync every visible mode-toggle without re-rendering the panel (keeps
+  // any in-flight mic/eval state intact). CSS data-mode selector handles
+  // the colour + knob slide animation.
+  const tip = teachModeTip();
+  document.querySelectorAll('.bank-mode-toggle').forEach(el => {
+    el.dataset.mode = teachMode;
+    el.setAttribute('title', tip);
+    el.setAttribute('aria-checked', teachMode === 'teacher' ? 'true' : 'false');
+  });
+}
+
+// Each agent: id, display name, landing URL (the Copy & Go destination), and
+// the brand mark as inline SVG. Marks are sourced from Simple Icons
+// (https://simpleicons.org), which distributes brand SVG path data under
+// CC0. Microsoft Copilot doesn't have a Simple Icons slug; GitHub Copilot's
+// mark is used as the closest licensed Copilot-family equivalent. Each path
+// uses currentColor so CSS controls the brand tint.
+const TEACH_AGENTS = {
+  chatgpt: {
+    name: 'ChatGPT',
+    url: 'https://chatgpt.com/',
+    svg: '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>',
+  },
+  claude: {
+    name: 'Claude',
+    url: 'https://claude.ai/new',
+    svg: '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>',
+  },
+  gemini: {
+    name: 'Gemini',
+    url: 'https://gemini.google.com/app',
+    svg: '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>',
+  },
+  perplexity: {
+    name: 'Perplexity',
+    url: 'https://www.perplexity.ai/',
+    svg: '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M22.3977 7.0896h-2.3106V.0676l-7.5094 6.3542V.1577h-1.1554v6.1966L4.4904 0v7.0896H1.6023v10.3976h2.8882V24l6.932-6.3591v6.2005h1.1554v-6.0469l6.9318 6.1807v-6.4879h2.8882V7.0896zm-3.4657-4.531v4.531h-5.355l5.355-4.531zm-13.2862.0676 4.8691 4.4634H5.6458V2.6262zM2.7576 16.332V8.245h7.8476l-6.1149 6.1147v1.9723H2.7576zm2.8882 5.0404v-3.8852h.0001v-2.6488l5.7763-5.7764v7.0111l-5.7764 5.2993zm12.7086.0248-5.7766-5.1509V9.0618l5.7766 5.7766v6.5588zm2.8882-5.0652h-1.733v-1.9723L13.3948 8.245h7.8478v8.087z"/></svg>',
+  },
+  copilot: {
+    name: 'Copilot',
+    url: 'https://copilot.microsoft.com/',
+    svg: '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c0-.77-.169-1.272-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z"/></svg>',
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    url: 'https://chat.deepseek.com/',
+    svg: '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M23.748 4.482c-.254-.124-.364.113-.512.234-.051.039-.094.09-.137.136-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.155-.708-.311-.955-.65-.172-.241-.219-.51-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.094.172.187.129.323-.082.28-.18.552-.266.833-.055.179-.137.218-.329.14a5.526 5.526 0 0 1-1.736-1.18c-.857-.828-1.631-1.742-2.597-2.458a11.365 11.365 0 0 0-.689-.471c-.985-.957.13-1.743.388-1.836.27-.098.094-.432-.778-.428-.872.004-1.67.295-2.687.684a3.055 3.055 0 0 1-.465.137 9.597 9.597 0 0 0-2.883-.102c-1.885.21-3.39 1.102-4.497 2.623C.082 8.606-.231 10.684.152 12.85c.403 2.284 1.569 4.175 3.36 5.653 1.858 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.133-.284 4.994-1.86.47.234.962.327 1.78.397.63.059 1.236-.03 1.705-.128.735-.156.684-.837.419-.961-2.155-.998-1.682-.59-2.113-.92 1.096-1.296 2.768-3.6 3.284-6.733.04-.247.007-.404 0-.61-.004-.124.027-.173.171-.188a4.654 4.654 0 0 0 1.624-.512c1.471-.778 2.065-2.058 2.206-3.43.022-.207-.002-.422-.272-.516ZM11.581 18c-2.089-1.642-3.102-2.183-3.52-2.16-.392.024-.321.471-.235.763.09.288.207.486.371.74.114.16.192.398-.10.61-.398.246-1.005.066-1.05.034-1.219-.682-2.232-1.59-2.945-2.79-.737-1.243-1.165-2.578-1.236-3.97-.018-.336.082-.473.408-.532a4.21 4.21 0 0 1 1.31-.012c1.86.295 3.443 1.13 4.77 2.46.755.756 1.327 1.66 1.918 2.53.628.92 1.305 1.797 2.17 2.519.305.255.55.45.781.589-.7.07-1.868.083-2.667-.531zm.872-5.62a.318.318 0 0 1 .322-.32.32.32 0 0 1 .238.107.317.317 0 0 1 .083.221.318.318 0 1 1-.643-.008zm3.222 1.654c-.207.084-.414.156-.612.164a1.272 1.272 0 0 1-.811-.247c-.276-.219-.475-.34-.559-.717a1.404 1.404 0 0 1 .014-.616c.072-.346-.008-.567-.252-.768-.198-.163-.451-.207-.728-.207a.78.78 0 0 1-.357-.108c-.115-.07-.211-.165-.144-.346.022-.058.166-.202.201-.226.398-.224.857-.151 1.281.018.393.158.69.452 1.117.864.437.43.515.55.764.94.196.305.375.618.497.977.075.221-.029.404-.246.498z"/></svg>',
+  },
+};
+
+function teachTargets() {
+  const arr = (DATA?.teach?.targets);
+  if (Array.isArray(arr)) return arr.filter(id => TEACH_AGENTS[id]);
+  return DEFAULT_TEACH_TARGETS;
+}
+
+function renderTeachRow(nodeId, qIdx) {
+  const targets = teachTargets();
+  if (!targets.length) return '';
+  const buttons = targets.map(id => {
+    const a = TEACH_AGENTS[id];
+    return `<button class="bank-teach-btn" data-agent="${id}" data-node-id="${escapeHtml(nodeId)}" data-q-idx="${qIdx}"
+        aria-label="${a.name}"
+        title="${a.name} — copy prompt and open"
+        onclick="bankTeachCopyGo(event, this)">${a.svg}</button>`;
+  }).join('');
+  const toggle = `<button class="bank-mode-toggle" type="button" role="switch"
+      data-mode="${teachMode}" aria-checked="${teachMode==='teacher'?'true':'false'}"
+      onclick="toggleTeachMode(event)" title="${teachModeTip()}">
+      <span class="bank-mode-knob">
+        <svg class="bank-mode-svg bank-mode-svg-student" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
+        <svg class="bank-mode-svg bank-mode-svg-teacher" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M22 10 12 5 2 10l10 5 10-5z"/>
+          <path d="M6 12v5c0 0 3 3 6 3s6-3 6-3v-5"/>
+          <line x1="22" y1="10" x2="22" y2="16"/>
+        </svg>
+      </span>
+    </button>`;
+  return `<div class="bank-teach-row">${toggle}${buttons}</div>`;
+}
+
+function buildTeachPrompt(topic, q) {
+  const t = DATA?.teach || {};
+  const tpl = teachMode === 'teacher'
+    ? (t.teacher_prompt || DEFAULT_TEACHER_PROMPT)
+    : (t.student_prompt || DEFAULT_STUDENT_PROMPT);
+  const subs = {
+    '{topic}': topic.topic || '',
+    '{question}': q.question || '',
+    '{answer}': q.answer || '',
+    '{clue}': q.clue || '',
+    '{domain}': topic.domain || '',
+  };
+  return tpl.replace(/\{topic\}|\{question\}|\{answer\}|\{clue\}|\{domain\}/g, m => subs[m] ?? '');
+}
+
+async function bankTeachCopyGo(ev, btn) {
+  ev.stopPropagation();
+  const agent = TEACH_AGENTS[btn.dataset.agent];
+  if (!agent) return;
+  const nodeId = btn.dataset.nodeId;
+  const qIdx = parseInt(btn.dataset.qIdx, 10);
+  const node = (DATA?.nodes || []).find(n => n.id === nodeId);
+  const q = node?.question_bank?.[qIdx];
+  if (!node || !q) return;
+  const text = buildTeachPrompt(node, q);
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    copied = true;
+  } catch (_) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { copied = document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+  }
+  const originalTitle = btn.getAttribute('title');
+  if (copied) {
+    btn.classList.add('copied');
+    btn.setAttribute('title', `Copied · opening ${agent.name}…`);
+    // Brief delay so the user sees the green flash before the new tab steals focus.
+    setTimeout(() => window.open(agent.url, '_blank', 'noopener'), 350);
+  } else {
+    btn.classList.add('copy-failed');
+    btn.setAttribute('title', 'Copy failed');
+  }
+  setTimeout(() => {
+    btn.classList.remove('copied', 'copy-failed');
+    if (originalTitle != null) btn.setAttribute('title', originalTitle);
+  }, 1600);
 }
 
 // ══════════════════════════════════════════════════════════

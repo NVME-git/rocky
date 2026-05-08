@@ -775,6 +775,16 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
         // per score bucket, matching the CLI flow. Bool flag controls whether
         // the client shows them at all.
         "personality": crate::personality::banks_json(cfg.personality),
+        // Clipboard prompt templates + LLM Copy-and-Go targets for the bank
+        // "Teach me this" buttons. Variables ({topic}, {question}, …) are
+        // interpolated client-side; one button is rendered per target id.
+        // Two templates: student (LLM teaches user) vs teacher (user teaches
+        // LLM, Feynman-style) — UI toggle picks which one fires.
+        "teach": serde_json::json!({
+            "student_prompt": cfg.teach.student_prompt,
+            "teacher_prompt": cfg.teach.teacher_prompt,
+            "targets": cfg.teach.targets,
+        }),
     }))
 }
 
