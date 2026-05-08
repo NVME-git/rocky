@@ -131,6 +131,25 @@ pub fn pkg_mood(known: usize, total: usize) -> &'static str {
     }
 }
 
+// ── Web/API surface ───────────────────────────────────────────────────────────
+//
+// The web quiz wants to show a Rocky quote between questions and at the end
+// of a session, mirroring the CLI flow. Rather than spinning up a server
+// endpoint per quote, we ship the phrase banks once with /api/data and let
+// the client pick locally.
+
+pub fn banks_json(enabled: bool) -> serde_json::Value {
+    serde_json::json!({
+        "enabled": enabled,
+        "correct": CORRECT,
+        "partial": PARTIAL,
+        "failed": FAILED,
+        "skipped": SKIPPED,
+        "session_done_few": SESSION_DONE_FEW,
+        "session_done_many": SESSION_DONE_MANY,
+    })
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Picks a phrase from a slice using subsecond time as a cheap random source.

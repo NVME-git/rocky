@@ -4,7 +4,7 @@ mod fsrs;
 mod local_log;
 mod node;
 mod obsidian;
-mod personality;
+pub mod personality;
 mod promptiq;
 mod server;
 mod session;
@@ -1961,6 +1961,7 @@ fn run_socratic_loop(
         let result = teacher.evaluate_answer(
             topic, &question, &answer, &topic_info.description,
             canonical_answer.as_deref(),
+            p.enabled,
         )?;
         total_score += result.score;
 

@@ -422,6 +422,7 @@ async fn quiz_evaluate(
     // which is Clone. We'll reconstruct for the spawn_blocking.
     // Actually, since AppState is Arc and teacher is &Teacher, we can clone the Arc.
     let state2 = state.clone();
+    let personality = state.config.personality;
     let eval = tokio::task::spawn_blocking(move || -> Result<crate::teacher::EvalResult> {
         let teacher = state2.teacher.as_ref().unwrap();
         teacher.evaluate_answer(
@@ -430,6 +431,7 @@ async fn quiz_evaluate(
             &answer,
             &description,
             canonical_answer.as_deref(),
+            personality,
         )
     })
     .await
@@ -642,6 +644,8 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
                 "retrievability": r, "mastery": m, "recall_now": recall,
                 "classification": cls,
                 "last_reviewed": n.last_reviewed.to_string(),
+                "last_encountered": n.last_encountered.to_string(),
+                "encounter_count": n.encounter_count,
                 "review_count": n.review_count, "created_at": n.created_at.to_string(),
                 "repo": if n.repo.is_empty() { "Other" } else { &n.repo },
                 "repos": n.repos,
@@ -767,6 +771,10 @@ fn build_data_json(db: &Db, cfg: &Config) -> Result<Value> {
         "domainHealth": domain_health,
         "dueForReview": due_for_review,
         "recentlyAdded": recently_added,
+        // Personality phrase banks for the web quiz — picks a Rocky quote
+        // per score bucket, matching the CLI flow. Bool flag controls whether
+        // the client shows them at all.
+        "personality": crate::personality::banks_json(cfg.personality),
     }))
 }
 
@@ -837,8 +845,13 @@ fn due_for_review_list(db: &crate::db::Db, nodes: &[&crate::node::Node], limit: 
     scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     scored.into_iter().take(limit).map(|(recall, n)| json!({
         "id": n.id, "topic": n.topic, "domain": n.domain,
+        "repo": if n.repo.is_empty() { "Other" } else { &n.repo },
         "recall_now": recall,
+        "classification": fsrs::classify(recall),
+        "review_count": n.review_count,
+        "encounter_count": n.encounter_count,
         "last_reviewed": n.last_reviewed.to_string(),
+        "last_encountered": n.last_encountered.to_string(),
     })).collect()
 }
 
@@ -847,6 +860,9 @@ fn recently_added_list(nodes: &[&crate::node::Node], limit: usize) -> Vec<Value>
     by_date.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     by_date.into_iter().take(limit).map(|n| json!({
         "id": n.id, "topic": n.topic, "domain": n.domain,
+        "repo": if n.repo.is_empty() { "Other" } else { &n.repo },
+        "review_count": n.review_count,
+        "encounter_count": n.encounter_count,
         "created_at": n.created_at.to_string(),
         "kind": n.kind.as_str(),
     })).collect()

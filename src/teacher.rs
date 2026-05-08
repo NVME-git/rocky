@@ -305,9 +305,25 @@ Focus on the core concept or the most important thing to think about. Return ONL
         answer: &str,
         description: &str,
         canonical_answer: Option<&str>,
+        personality: bool,
     ) -> Result<EvalResult> {
-        let system = r#"You are evaluating whether a developer genuinely understands the implications
+        // Tone toggle: with personality on, the feedback addresses the user
+        // as "friend" in Rocky's caveman-mentor voice; off, it's a precise
+        // second-person ("you") technical voice. Only the feedback string
+        // changes — score / understood / followup stay neutral JSON fields.
+        let voice = if personality {
+            "Address the developer as \"friend\". Voice: Rocky the caveman mentor — short sentences, \
+playful ('is good', 'Rocky think', 'brain work excellent'), warm but technically sharp. \
+Keep the technical content precise; the caveman flavour is in the framing words only."
+        } else {
+            "Address the developer as \"you\". Voice: precise, encouraging mentor. No fluff, no \
+ornamentation."
+        };
+        let system = format!(
+            r#"You are evaluating whether a developer genuinely understands the implications
 of a technical topic based on their answer to a Socratic question.
+
+{voice}
 
 Evaluate on:
 1. Do they demonstrate understanding of consequences, not just surface knowledge?
@@ -318,12 +334,13 @@ If an ideal answer is provided, use it as a reference for what a complete answer
 but do not penalise for different phrasing or approach, only for missing key insights.
 
 Return ONLY valid JSON:
-{
+{{
   "score": <0.0 to 1.0>,
   "understood": <true if score >= 0.65>,
-  "feedback": "<1-2 sentences of specific feedback>",
+  "feedback": "<2-3 sentences of specific feedback in the chosen voice>",
   "followup": "<a follow-up question if score < 0.65, else null>"
-}"#;
+}}"#
+        );
 
         let ideal = canonical_answer
             .filter(|s| !s.is_empty())
@@ -334,7 +351,7 @@ Return ONLY valid JSON:
             "Topic: {topic}\nDescription: {description}\nQuestion asked: {question}\nDeveloper's answer: {answer}{ideal}"
         );
 
-        let raw = self.ask(system, &user)?;
+        let raw = self.ask(&system, &user)?;
         let cleaned = strip_code_fence(&raw);
         Ok(serde_json::from_str(cleaned)?)
     }

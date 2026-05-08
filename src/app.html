@@ -48,6 +48,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .atrophy-banner .score-bar{flex:1;height:10px;border-radius:5px;background:#1e2340;overflow:hidden;position:relative}
 .atrophy-banner .score-fill{height:100%;background:linear-gradient(90deg,#e74c3c,#e6a817 40%,#1d9e75 80%);border-radius:5px;transition:width .5s}
 .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.dash-row{display:grid;gap:14px;margin-bottom:14px}
+.dash-row-2{grid-template-columns:1fr 1fr}
+.dash-row-3{grid-template-columns:1fr 1fr 1fr}
+/* 5-column dashboard row: A=1/8 B=1/8 C=2/8 D=2/8 E=2/8 (= 1/4 each on the wider cells). */
+.dash-row-5{grid-template-columns:1fr 1fr 2fr 2fr 2fr;gap:10px}
+.dash-row-5 .dash-card{min-height:240px;padding:12px}
+.dash-card-narrow{padding:10px 8px}
+.dash-card-narrow .dc-h{font-size:10px;letter-spacing:.5px}
+.dash-card-narrow .dash-cards{gap:5px}
+.dash-card-narrow .queue-card{padding:6px 8px;gap:4px}
+.dash-card-narrow .queue-card .qc-topic{font-size:11px}
+.dash-card-narrow .queue-card .qc-meta{font-size:9px;gap:5px}
+.dash-card-narrow .queue-card .qc-last{font-size:9px}
+.dash-card-narrow .queue-card .qc-trend{margin-left:auto}
+.dash-row .dash-card{min-height:200px}
+.viz-box-card{display:flex;flex-direction:column}
+.viz-box-card svg{flex:1;width:100%;display:block;min-height:240px}
 .dash-card{background:#1a1d27;border:1px solid #2d3148;border-radius:10px;padding:16px;min-height:200px}
 .dash-card .dc-h{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#555e7a;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
 .dash-card .dc-h .dc-pill{font-size:10px;background:#1e2340;color:#8892a4;padding:2px 7px;border-radius:8px;text-transform:none;letter-spacing:0}
@@ -60,6 +77,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .dash-list .dl-recall.bad{color:#e74c3c}
 .dash-list .dl-recall.warn{color:#e6a817}
 .dash-list .dl-recall.ok{color:#1d9e75}
+.dash-list .dl-date{font-size:10px;color:#7c9ef3;text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin-top:8px;padding:0 8px}
+.dash-list .dl-date:first-child{margin-top:0}
+.dash-cards{display:flex;flex-direction:column;gap:6px}
+.dash-cards .queue-card{padding:8px 10px;font-size:12px;border-radius:6px}
+.dash-cards .queue-card .qc-topic{font-size:12px}
+.dash-cards .queue-card .qc-meta{gap:8px}
 .domain-bars{display:flex;flex-direction:column;gap:8px}
 .domain-bar{display:flex;align-items:center;gap:10px;font-size:11px}
 .domain-bar .db-name{width:100px;color:#c4cde0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -88,13 +111,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .queue-row .qr-recall.bad{color:#e74c3c}
 .queue-row .qr-recall.warn{color:#e6a817}
 .queue-row .qr-recall.ok{color:#1d9e75}
-.queue-group-header{display:flex;align-items:center;gap:10px;padding:9px 14px;background:#0f1629;border-bottom:1px solid #1e2340;border-top:1px solid #1e2340;cursor:pointer;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#8892a4;user-select:none}
-.queue-group-header:first-child{border-top:none}
-.queue-group-header:hover{background:#1a2340;color:#c4cde0}
+.queue-group-header{display:flex;align-items:baseline;gap:6px;padding:10px 14px 4px;background:transparent;cursor:pointer;font-size:11px;color:#8892a4;user-select:none}
+.queue-group-header:hover{color:#c4cde0}
 .queue-group-header.open .qg-label{color:#c4cde0}
 .queue-group-header .qg-chev{font-size:9px;color:#7c9ef3;width:10px;display:inline-block}
-.queue-group-header .qg-label{flex:1;font-weight:600}
+.queue-group-header .qg-label{font-weight:600;text-transform:uppercase;letter-spacing:.5px}
 .queue-group-header .qg-count{font-size:10px;color:#555e7a;text-transform:none;letter-spacing:0}
+.queue-group-header .qg-count::before{content:"· "}
 .queue-group-body .queue-row:last-child{border-bottom:none}
 .queue-row .qr-trend{text-align:center;color:#6b7594}
 .queue-row .qr-last{color:#6b7594;font-size:11px;text-align:right}
@@ -110,19 +133,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .queue-card .qc-recall.ok{color:#1d9e75}
 .queue-card .qc-trend{font-size:11px;color:#6b7594;margin-left:auto}
 .queue-card .qc-last{color:#555e7a}
-
-/* ── sessions tab ── */
-#tab-sessions{overflow-y:auto;padding:24px}
-.session-day{margin-bottom:18px}
-.session-date{font-size:13px;font-weight:600;color:#c4cde0;margin-bottom:8px;display:flex;align-items:center;gap:10px}
-.session-date .sd-count{font-size:10px;color:#8892a4;background:#1e2340;padding:2px 8px;border-radius:8px}
-.session-topics{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
-.session-chip{background:#1a1d27;border:1px solid #2d3148;border-radius:7px;padding:8px 11px;font-size:12px;cursor:pointer;transition:border-color .12s}
-.session-chip:hover{border-color:#7c9ef3}
-.session-chip .sc-topic{color:#c4cde0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;margin-bottom:3px}
-.session-chip .sc-meta{font-size:10px;color:#6b7594;display:flex;gap:8px}
-.session-chip .sc-meta .sc-domain{color:#8892a4}
-.session-chip .sc-meta .sc-encounters{color:#F59E0B}
+.queue-card .qc-repo{color:#7c9ef3}
+.queue-card .qc-enc{color:#F59E0B;font-weight:600}
+.queue-card .qc-reviews{color:#8892a4;font-variant-numeric:tabular-nums}
 
 /* ── feedback tab ── */
 #tab-feedback{overflow-y:auto;padding:32px;justify-content:center}
@@ -242,10 +255,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .warp-sep{width:1px;height:18px;background:#2d3148;flex-shrink:0}
 
 /* planning toggle (lives inside the HUD) */
-#planning-toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#8892a4;cursor:pointer;padding:4px 8px;border-radius:12px;border:1px solid transparent;white-space:nowrap}
-#planning-toggle:hover{background:#1e2340;color:#e2e8f0}
-#planning-toggle.active{background:#1e2340;border-color:#9b59b6;color:#c39bd3}
-#planning-toggle input{accent-color:#9b59b6;cursor:pointer}
+#map-project-filter{background:#1a1d27;border:1px solid #2d3148;color:#c4cde0;border-radius:12px;padding:4px 8px;font-size:11px;font-family:inherit;cursor:pointer;outline:none;max-width:140px}
+#map-project-filter:focus{border-color:#7c9ef3}
+#map-project-filter.active{border-color:#7c9ef3;color:#7c9ef3;background:#1e2340}
+/* chart-mode toggle (rebrand of planning) — leftmost in the HUD */
+#chart-toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#8892a4;cursor:pointer;padding:4px 10px;border-radius:14px;border:1px solid transparent;white-space:nowrap}
+#chart-toggle:hover{background:#1e2340;color:#e2e8f0}
+#chart-toggle.active{background:#1e2340;border-color:#7c9ef3;color:#7c9ef3}
+#chart-toggle input{display:none}
+/* Chart list — vertical column anchored bottom-left of the canvas, growing
+   upward as items are added so the HUD never shifts. Hidden when empty. */
+#chart-list{position:absolute;left:14px;bottom:60px;z-index:18;display:none;flex-direction:column;align-items:flex-start;gap:5px;max-height:55vh;overflow-y:auto;padding:4px;pointer-events:auto}
+#chart-list.visible{display:flex}
+.chart-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#c4cde0;background:rgba(124,158,243,.14);border:1px solid rgba(124,158,243,.45);border-radius:12px;padding:4px 4px 4px 10px;white-space:nowrap;max-width:240px;backdrop-filter:blur(6px)}
+.chart-chip .chart-chip-label{overflow:hidden;text-overflow:ellipsis;font-weight:500;cursor:pointer}
+.chart-chip .chart-chip-label:hover{color:#7c9ef3}
+.chart-chip .chart-chip-x{background:none;border:none;color:#8892a4;cursor:pointer;font-family:inherit;font-size:13px;line-height:1;padding:0 4px;border-radius:50%}
+.chart-chip .chart-chip-x:hover{color:#e74c3c}
+#chart-quiz-btn{font-size:11px;padding:4px 11px;border-radius:14px;border:1px solid #3d4468;background:#2a3260;color:#7c9ef3;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+#chart-quiz-btn:hover{background:#344080}
 
 /* hint shown briefly after entering tab */
 #map-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,calc(-50% + 100px));z-index:18;pointer-events:none;font-size:11px;color:#8892a4;text-transform:uppercase;letter-spacing:.6px;text-align:center;opacity:0;transition:opacity .35s}
@@ -257,7 +285,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #taxonomy-panel{box-shadow:inset -1px 0 0 rgba(255,255,255,.03), 8px 0 28px rgba(0,0,0,.45)}
 #taxonomy-panel{left:0;width:220px;padding:12px;transform:translateX(-100%)}
 #taxonomy-panel.open{transform:translateX(0)}
-#detail-panel{right:0;width:280px;padding:14px;transform:translateX(100%)}
+#detail-panel{right:0;width:360px;padding:14px;transform:translateX(100%)}
 #detail-panel.open{transform:translateX(0)}
 .panel-close{float:right;background:none;border:none;color:#555e7a;cursor:pointer;font-size:16px;line-height:1}
 .panel-close:hover{color:#e2e8f0}
@@ -281,6 +309,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .conn-kind.k-depends_on{background:rgba(245,158,11,.15);color:#f59e0b}
 .conn-kind.k-conflicts_with{background:rgba(226,75,74,.15);color:#e24b4a}
 .conn-kind.k-part_of{background:rgba(29,158,117,.15);color:#1d9e75}
+
+/* feedback widget — used in detail panel, dashboard, queue toolbar */
+.feedback-row{display:flex;align-items:center;gap:6px;margin-top:14px;flex-wrap:wrap}
+.feedback-row-label{font-size:10px;color:#555e7a;text-transform:uppercase;letter-spacing:.6px;margin-right:4px}
+.topic-fb-btn{background:rgba(26,29,39,.55);border:1px solid rgba(45,49,72,.5);border-radius:6px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;font-family:inherit;padding:0;transition:background .12s,border-color .12s}
+.topic-fb-btn:hover{background:rgba(30,35,64,.85);border-color:#7c9ef3}
+.feedback-form{flex-basis:100%;display:flex;flex-direction:column;gap:6px;margin-top:6px;background:#1a1d27;border:1px solid #2d3148;border-radius:6px;padding:8px}
+.feedback-form textarea{width:100%;min-height:60px;background:#0f1117;border:1px solid #2d3148;border-radius:5px;color:#e2e8f0;font-size:12px;padding:8px;outline:none;resize:vertical;font-family:inherit;line-height:1.45}
+.feedback-form textarea:focus{border-color:#7c9ef3}
+.feedback-form textarea.error{border-color:#e74c3c}
+.feedback-form-actions{display:flex;justify-content:flex-end;gap:6px}
+.feedback-form-actions button{font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid #2d3148;background:#1a1d27;color:#8892a4;cursor:pointer;font-family:inherit}
+.feedback-form-actions .feedback-submit{background:#2a3260;border-color:#3d4468;color:#7c9ef3;font-weight:600}
+.feedback-form-actions .feedback-submit:hover{background:#344080}
+.feedback-form-actions .feedback-submit:disabled{opacity:.6;cursor:default}
+.feedback-form-actions .feedback-cancel:hover{color:#e2e8f0}
+.feedback-ok{font-size:11px;color:#1d9e75;padding:4px 0}
+/* tab-level feedback widgets */
+#dashboard-feedback{display:flex;justify-content:flex-end;margin-bottom:6px}
+#dashboard-feedback .feedback-row{margin-top:0}
+#dashboard-feedback .feedback-form{flex-basis:280px;max-width:340px}
+.queue-toolbar-feedback{display:flex;align-items:center;margin-left:8px}
+.queue-toolbar-feedback .feedback-row{margin-top:0}
+.queue-toolbar-feedback .feedback-form{flex-basis:280px;max-width:340px;position:absolute;right:24px;top:54px;z-index:5}
 
 /* question-bank flashcards */
 .bank-flip{perspective:800px;margin-top:8px;cursor:pointer;position:relative}
@@ -346,16 +398,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #tax-list li .badge{font-size:10px;background:#1e2340;padding:1px 5px;border-radius:8px;color:#555e7a}
 
 /* ── multi-select floating bar ── */
-#multi-bar{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:#232740;border:1px solid #3d4468;border-radius:8px;padding:8px 14px;display:flex;align-items:center;gap:10px;z-index:30;display:none;white-space:nowrap}
-#multi-bar.visible{display:flex}
-#multi-bar .mb-label{font-size:12px;color:#8892a4}
-#multi-bar button{font-size:12px;padding:4px 12px;border-radius:5px;border:none;cursor:pointer}
 .mb-quiz-btn{background:#2a3260;color:#7c9ef3;font-weight:600}
 .mb-quiz-btn:hover{background:#344080}
 .mb-clear-btn{background:transparent;color:#555e7a;border:1px solid #3d4468 !important;border-radius:5px}
 .mb-clear-btn:hover{color:#e2e8f0}
 
 /* ── quiz modal ── */
+/* Generic picker modal — shares the PromptIQ overlay aesthetic */
+#picker-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);z-index:180;display:none;align-items:center;justify-content:center;padding:32px}
+#picker-overlay.visible{display:flex}
+#picker-modal{background:#15182a;border:1px solid #2d3148;border-radius:12px;width:min(560px,100%);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+#picker-modal #piq-head{padding:16px 20px;border-bottom:1px solid #2d3148}
+#picker-body{overflow-y:auto;padding:6px 0}
+.picker-row{padding:10px 20px;border-bottom:1px solid #1e2340;cursor:pointer;transition:background .12s;display:flex;flex-direction:column;gap:3px}
+.picker-row:hover{background:#1e2340}
+.picker-row:last-child{border-bottom:none}
+.picker-row .picker-label{font-size:12px;color:#c4cde0;font-weight:500}
+.picker-row .picker-sub{font-size:10px;color:#6b7594;text-transform:uppercase;letter-spacing:.4px}
+.picker-empty{padding:32px;text-align:center;color:#555e7a;font-size:12px}
+
 /* PromptIQ recent-prompts modal */
 #piq-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);z-index:180;display:none;align-items:center;justify-content:center;padding:32px}
 #piq-overlay.visible{display:flex}
@@ -449,6 +510,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .qm-submit-btn:disabled{opacity:.5;cursor:default;transform:none}
 .qm-feedback{font-size:13px;color:#a0a8c0;background:#1e2340;padding:10px 12px;border-radius:6px;line-height:1.5}
 .qm-followup{font-size:12px;color:#7c9ef3;font-style:italic;margin-top:4px}
+.rocky-quote{font-size:12px;color:#F59E0B;font-style:italic;line-height:1.5;padding:8px 12px;border-left:2px solid #F59E0B;background:rgba(245,158,11,.06);border-radius:4px;margin-top:6px}
+.rocky-quote::before{content:"🪨 ";font-style:normal;margin-right:2px}
 .qm-next-btn{align-self:flex-end;padding:7px 18px;border-radius:6px;border:none;background:#232740;color:#e2e8f0;font-weight:600;cursor:pointer;font-size:13px;display:none}
 .qm-next-btn.visible{display:block}
 .qm-next-btn:hover{background:#2d3456}
@@ -480,8 +543,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="nav-btn active" data-tab="dashboard" onclick="switchTab('dashboard')"><span class="nav-icon">⊞</span>Dashboard</button>
     <button class="nav-btn" data-tab="map" onclick="switchTab('map')"><span class="nav-icon">◉</span>Explorer</button>
     <button class="nav-btn" data-tab="queue" onclick="switchTab('queue')"><span class="nav-icon">⊟</span>Review Queue</button>
-    <button class="nav-btn" data-tab="sessions" onclick="switchTab('sessions')"><span class="nav-icon">⊡</span>Sessions</button>
-    <button class="nav-btn" data-tab="projects" onclick="switchTab('projects')"><span class="nav-icon">▣</span>Projects</button>
     <button class="nav-btn" data-tab="feedback" onclick="switchTab('feedback')"><span class="nav-icon">✎</span>Feedback</button>
   </div>
   <div class="spacer"></div>
@@ -497,6 +558,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- DASHBOARD TAB -->
 <div id="tab-dashboard" class="tab-content active">
+  <div id="dashboard-feedback"></div>
   <div class="iq-row">
     <div class="atrophy-banner iq-half">
       <div>
@@ -519,40 +581,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <svg class="iq-spark" id="prompt-iq-spark" preserveAspectRatio="none"></svg>
     </div>
   </div>
-  <div class="dash-grid">
-    <div class="dash-card">
-      <div class="dc-h"><span>Due for review</span><span class="dc-pill" id="due-pill">—</span></div>
+  <div class="dash-row dash-row-5">
+    <div class="dash-card dash-card-narrow">
+      <div class="dc-h"><span>Recently</span><span class="dc-pill" id="recent-pill">—</span></div>
+      <div class="dash-list" id="recent-list"></div>
+    </div>
+    <div class="dash-card dash-card-narrow">
+      <div class="dc-h"><span>Due</span><span class="dc-pill" id="due-pill">—</span></div>
       <div class="dash-list" id="due-list"></div>
     </div>
     <div class="dash-card">
       <div class="dc-h"><span>Domain health</span><span class="dc-pill" id="dh-pill">—</span></div>
       <div class="domain-bars" id="domain-bars"></div>
     </div>
-    <div class="dash-card">
-      <div class="dc-h"><span>Recently added</span><span class="dc-pill" id="recent-pill">—</span></div>
-      <div class="dash-list" id="recent-list"></div>
-    </div>
-    <div class="dash-card">
-      <div class="dc-h"><span>Projects</span><span class="dc-pill" id="dash-projects-pill">—</span></div>
-      <div class="dash-list" id="dash-projects-list"></div>
-    </div>
-  </div>
-</div>
-
-<!-- PROJECTS TAB -->
-<div id="tab-projects" class="tab-content">
-  <p class="section-title" style="padding:16px 16px 0">Projects</p>
-  <div class="cards-grid" id="cards-grid"></div>
-  <div class="viz-row" id="viz-row">
-    <div class="viz-box">
-      <p class="section-title">Cross-project flows</p>
-      <svg id="chord-svg"></svg>
-    </div>
-    <div class="viz-box">
-      <p class="section-title">Domain mix</p>
+    <div class="dash-card viz-box-card">
+      <p class="section-title" style="margin-bottom:6px">Domain topics</p>
       <svg id="domain-mix-svg"></svg>
     </div>
+    <div class="dash-card viz-box-card">
+      <p class="section-title" style="margin-bottom:6px">Cross-project topics</p>
+      <svg id="chord-svg"></svg>
+    </div>
   </div>
+
+  <p class="section-title" style="margin-top:8px">Projects</p>
+  <div class="cards-grid" id="cards-grid"></div>
   <div class="viz-full">
     <div class="timeline-header">
       <p class="section-title" style="margin-bottom:0">Knowledge timeline</p>
@@ -570,8 +623,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="queue-toolbar">
     <label style="font-size:11px;color:#555e7a">Sort by</label>
     <select id="queue-sort" onchange="renderQueue()">
+      <option value="recent" selected>Most recently added</option>
       <option value="recall">Lowest recall first</option>
-      <option value="recent">Most recently added</option>
       <option value="reviews">Fewest reviews</option>
       <option value="alpha">Alphabetical</option>
     </select>
@@ -587,21 +640,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </select>
     <span class="qt-count" id="queue-count">— topics</span>
     <button onclick="quizFromQueue()">Quiz top 5</button>
+    <div id="queue-feedback" class="queue-toolbar-feedback"></div>
   </div>
   <div class="queue-table" id="queue-table"></div>
 </div>
 
-<!-- SESSIONS TAB -->
-<div id="tab-sessions" class="tab-content">
-  <div class="queue-toolbar">
-    <label style="font-size:11px;color:#555e7a">Project</label>
-    <select id="sessions-project" onchange="renderSessions()">
-      <option value="">All projects</option>
-    </select>
-    <span class="qt-count" id="sessions-count"></span>
-  </div>
-  <div id="sessions-body"></div>
-</div>
 
 <!-- KNOWLEDGE MAP TAB (space view) -->
 <div id="tab-map" class="tab-content">
@@ -617,7 +660,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 
   <!-- bottom-center: warp HUD -->
+  <div id="chart-list"></div>
   <div id="warp-hud">
+    <label id="chart-toggle" title="Chart your own learning pathway — pick topics as you explore, then quiz on them all at once.">
+      <input type="checkbox" id="chart-mode" onchange="toggleChartMode()">
+      <span>📍 Chart</span>
+    </label>
+    <button id="chart-quiz-btn" onclick="quizChartedTopics()" title="Quiz on every charted topic — one question each" style="display:none">Quiz <span id="chart-quiz-count">0</span></button>
+    <span class="warp-sep" id="chart-sep" style="display:none"></span>
     <button class="warp-btn warp-home" onclick="warpHome()" title="Warp to you (centre of the map)">
       <span class="warp-dot"></span><span>You</span>
     </button>
@@ -625,10 +675,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="warp-stars"></div>
     <span class="warp-sep"></span>
     <button class="warp-btn warp-back-btn" onclick="warpBack()" title="Previous location" id="warp-back-btn">← back</button>
-    <label id="planning-toggle" title="Dim topics you already know; highlight unreviewed ones.">
-      <input type="checkbox" id="planning-mode" onchange="togglePlanningMode()">
-      <span>Planning</span>
-    </label>
+    <select id="map-project-filter" onchange="setMapProjectFilter(this.value)" title="Dim topics outside the selected project">
+      <option value="">All projects</option>
+    </select>
   </div>
 
   <div id="taxonomy-panel">
@@ -639,11 +688,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div id="detail-panel">
     <button class="panel-close" onclick="closeDetailPanel()">×</button>
     <div id="detail-content"></div>
-  </div>
-  <div id="multi-bar">
-    <span class="mb-label" id="multi-label">0 selected</span>
-    <button class="mb-quiz-btn" onclick="quizSelected()">Quiz selected</button>
-    <button class="mb-clear-btn" onclick="clearSelection()">Clear</button>
   </div>
 </div>
 
@@ -671,6 +715,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 </div><!-- /#main-pane -->
+
+<!-- GENERIC PICKER MODAL — used by cross-project topics, etc. -->
+<div id="picker-overlay" onclick="closePickerModal(event)">
+  <div id="picker-modal" onclick="event.stopPropagation()">
+    <div id="piq-head">
+      <div>
+        <div class="piq-title" id="picker-title">—</div>
+        <div class="piq-sub" id="picker-sub">—</div>
+      </div>
+      <button class="piq-close" onclick="closePickerModal()" aria-label="Close">×</button>
+    </div>
+    <div id="picker-body"></div>
+  </div>
+</div>
 
 <!-- PROMPTIQ RECENT-PROMPTS MODAL -->
 <div id="piq-overlay" onclick="closePromptIqModal(event)">
@@ -729,6 +787,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
             <div class="qm-canonical" id="qm-canonical">—</div>
             <div class="qm-feedback" id="llm-feedback" style="display:none"></div>
             <div class="qm-followup" id="llm-followup" style="display:none"></div>
+            <div class="rocky-quote" id="rocky-quote" style="display:none"></div>
             <button class="qm-next-btn" id="llm-next" onclick="nextQuestion()">Next →</button>
           </div>
         </div>
@@ -737,6 +796,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="quiz-summary">
       <p class="qs-title">Session complete</p>
       <div class="qs-stats" id="qs-stats"></div>
+      <div class="rocky-quote" id="rocky-summary-quote" style="display:none"></div>
       <button class="qs-close-btn" onclick="closeQuiz()">Done</button>
     </div>
   </div>
@@ -796,7 +856,6 @@ async function refreshData() {
   const r = await fetch('/api/data');
   DATA = await r.json();
   if (currentTab === 'dashboard') renderDashboard();
-  else if (currentTab === 'projects') renderProjects();
   else if (currentTab === 'queue') renderQueue();
   else if (currentTab === 'map') mapOnDataRefresh();
   updateStats();
@@ -835,12 +894,8 @@ function switchTab(name) {
     }));
   } else if (name === 'queue') {
     renderQueue();
-  } else if (name === 'sessions') {
-    loadSessions();
   } else if (name === 'dashboard') {
     renderDashboard();
-  } else if (name === 'projects') {
-    renderProjects();
   } else if (name === 'feedback') {
     loadFeedback();
   }
@@ -894,71 +949,153 @@ function renderProjects() {
 
 function drillIntoProject(repo) {
   // Switch to the map tab and warp to the most-recently-touched topic in the
-  // requested repo. The map shows everything in spatial context, so a
-  // project-specific scene isn't needed — landing the camera on a topic from
-  // the repo is enough to orient the user.
+  // requested repo. ALSO apply the project filter so non-repo nodes dim out —
+  // gives the user a focused view on the project they clicked.
   if (!DATA) return;
+  pendingProjectFilter = repo;
   const items = (DATA.nodes || [])
     .filter(n => n.kind !== 'domain' && n.kind !== 'user' && n.repo === repo);
   if (items.length === 0) { switchTab('map'); return; }
   items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
   pendingWarpTarget = items[0].id;
+  pendingSelectAfterWarp = true;
   switchTab('map');
 }
 
 // ── chord diagram
 function renderChord() {
-  if (!DATA || !DATA.flows || DATA.flows.length===0) return;
+  if (!DATA || !DATA.nodes || !DATA.edges) return;
   const svg = document.getElementById('chord-svg');
-  const W = svg.parentElement.clientWidth - 24;
-  const H = 320;
+  if (!svg) return;
+  const W = Math.max(320, svg.parentElement.clientWidth - 24);
+  const H = 380;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.innerHTML = '';
 
-  const repos = [...new Set(DATA.flows.flatMap(f=>[f.source,f.target]))];
+  // Build cross-project topic sets per repo pair. A cross-project topic is
+  // a topic that has at least one edge to a topic in a different repo. The
+  // ribbon thickness = number of shared topics in that pair.
+  const nodeById = Object.fromEntries(DATA.nodes.map(n => [n.id, n]));
+  const topicsByPair = new Map();
+  for (const e of DATA.edges) {
+    const sId = typeof e.source === 'object' ? e.source.id : e.source;
+    const tId = typeof e.target === 'object' ? e.target.id : e.target;
+    const s = nodeById[sId], t = nodeById[tId];
+    if (!s || !t) continue;
+    if (s.kind === 'user' || s.kind === 'domain') continue;
+    if (t.kind === 'user' || t.kind === 'domain') continue;
+    const sr = s.repo || '', tr = t.repo || '';
+    if (!sr || !tr || sr === tr) continue;
+    const key = [sr, tr].sort().join('|');
+    if (!topicsByPair.has(key)) topicsByPair.set(key, new Set());
+    topicsByPair.get(key).add(sId);
+    topicsByPair.get(key).add(tId);
+  }
+  if (topicsByPair.size === 0) {
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', '50%'); t.setAttribute('y', '50%');
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('fill', '#555e7a');
+    t.setAttribute('font-size', '11');
+    t.textContent = 'no cross-project topics yet — add edges that span repos';
+    svg.appendChild(t);
+    return;
+  }
+
+  const repos = [...new Set([...topicsByPair.keys()].flatMap(k => k.split('|')))].sort();
   if (repos.length < 2) return;
   const n = repos.length;
-  const index = Object.fromEntries(repos.map((r,i)=>[r,i]));
-
-  // Build matrix
-  const mat = Array.from({length:n},()=>Array(n).fill(0));
-  for (const f of DATA.flows) {
-    const s = index[f.source], t = index[f.target];
-    if (s!==undefined && t!==undefined) { mat[s][t]+=f.total; mat[t][s]+=f.total; }
+  const index = Object.fromEntries(repos.map((r, i) => [r, i]));
+  const mat = Array.from({length:n}, () => Array(n).fill(0));
+  for (const [key, set] of topicsByPair) {
+    const [a, b] = key.split('|');
+    const i = index[a], j = index[b];
+    if (i === undefined || j === undefined) continue;
+    mat[i][j] = set.size;
+    mat[j][i] = set.size;
   }
 
   const d3svg = d3.select(svg);
-  const cx = W/2, cy = H/2, outerR = Math.min(cx,cy)-40, innerR = outerR-16;
-
+  const cx = W/2, cy = H/2, outerR = Math.min(cx,cy) - 60, innerR = outerR - 16;
   const chord = d3.chord().padAngle(.04).sortSubgroups(d3.descending)(mat);
-  const colors = repos.map((_,i)=>d3.schemeTableau10[i%10]);
-
+  const colors = repos.map((_, i) => d3.schemeTableau10[i % 10]);
   const arc = d3.arc().innerRadius(innerR).outerRadius(outerR);
   const ribbon = d3.ribbon().radius(innerR);
 
-  const g = d3svg.append('g').attr('transform',`translate(${cx},${cy})`);
-  const tooltip = document.getElementById('tooltip');
+  const g = d3svg.append('g').attr('transform', `translate(${cx},${cy})`);
 
-  // Groups
+  // Repo arcs
   g.selectAll('path.arc').data(chord.groups).enter().append('path').attr('class','arc')
-    .attr('d',arc).attr('fill',d=>colors[d.index]).attr('stroke','#0f1117').attr('opacity',.85)
-    .on('mouseover',(ev,d)=>{showTip(ev,repos[d.index]+'\n'+d3.sum(mat[d.index])+' connections');})
-    .on('mousemove',moveTip).on('mouseleave',hideTip);
+    .attr('d', arc).attr('fill', d => colors[d.index]).attr('stroke', '#0f1117').attr('opacity', .85)
+    .on('mouseover', (ev, d) => showTip(ev, repos[d.index] + '\n' + d3.sum(mat[d.index]) + ' shared topics'))
+    .on('mousemove', moveTip).on('mouseleave', hideTip);
 
-  // Labels
-  g.selectAll('text.label').data(chord.groups).enter().append('text').attr('class','label')
-    .each(d=>{d.angle=(d.startAngle+d.endAngle)/2;})
-    .attr('dy','0.35em')
-    .attr('transform',d=>`rotate(${d.angle*180/Math.PI-90}) translate(${outerR+8}) ${d.angle>Math.PI?'rotate(180)':''}`)
-    .attr('text-anchor',d=>d.angle>Math.PI?'end':'start')
-    .attr('fill','#8892a4').attr('font-size','10px')
-    .text(d=>repos[d.index].length>10?repos[d.index].slice(0,10)+'…':repos[d.index]);
+  // Leader lines from arc rim outward
+  g.selectAll('line.leader').data(chord.groups).enter().append('line').attr('class', 'leader')
+    .each(d => { d.angle = (d.startAngle + d.endAngle) / 2; })
+    .attr('x1', d => Math.cos(d.angle - Math.PI/2) * (outerR + 2))
+    .attr('y1', d => Math.sin(d.angle - Math.PI/2) * (outerR + 2))
+    .attr('x2', d => Math.cos(d.angle - Math.PI/2) * (outerR + 14))
+    .attr('y2', d => Math.sin(d.angle - Math.PI/2) * (outerR + 14))
+    .attr('stroke', '#3d4468').attr('stroke-width', 1);
 
-  // Ribbons
+  // Full repo labels at the leader endpoint (no truncation)
+  g.selectAll('text.label').data(chord.groups).enter().append('text').attr('class', 'label')
+    .attr('dy', '0.35em')
+    .attr('transform', d => `rotate(${d.angle*180/Math.PI - 90}) translate(${outerR + 18}) ${d.angle > Math.PI ? 'rotate(180)' : ''}`)
+    .attr('text-anchor', d => d.angle > Math.PI ? 'end' : 'start')
+    .attr('fill', '#a4adc4').attr('font-size', '10px').attr('font-weight', '500')
+    .text(d => repos[d.index]);
+
+  // Ribbons — click opens the topic list for that repo pair
   g.selectAll('path.ribbon').data(chord).enter().append('path').attr('class','ribbon')
-    .attr('d',ribbon).attr('fill',d=>colors[d.source.index]).attr('opacity',.35).attr('stroke','none')
-    .on('mouseover',(ev,d)=>{ showTip(ev,`${repos[d.source.index]} ↔ ${repos[d.target.index]}: ${d.source.value}`); })
-    .on('mousemove',moveTip).on('mouseleave',hideTip);
+    .attr('d', ribbon).attr('fill', d => colors[d.source.index]).attr('opacity', .35).attr('stroke', 'none')
+    .style('cursor', 'pointer')
+    .on('mouseover', (ev, d) => {
+      const a = repos[d.source.index], b = repos[d.target.index];
+      const key = [a, b].sort().join('|');
+      const set = topicsByPair.get(key);
+      showTip(ev, `${a} ↔ ${b}: ${set ? set.size : 0} shared topics — click to inspect`);
+    })
+    .on('mousemove', moveTip).on('mouseleave', hideTip)
+    .on('click', (ev, d) => {
+      hideTip();
+      openCrossProjectTopics(repos[d.source.index], repos[d.target.index]);
+    });
+}
+
+// Open a picker modal listing every cross-project topic between the two
+// repos. Selecting a topic switches to the Explorer and warps to it.
+function openCrossProjectTopics(a, b) {
+  if (!DATA) return;
+  const nodeById = Object.fromEntries(DATA.nodes.map(n => [n.id, n]));
+  const ids = new Set();
+  for (const e of DATA.edges) {
+    const sId = typeof e.source === 'object' ? e.source.id : e.source;
+    const tId = typeof e.target === 'object' ? e.target.id : e.target;
+    const s = nodeById[sId], t = nodeById[tId];
+    if (!s || !t) continue;
+    if (s.kind === 'user' || s.kind === 'domain') continue;
+    if (t.kind === 'user' || t.kind === 'domain') continue;
+    const sr = s.repo || '', tr = t.repo || '';
+    const match = (sr === a && tr === b) || (sr === b && tr === a);
+    if (!match) continue;
+    ids.add(sId); ids.add(tId);
+  }
+  const topics = [...ids].map(id => nodeById[id]).filter(Boolean)
+    .sort((p, q) => p.topic.localeCompare(q.topic));
+  showPickerModal(
+    `${a} ↔ ${b}`,
+    `${topics.length} shared topic${topics.length === 1 ? '' : 's'} — pick one to open in the Explorer`,
+    topics.map(t => ({
+      label: t.topic,
+      sub: `${t.domain || 'Other'} · ${t.repo || '—'} · ${Math.round((t.recall_now || 0) * 100)}%`,
+      onPick: () => {
+        pendingWarpTarget = t.id;
+        pendingSelectAfterWarp = true;     // open the detail panel after the warp lands
+        switchTab('map');
+      },
+    })),
+  );
 }
 
 // ── timeline (rows = projects OR domains, controlled by timelineMode)
@@ -1028,15 +1165,26 @@ function renderTimeline() {
     .attr('width', 3).attr('height', y.bandwidth())
     .attr('fill', d => colors[d]).attr('rx', 1.5);
 
-  // Topic dots
+  // Topic dots — clickable; warp into Explorer at the topic with its detail
+  // panel auto-opened. Looks up the node by topic name (timeline payload
+  // doesn't include node id today).
   g.selectAll('circle.topic').data(points).enter().append('circle').attr('class', 'topic')
     .attr('cx', d => x(d.date))
     .attr('cy', d => y(d[groupKey] || 'Other') + y.bandwidth() / 2)
     .attr('r', 4)
     .attr('fill', d => colors[d[groupKey] || 'Other'] || '#607d8b')
     .attr('opacity', .8)
-    .on('mouseover', (ev, d) => showTip(ev, `${d.topic}\n${d.repo} · ${d.domain}\n${d.date.toDateString()}`))
-    .on('mousemove', moveTip).on('mouseleave', hideTip);
+    .style('cursor', 'pointer')
+    .on('mouseover', (ev, d) => showTip(ev, `${d.topic}\n${d.repo} · ${d.domain}\n${d.date.toDateString()}\nclick to open in Explorer`))
+    .on('mousemove', moveTip).on('mouseleave', hideTip)
+    .on('click', (ev, d) => {
+      hideTip();
+      const node = (DATA.nodes || []).find(n => n.topic === d.topic && n.kind !== 'domain' && n.kind !== 'user');
+      if (!node) { switchTab('map'); return; }
+      pendingWarpTarget = node.id;
+      pendingSelectAfterWarp = true;
+      switchTab('map');
+    });
 }
 
 // ── domain mix donut (NEW for Projects tab — replaces the second chord box)
@@ -1075,8 +1223,10 @@ function renderDomainMix() {
     .attr('fill', d => DOMAIN_COLORS[d.data.domain] || '#607d8b')
     .attr('stroke', '#0f1117').attr('stroke-width', 1.5)
     .attr('opacity', .85)
-    .on('mouseover', (ev, d) => showTip(ev, `${d.data.domain}: ${d.data.count} (${Math.round(d.data.count/total*100)}%)`))
-    .on('mousemove', moveTip).on('mouseleave', hideTip);
+    .style('cursor', 'pointer')
+    .on('mouseover', (ev, d) => showTip(ev, `${d.data.domain}: ${d.data.count} topic${d.data.count === 1 ? '' : 's'} (${Math.round(d.data.count/total*100)}%) — click to open in Explorer`))
+    .on('mousemove', moveTip).on('mouseleave', hideTip)
+    .on('click', (ev, d) => { hideTip(); warpToDomainByName(d.data.domain); });
 
   // Centre label: total topics
   g.append('text').attr('text-anchor', 'middle').attr('dy', '-0.2em')
@@ -1143,12 +1293,15 @@ let mapInitialised = false;
 let mapStarBtns = new Map();
 let mapSearchQuery = '';
 let mapSearchMatches = new Set();
-let mapPlanningMode = false;
+let mapChartMode = false;             // chart-your-learning-path multi-select
+let mapProjectFilter = '';            // '' = all projects; otherwise a repo name to spotlight
 let mapHintTimer = null;
 let mapResizeQueued = false;
 
 // External entry-points referenced by switchTab() etc.
 let pendingWarpTarget = null;
+let pendingSelectAfterWarp = false;  // when true, also open the node's detail panel after warp
+let pendingProjectFilter = null;     // repo name to apply to the map's project filter on activation
 let pendingProjectMode = null;       // legacy compat — drillIntoProject uses warp instead
 let selectedNode = null;             // id of node shown in detail panel
 let selectedSet = new Set();         // multi-select for "Quiz selected"
@@ -1238,9 +1391,14 @@ function initSpaceMap() {
   if (!DATA) return;
   if (mapInitialised) {
     onMapResize();
+    if (pendingProjectFilter !== null) {
+      setMapProjectFilter(pendingProjectFilter);
+      pendingProjectFilter = null;
+    }
     if (pendingWarpTarget) {
       const id = pendingWarpTarget; pendingWarpTarget = null;
-      requestAnimationFrame(() => warpTo(id));
+      const select = pendingSelectAfterWarp; pendingSelectAfterWarp = false;
+      requestAnimationFrame(() => { warpTo(id); if (select) selectGraphNode(id); });
     }
     return;
   }
@@ -1259,9 +1417,14 @@ function initSpaceMap() {
   updateWarpHudActive();
   mapInitialised = true;
   showMapHint();
+  if (pendingProjectFilter !== null) {
+    setMapProjectFilter(pendingProjectFilter);
+    pendingProjectFilter = null;
+  }
   if (pendingWarpTarget) {
     const id = pendingWarpTarget; pendingWarpTarget = null;
-    requestAnimationFrame(() => warpTo(id));
+    const select = pendingSelectAfterWarp; pendingSelectAfterWarp = false;
+    requestAnimationFrame(() => { warpTo(id); if (select) selectGraphNode(id); });
   }
 }
 
@@ -1564,14 +1727,22 @@ function createNodeSprite(n) {
   g.on('pointerout',  () => { if (mapHoverId === n.id) mapHoverId = null; });
   g.on('pointertap', (ev) => {
     const orig = ev.data && ev.data.originalEvent;
-    if (orig && orig.shiftKey && !isUser && !isDomain) {
-      toggleSelect(n.id);
-      return;
+    // Chart mode: a plain click on a topic adds (or removes) it from the
+    // chart list. Stars + user are not chartable. Shift+click is the power-
+    // user shortcut: if chart mode is off, flip it on automatically so the
+    // chip column becomes visible alongside the selection.
+    if (!isUser && !isDomain) {
+      const shiftSelect = orig && orig.shiftKey;
+      if (shiftSelect && !mapChartMode) {
+        document.getElementById('chart-mode').checked = true;
+        toggleChartMode();
+      }
+      if (mapChartMode || shiftSelect) {
+        toggleSelect(n.id);
+        return;
+      }
     }
     selectGraphNode(n.id);
-    // Domains warp + zoom into the cluster (navigation primitive). Topics
-    // open the detail panel without moving the camera, *unless* the node is
-    // off-screen — in that case nudge the camera so the user can find it.
     if (isDomain) warpToNode(n.id, 0.7);
     else if (!isUser) softWarpIfOffscreen(n.id);
   });
@@ -1782,11 +1953,11 @@ function applyDimAndHighlight() {
       if (mapSearchMatches.has(id)) alpha = 1.0;
       else alpha = Math.min(alpha, 0.16);
     }
-    if (mapPlanningMode && n && n.kind !== 'domain' && n.kind !== 'user') {
-      const r = n.recall_now || 0;
-      const reviewed = (n.review_count || 0) > 0;
-      if (!reviewed) alpha = Math.max(alpha, 0.95);
-      else if (r >= 0.6) alpha = Math.min(alpha, 0.22);
+    // Project filter — dim every topic that isn't in the chosen repo.
+    // Stars + user are structural, never dimmed by this filter.
+    if (mapProjectFilter && n && n.kind !== 'domain' && n.kind !== 'user'
+        && (n.repo || '') !== mapProjectFilter) {
+      alpha = Math.min(alpha, 0.18);
     }
     sprite.gfx.alpha = alpha;
     // Star + user labels follow the dim alpha directly. Topic labels are
@@ -1956,6 +2127,28 @@ function buildWarpHud() {
   // Disable back button if history empty.
   const back = document.getElementById('warp-back-btn');
   if (back) back.disabled = mapWarpHistory.length === 0;
+  // Populate project filter options. Reuses DATA.projects keys (the same
+  // source the queue/sessions tabs use), sorted alphabetically.
+  const sel = document.getElementById('map-project-filter');
+  if (sel) {
+    const projects = Object.keys(DATA.projects || {}).sort();
+    sel.innerHTML = '<option value="">All projects</option>'
+      + projects.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
+    sel.value = mapProjectFilter || '';
+    sel.classList.toggle('active', !!mapProjectFilter);
+  }
+}
+
+// Project filter — when set, topics whose `repo` doesn't match dim out via
+// applyDimAndHighlight. Stars + user always stay full opacity.
+function setMapProjectFilter(value) {
+  mapProjectFilter = value || '';
+  const sel = document.getElementById('map-project-filter');
+  if (sel) {
+    sel.value = mapProjectFilter;
+    sel.classList.toggle('active', !!mapProjectFilter);
+  }
+  applyDimAndHighlight();
 }
 
 function updateWarpHudActive() {
@@ -1998,7 +2191,7 @@ function softWarpIfOffscreen(id) {
   const sy = n.y * mapCameraK + mapCameraY;
   // Reserve the right ~280px for the open detail panel so the node lands in
   // the still-visible area.
-  const panelReserve = 300;
+  const panelReserve = 380;       // matches #detail-panel width (+ a few px breathing room)
   const margin = 60;
   const okX = sx >= margin && sx <= w - panelReserve;
   const okY = sy >= margin && sy <= h - margin;
@@ -2117,11 +2310,65 @@ function onMapSearch() {
   reconcileLiveNodes();
 }
 
-// ── planning mode ─────────────────────────────────────────────────────────
-function togglePlanningMode() {
-  mapPlanningMode = document.getElementById('planning-mode').checked;
-  document.getElementById('planning-toggle').classList.toggle('active', mapPlanningMode);
-  applyDimAndHighlight();
+// ── chart mode ────────────────────────────────────────────────────────────
+//
+// Toggle on, then explore the galaxy and click topics — each click adds the
+// topic to a chip list in the HUD instead of opening its detail panel. When
+// you've gathered the set you want to drill, click the Quiz button to launch
+// a multi-topic quiz with one question per topic. Toggle off to return to
+// the default click-opens-detail behaviour.
+function toggleChartMode() {
+  mapChartMode = document.getElementById('chart-mode').checked;
+  document.getElementById('chart-toggle').classList.toggle('active', mapChartMode);
+  if (!mapChartMode) {
+    selectedSet.clear();             // leaving chart mode clears any pending picks
+  }
+  renderChartChips();
+}
+
+function renderChartChips() {
+  const list = document.getElementById('chart-list');
+  const btn  = document.getElementById('chart-quiz-btn');
+  const sep  = document.getElementById('chart-sep');
+  const count = document.getElementById('chart-quiz-count');
+  if (!list || !btn) return;
+  list.innerHTML = '';
+  const visible = mapChartMode && selectedSet.size > 0;
+  list.classList.toggle('visible', visible);
+  if (!visible) {
+    btn.style.display = 'none';
+    if (sep) sep.style.display = 'none';
+    drawMapHalos();
+    return;
+  }
+  for (const id of selectedSet) {
+    const n = mapNodesById.get(id) || (DATA.nodes || []).find(x => x.id === id);
+    if (!n) continue;
+    const chip = document.createElement('div');
+    chip.className = 'chart-chip';
+    chip.innerHTML = `<span class="chart-chip-label" title="Open in Explorer">${escapeHtml(n.topic)}</span>
+      <button class="chart-chip-x" title="Remove from chart">×</button>`;
+    chip.querySelector('.chart-chip-label').onclick = () => {
+      warpToNode(id);
+      selectGraphNode(id);
+    };
+    chip.querySelector('.chart-chip-x').onclick = (e) => {
+      e.stopPropagation();
+      selectedSet.delete(id);
+      renderChartChips();
+    };
+    list.appendChild(chip);
+  }
+  count.textContent = selectedSet.size;
+  btn.style.display = '';
+  if (sep) sep.style.display = '';
+  drawMapHalos();
+}
+
+function quizChartedTopics() {
+  if (selectedSet.size === 0) return;
+  const ids = [...selectedSet];
+  startQuizNodes(ids);
 }
 
 // ── data refresh hook ─────────────────────────────────────────────────────
@@ -2174,21 +2421,15 @@ function evaluateLod() {
   // in onTick — see the labels-allowed branch there.
 }
 
-// ── selection helpers (shared with detail panel) ──────────────────────────
+// ── selection helpers (shared with the chart-mode HUD chip list) ─────────
 function toggleSelect(id) {
   if (selectedSet.has(id)) selectedSet.delete(id);
   else selectedSet.add(id);
-  updateMultiBar();
+  if (typeof renderChartChips === 'function') renderChartChips();
 }
-function clearSelection() { selectedSet.clear(); updateMultiBar(); }
-function updateMultiBar() {
-  const bar = document.getElementById('multi-bar');
-  if (selectedSet.size > 0) {
-    bar.classList.add('visible');
-    document.getElementById('multi-label').textContent = selectedSet.size + ' selected';
-  } else {
-    bar.classList.remove('visible');
-  }
+function clearSelection() {
+  selectedSet.clear();
+  if (typeof renderChartChips === 'function') renderChartChips();
 }
 
 // ── Detail panel
@@ -2288,6 +2529,16 @@ function openDetailPanel(n) {
         </div>
       </div>`).join('')
     : bankHeader + `<p style="font-size:11px;color:#555e7a;margin-top:6px">No questions yet — click <b>+ Generate</b> to create some.</p>`;
+  // "Last updated" = last_encountered (most recent commit / conversation
+  // touch). Falls back to last_reviewed when the topic has only ever been
+  // touched via reviews.
+  const lastUpdated = n.last_encountered || n.last_reviewed || n.created_at || '';
+  const lastUpdatedRel = relTime(lastUpdated);
+  const lastUpdatedLine = lastUpdated
+    ? `<p class="panel-label">Last updated</p>
+       <p class="panel-value" style="font-size:11px"><span title="${escapeHtml(lastUpdated)}">${escapeHtml(lastUpdated)}</span>${lastUpdatedRel ? ` <span style="color:#555e7a">· ${escapeHtml(lastUpdatedRel)}</span>` : ''}</p>`
+    : '';
+  const fbIcons = renderFeedbackWidget();
   document.getElementById('detail-content').innerHTML = `
     <p class="panel-h">${n.topic}</p>
     <p class="panel-label">Domain</p><p class="panel-value" style="color:${DOMAIN_COLORS[n.domain]||'#8892a4'}">${n.domain||'—'}</p>
@@ -2297,11 +2548,75 @@ function openDetailPanel(n) {
     <p class="panel-value" style="color:${rColor}">${rPct}% <span style="font-size:10px;color:#555e7a">· R ${Math.round((n.retrievability||0)*100)}% · M ${Math.round((n.mastery||0)*100)}%</span></p>
     <div class="r-bar"><div class="r-fill" style="width:${rPct}%;background:${rColor}"></div></div>
     <p class="panel-label">Reviews</p><p class="panel-value">${n.review_count||0}</p>
+    ${lastUpdatedLine}
     ${revHTML}
+    ${fbIcons}
     ${connHTML}
     ${bankHTML}
     <button class="panel-quiz-btn" onclick="startQuizNodes(['${n.id}'])">Quiz me on this topic</button>`;
   document.getElementById('detail-panel').classList.add('open');
+}
+
+// Reusable feedback widget. Two icons, each opens an inline textarea on
+// click; submitting appends `## kind\n<text>\n` to FEEDBACK.md. No date —
+// timestamps live in git history if anyone needs them.
+function renderFeedbackWidget() {
+  return `
+    <div class="feedback-row">
+      <span class="feedback-row-label">Feedback:</span>
+      <button class="topic-fb-btn" title="Bug — something is wrong" onclick="toggleFeedbackForm(this, 'bug')">🐛</button>
+      <button class="topic-fb-btn" title="Suggest an improvement" onclick="toggleFeedbackForm(this, 'idea')">💡</button>
+    </div>`;
+}
+
+function toggleFeedbackForm(btn, kind) {
+  const row = btn.closest('.feedback-row');
+  if (!row) return;
+  const existing = row.querySelector('.feedback-form');
+  if (existing) {
+    if (existing.dataset.kind === kind) { existing.remove(); return; }
+    existing.remove();
+  }
+  const form = document.createElement('div');
+  form.className = 'feedback-form';
+  form.dataset.kind = kind;
+  const label = kind === 'bug' ? '🐛 bug' : '💡 idea';
+  form.innerHTML = `
+    <textarea placeholder="What's the ${kind}? Short note is fine."></textarea>
+    <div class="feedback-form-actions">
+      <button class="feedback-cancel">Cancel</button>
+      <button class="feedback-submit">Send</button>
+    </div>`;
+  row.appendChild(form);
+  const ta = form.querySelector('textarea');
+  ta.focus();
+  form.querySelector('.feedback-cancel').onclick = () => form.remove();
+  form.querySelector('.feedback-submit').onclick = async () => {
+    const text = ta.value.trim();
+    if (!text) { ta.focus(); return; }
+    const submit = form.querySelector('.feedback-submit');
+    submit.disabled = true; submit.textContent = 'Sending…';
+    try {
+      const r = await fetch('/api/feedback/append', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: `\n\n## ${label}\n${text}\n` }),
+      });
+      if (r.ok) {
+        form.innerHTML = '<div class="feedback-ok">Logged ✓ — open Feedback to edit</div>';
+        setTimeout(() => form.remove(), 2400);
+      } else {
+        submit.disabled = false; submit.textContent = 'Send';
+        ta.classList.add('error');
+      }
+    } catch (_) {
+      submit.disabled = false; submit.textContent = 'Send';
+    }
+  };
+  // Esc cancels.
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') form.remove();
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) form.querySelector('.feedback-submit').click();
+  });
 }
 
 function openTaxPanel(n) {
@@ -2575,9 +2890,14 @@ async function bankMicStop(ev, btn) {
           return;
         }
         const data = await r.json();
+        const personalityOn = !!(DATA && DATA.personality && DATA.personality.enabled);
+        const youLabel = personalityOn ? 'Friend' : 'You';
+        const quote = pickRockyQuoteForScore(data.score);
+        const quoteHtml = quote ? `<div class="rocky-quote" style="margin-top:6px">${escapeHtml(quote)}</div>` : '';
         evalBox.innerHTML = `<div class="bank-eval-score">${scoreLabel(data.score)} · auto-recorded</div>
-          <div><b>You:</b> ${escapeHtml(t)}</div>
-          <div style="margin-top:4px"><b>Rocky:</b> ${escapeHtml(data.feedback || '')}</div>`;
+          <div><b>${youLabel}:</b> ${escapeHtml(t)}</div>
+          <div style="margin-top:4px"><b>Rocky:</b> ${escapeHtml(data.feedback || '')}</div>
+          ${quoteHtml}`;
         // The /api/quiz/evaluate endpoint already records the review, so just refresh.
         await refreshData();
         const updated = (DATA?.nodes || []).find(x => x.id === nodeId);
@@ -2613,7 +2933,11 @@ async function bankScore(ev, btn) {
       body: JSON.stringify({ node_id: nodeId, score, question: q.question })
     });
     if (!resp.ok) throw new Error('assess failed');
-    fb.textContent = 'Recorded · ' + scoreLabel(score);
+    // Rocky-quote sign-off mirrors the end-of-quiz style — a one-liner under
+    // the recorded label, in Rocky's voice when personality is on.
+    const quote = pickRockyQuoteForScore(score);
+    const quoteHtml = quote ? `<div class="rocky-quote" style="margin-top:6px">${escapeHtml(quote)}</div>` : '';
+    fb.innerHTML = `<div>Recorded · ${scoreLabel(score)}</div>${quoteHtml}`;
     fb.classList.add('visible');
     setTimeout(() => {
       card.classList.add('scored');
@@ -2730,6 +3054,8 @@ function showQuizQuestion() {
   document.getElementById('llm-feedback').style.display='none';
   document.getElementById('llm-followup').style.display='none';
   document.getElementById('llm-next').classList.remove('visible');
+  const rq = document.getElementById('rocky-quote');
+  if (rq) { rq.style.display = 'none'; rq.textContent = ''; }
 
   document.getElementById('quiz-body').style.display='flex';
   document.getElementById('quiz-body').style.flexDirection='column';
@@ -2758,6 +3084,7 @@ async function selfAssess(score) {
   const status = document.getElementById('qm-eval-status');
   status.textContent = `Recorded · ${scoreLabel(score)}`;
   status.className = 'qm-eval-status done';
+  showRockyQuoteForScore(score);
   document.getElementById('llm-next').classList.add('visible');
 
   fetch('/api/quiz/assess', {
@@ -2809,6 +3136,7 @@ async function submitLLM() {
       fq.textContent = data.followup;
       fq.style.display='block';
     }
+    showRockyQuoteForScore(data.score);
     document.getElementById('llm-next').classList.add('visible');
   } catch(e) {
     status.textContent = 'Evaluation failed — try again or grade yourself.';
@@ -2851,8 +3179,39 @@ function showQuizSummary() {
     <div class="qs-stat"><b>${scores.length}</b>reviewed</div>
     <div class="qs-stat"><b>${Math.round(avg*100)}%</b>avg score</div>
     <div class="qs-stat"><b>${Math.round(best*100)}%</b>best</div>`;
+  // Rocky's parting quote — bank choice depends on how many topics landed.
+  const sumQuote = pickRockyQuote(scores.length >= 5 ? 'session_done_many' : 'session_done_few');
+  const sumEl = document.getElementById('rocky-summary-quote');
+  if (sumEl) {
+    if (sumQuote) { sumEl.textContent = sumQuote; sumEl.style.display = 'block'; }
+    else { sumEl.style.display = 'none'; }
+  }
   document.getElementById('quiz-body').style.display='none';
   document.getElementById('quiz-summary').classList.add('visible');
+}
+
+// Rocky-quote helpers — banks come from /api/data via DATA.personality.
+// picks[]+enabled gate; falls back to null when personality is off.
+function pickRockyQuote(kind) {
+  const banks = (DATA && DATA.personality) || {};
+  if (!banks.enabled) return null;
+  const arr = banks[kind] || [];
+  if (!arr.length) return null;
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+function pickRockyQuoteForScore(score) {
+  const kind = score >= 0.85 ? 'correct'
+             : score >= 0.5  ? 'partial'
+             : score >= 0.2  ? 'failed'
+             :                  'skipped';
+  return pickRockyQuote(kind);
+}
+function showRockyQuoteForScore(score) {
+  const text = pickRockyQuoteForScore(score);
+  const el = document.getElementById('rocky-quote');
+  if (!el) return;
+  if (text) { el.textContent = text; el.style.display = 'block'; }
+  else { el.style.display = 'none'; }
 }
 
 async function closeQuiz() {
@@ -2968,21 +3327,16 @@ function renderDashboard() {
     if (p) applyPromptIq(p);
   }).catch(() => { /* endpoint not available — leave defaults */ });
 
-  // Due for review
+  // Due for review — same card style as the review queue (compact column).
+  // Cap at 5 cards: the dashboard is for at-a-glance triage, not the full
+  // queue (which lives in the Review Queue tab).
   const dueList = document.getElementById('due-list');
-  const due = DATA.dueForReview || [];
+  const due = (DATA.dueForReview || []).slice(0, 5);
   document.getElementById('due-pill').textContent = due.length;
+  dueList.classList.add('dash-cards');
   dueList.innerHTML = due.length ? '' : '<div class="empty-msg">Nothing due yet.</div>';
   for (const t of due) {
-    const r = Math.round((t.recall_now || 0) * 100);
-    const cls = r < 40 ? 'bad' : r < 70 ? 'warn' : 'ok';
-    const row = document.createElement('div');
-    row.className = 'dl-row';
-    row.onclick = () => quizOne(t.id, t.topic);
-    row.innerHTML = `<span class="dl-topic" title="${escapeHtml(t.topic)}">${escapeHtml(t.topic)}</span>
-      <span class="dl-domain">${escapeHtml(t.domain || 'Other')}</span>
-      <span class="dl-recall ${cls}">${r}%</span>`;
-    dueList.appendChild(row);
+    dueList.appendChild(makeDashCard(t, /*showDate=*/false));
   }
 
   // Domain health
@@ -3001,45 +3355,66 @@ function renderDashboard() {
     dhEl.appendChild(row);
   }
 
-  // Recently added
-  const ra = DATA.recentlyAdded || [];
+  // Recently added — date header per cluster + queue-style cards under it.
+  // Capped at 5 to match Due — dashboard is the highlight reel, not the log.
+  const ra = (DATA.recentlyAdded || []).slice(0, 5);
   document.getElementById('recent-pill').textContent = ra.length;
   const raEl = document.getElementById('recent-list');
+  raEl.classList.add('dash-cards');
   raEl.innerHTML = ra.length ? '' : '<div class="empty-msg">No new topics yet.</div>';
+  let lastDate = null;
   for (const t of ra) {
-    const row = document.createElement('div');
-    row.className = 'dl-row';
-    row.onclick = () => quizOne(t.id, t.topic);
-    row.innerHTML = `<span class="dl-topic" title="${escapeHtml(t.topic)}">${escapeHtml(t.topic)}</span>
-      <span class="dl-domain">${escapeHtml(t.domain || 'Other')}</span>
-      <span class="dl-recall">${escapeHtml(t.created_at)}</span>`;
-    raEl.appendChild(row);
+    const d = (t.created_at || '').slice(0, 10);
+    if (d && d !== lastDate) {
+      const hdr = document.createElement('div');
+      hdr.className = 'dl-date';
+      hdr.textContent = d;
+      raEl.appendChild(hdr);
+      lastDate = d;
+    }
+    raEl.appendChild(makeDashCard(t, /*showDate=*/false));
   }
 
-  // Projects mini-list (clickable into Projects tab)
-  const projects = Object.entries(DATA.projects || {})
-    .sort((a, b) => b[1].topicCount - a[1].topicCount)
-    .slice(0, 6);
-  document.getElementById('dash-projects-pill').textContent = Object.keys(DATA.projects || {}).length;
-  const dpl = document.getElementById('dash-projects-list');
-  dpl.innerHTML = projects.length ? '' : '<div class="empty-msg">Run rocky explore in a project.</div>';
-  for (const [repo, info] of projects) {
-    const tot = info.health.known + info.health.fading + info.health.gap || 1;
-    const knownPct = Math.round(info.health.known / tot * 100);
-    const cls = knownPct >= 70 ? 'ok' : knownPct >= 40 ? 'warn' : 'bad';
-    const row = document.createElement('div');
-    row.className = 'dl-row';
-    row.onclick = () => { drillIntoProject(repo); };
-    row.innerHTML = `<span class="dl-topic" title="${escapeHtml(repo)}">${escapeHtml(repo)}</span>
-      <span class="dl-domain">${info.topicCount} topics</span>
-      <span class="dl-recall ${cls}">${knownPct}%</span>`;
-    dpl.appendChild(row);
-  }
+  // Projects section (cards + chord + domain mix + timeline) — moved here
+  // from the standalone Projects tab. renderProjects is defined below.
+  if (typeof renderProjects === 'function') renderProjects();
 }
 
 function quizOne(nodeId, topic) {
   // Single-topic quiz path: just launch — no need to mutate selection state.
   startQuizNodes([nodeId]);
+}
+
+// Compact queue-style card used in the dashboard's Recently / Due tiles.
+// Mirrors the review-queue card markup (same .queue-card class) so look and
+// tooltip strings stay consistent across the app.
+function makeDashCard(n, showDate) {
+  const r = Math.round((n.recall_now || 0) * 100);
+  const cls = r < 40 ? 'bad' : r < 70 ? 'warn' : 'ok';
+  const trend = n.classification === 'gap' ? '↓↓' : n.classification === 'stale' ? '↓' : '·';
+  const trendTitle = n.classification === 'gap' ? 'Gap — recall under 40%, prioritise this'
+                   : n.classification === 'stale' ? 'Fading — recall under 70%, due for review'
+                   : 'Known — recall ≥ 70%';
+  const enc = (n.encounter_count && n.encounter_count > 1)
+    ? `<span class="qc-enc" title="Seen in ${n.encounter_count} commits/sessions">×${n.encounter_count}</span>`
+    : '';
+  const dateLine = showDate && n.created_at
+    ? `<span class="qc-last" title="Date added to the PKG">${escapeHtml(n.created_at)}</span>` : '';
+  const card = document.createElement('button');
+  card.className = 'queue-card';
+  card.onclick = () => quizOne(n.id, n.topic);
+  card.innerHTML = `
+    <span class="qc-topic" title="${escapeHtml(n.topic)}">${escapeHtml(n.topic)}</span>
+    <span class="qc-meta">
+      <span class="qc-domain" title="Knowledge domain">${escapeHtml(n.domain || 'Other')}</span>
+      <span class="qc-repo" title="Project where this topic surfaced">${escapeHtml(n.repo || '—')}</span>
+      ${enc}
+      <span class="qc-recall ${cls}" title="Current recall (retrievability × mastery)">${r}%</span>
+      <span class="qc-reviews" title="Total review count">↻ ${n.review_count || 0}</span>
+      <span class="qc-trend" title="${escapeHtml(trendTitle)}">${trend}</span>
+    </span>
+    ${dateLine}`;
+  return card;
 }
 
 // Single source of truth for painting the PromptIQ dashboard tile from a
@@ -3153,10 +3528,48 @@ function closePromptIqModal(ev) {
 }
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    const o = document.getElementById('piq-overlay');
-    if (o && o.classList.contains('visible')) closePromptIqModal();
+    const piq = document.getElementById('piq-overlay');
+    if (piq && piq.classList.contains('visible')) closePromptIqModal();
+    const pick = document.getElementById('picker-overlay');
+    if (pick && pick.classList.contains('visible')) closePickerModal();
   }
 });
+
+// Generic picker modal — opened by cross-project topic clicks. Each row
+// surfaces a label + sub-line and an `onPick` callback fired on selection.
+function showPickerModal(title, sub, rows) {
+  document.getElementById('picker-title').textContent = title || '—';
+  document.getElementById('picker-sub').textContent = sub || '';
+  const body = document.getElementById('picker-body');
+  if (!rows || rows.length === 0) {
+    body.innerHTML = '<div class="picker-empty">Nothing to show.</div>';
+  } else {
+    body.innerHTML = '';
+    for (const r of rows) {
+      const el = document.createElement('div');
+      el.className = 'picker-row';
+      el.innerHTML = `<span class="picker-label">${escapeHtml(r.label || '')}</span>
+        <span class="picker-sub">${escapeHtml(r.sub || '')}</span>`;
+      el.onclick = () => { closePickerModal(); if (typeof r.onPick === 'function') r.onPick(); };
+      body.appendChild(el);
+    }
+  }
+  document.getElementById('picker-overlay').classList.add('visible');
+}
+function closePickerModal(ev) {
+  if (ev && ev.target && ev.target.id !== 'picker-overlay' && ev.currentTarget !== ev.target) return;
+  document.getElementById('picker-overlay').classList.remove('visible');
+}
+
+// Click handler for the Domain topics donut — warp to that domain's star
+// in the Explorer. pendingWarpTarget is the existing hand-off mechanism
+// the map module reads on tab activation.
+function warpToDomainByName(name) {
+  if (!DATA || !name) return;
+  const star = (DATA.nodes || []).find(n => n.kind === 'domain' && n.topic === name);
+  if (star) pendingWarpTarget = star.id;
+  switchTab('map');
+}
 
 // ══════════════════════════════════════════════════════════
 // REVIEW QUEUE TAB
@@ -3272,18 +3685,37 @@ function renderQueue() {
     const r = Math.round((n.recall_now || 0) * 100);
     const cls = r < 40 ? 'bad' : r < 70 ? 'warn' : 'ok';
     const trend = n.classification === 'gap' ? '↓↓' : n.classification === 'stale' ? '↓' : '·';
+    const trendTitle = n.classification === 'gap' ? 'Gap — recall under 40%, prioritise this'
+                     : n.classification === 'stale' ? 'Fading — recall under 70%, due for review'
+                     : 'Known — recall ≥ 70%';
+    const enc = (n.encounter_count && n.encounter_count > 1)
+      ? `<span class="qc-enc" title="Seen in ${n.encounter_count} commits/sessions">×${n.encounter_count}</span>`
+      : '';
+    // Drop fields whose information is already encoded in the group title
+    // for the active sort: dates for "recent" buckets, review counts for
+    // "reviews" buckets. Keeps the card scannable.
+    const showReviews = sortBy !== 'reviews';
+    const showLast    = sortBy !== 'recent';
+    const reviewsHtml = showReviews
+      ? `<span class="qc-reviews" title="Total review count for this topic">↻ ${n.review_count || 0}</span>`
+      : '';
+    const lastHtml = showLast
+      ? `<span class="qc-last" title="Date of the last review">${escapeHtml(n.last_reviewed || 'never reviewed')}</span>`
+      : '';
     const card = document.createElement('button');
     card.className = 'queue-card';
     card.onclick = () => quizOne(n.id, n.topic);
     card.innerHTML = `
       <span class="qc-topic" title="${escapeHtml(n.topic)}">${escapeHtml(n.topic)}</span>
       <span class="qc-meta">
-        <span class="qc-domain">${escapeHtml(n.domain || 'Other')}</span>
-        <span class="qc-recall ${cls}">${r}%</span>
-        <span title="Reviews">↻ ${n.review_count || 0}</span>
-        <span class="qc-trend" title="${escapeHtml(n.classification || '')}">${trend}</span>
+        <span class="qc-domain" title="Knowledge domain">${escapeHtml(n.domain || 'Other')}</span>
+        <span class="qc-repo" title="Project where this topic surfaced">${escapeHtml(n.repo || '—')}</span>
+        ${enc}
+        <span class="qc-recall ${cls}" title="Current recall (retrievability × mastery) — chance you'd answer correctly right now">${r}%</span>
+        ${reviewsHtml}
+        <span class="qc-trend" title="${escapeHtml(trendTitle)}">${trend}</span>
       </span>
-      <span class="qc-last">${escapeHtml(n.last_reviewed || 'never reviewed')}</span>`;
+      ${lastHtml}`;
     bucketGrid.appendChild(card);
   }
 }
@@ -3300,92 +3732,6 @@ function quizFromQueue() {
   if (sortBy === 'recall')   nodes.sort((a, b) => a.recall_now - b.recall_now);
   const ids = nodes.slice(0, 5).map(n => n.id);
   if (ids.length) startQuizNodes(ids);
-}
-
-// ══════════════════════════════════════════════════════════
-// SESSIONS TAB
-// ══════════════════════════════════════════════════════════
-let SESSIONS = null;
-async function loadSessions() {
-  if (SESSIONS) { renderSessions(); return; }
-  try {
-    const r = await fetch('/api/sessions');
-    const d = await r.json();
-    SESSIONS = d.sessions || [];
-    renderSessions();
-  } catch (e) { console.error('Failed to load sessions:', e); }
-}
-
-function fillSessionsProjectSelect() {
-  const sel = document.getElementById('sessions-project');
-  if (!sel || !SESSIONS) return;
-  const current = sel.value;
-  const set = new Set();
-  for (const day of SESSIONS) {
-    for (const t of day.topics || []) {
-      if (t.repo) set.add(t.repo);
-    }
-  }
-  const projects = [...set].sort((a, b) => a.localeCompare(b));
-  sel.innerHTML = '<option value="">All projects</option>' +
-    projects.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
-  if (projects.includes(current)) sel.value = current;
-}
-
-function renderSessions() {
-  const body = document.getElementById('sessions-body');
-  const countEl = document.getElementById('sessions-count');
-  body.innerHTML = '';
-  fillSessionsProjectSelect();
-  if (!SESSIONS || SESSIONS.length === 0) {
-    body.innerHTML = '<div class="empty-msg">No sessions yet — make a commit, then run rocky session-end.</div>';
-    if (countEl) countEl.textContent = '';
-    return;
-  }
-  const project = document.getElementById('sessions-project').value;
-  let totalShown = 0, daysShown = 0;
-  for (const day of SESSIONS) {
-    const topics = (day.topics || []).filter(t => !project || (t.repo || '') === project);
-    if (topics.length === 0) continue;
-    daysShown++;
-    totalShown += topics.length;
-    const wrap = document.createElement('div');
-    wrap.className = 'session-day';
-    const date = document.createElement('div');
-    date.className = 'session-date';
-    date.innerHTML = `${escapeHtml(formatDate(day.date))} <span class="sd-count">${topics.length} topic${topics.length===1?'':'s'}</span>`;
-    wrap.appendChild(date);
-    const grid = document.createElement('div');
-    grid.className = 'session-topics';
-    for (const t of topics) {
-      const chip = document.createElement('div');
-      chip.className = 'session-chip';
-      chip.onclick = () => quizOne(t.id, t.topic);
-      const enc = (t.encounter_count && t.encounter_count > 1)
-        ? `<span class="sc-encounters" title="Seen in ${t.encounter_count} commits/sessions">×${t.encounter_count}</span>`
-        : '';
-      chip.innerHTML = `<div class="sc-topic" title="${escapeHtml(t.topic)}">${escapeHtml(t.topic)}</div>
-        <div class="sc-meta"><span class="sc-domain">${escapeHtml(t.domain || 'Other')}</span><span>${escapeHtml(t.repo || '')}</span>${enc}</div>`;
-      grid.appendChild(chip);
-    }
-    wrap.appendChild(grid);
-    body.appendChild(wrap);
-  }
-  if (countEl) {
-    countEl.textContent = project
-      ? `${totalShown} topic${totalShown===1?'':'s'} across ${daysShown} day${daysShown===1?'':'s'}`
-      : '';
-  }
-  if (totalShown === 0) {
-    body.innerHTML = `<div class="empty-msg">No sessions for "${escapeHtml(project)}".</div>`;
-  }
-}
-
-function formatDate(iso) {
-  // YYYY-MM-DD → "Mon DD, YYYY"
-  const d = new Date(iso + 'T00:00:00');
-  if (isNaN(d)) return iso;
-  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 // ══════════════════════════════════════════════════════════
@@ -3576,16 +3922,21 @@ function resampleLinear(input, srcRate, dstRate) {
 // BOOT
 // ══════════════════════════════════════════════════════════
 loadData().then(() => {
-  // URL-hash routing: open in a specific tab via #map / #queue / #sessions / #projects
+  // URL-hash routing: open in a specific tab via #map / #queue.
   const initial = (location.hash || '').replace(/^#/, '').toLowerCase();
-  const known = new Set(['dashboard', 'map', 'queue', 'sessions', 'projects']);
+  const known = new Set(['dashboard', 'map', 'queue']);
   if (known.has(initial) && initial !== currentTab) {
     switchTab(initial);
   }
+  // Feedback widgets on dashboard + queue tabs (always present, no data dep).
+  const dfb = document.getElementById('dashboard-feedback');
+  if (dfb) dfb.innerHTML = renderFeedbackWidget();
+  const qfb = document.getElementById('queue-feedback');
+  if (qfb) qfb.innerHTML = renderFeedbackWidget();
 });
 window.addEventListener('hashchange', () => {
   const t = (location.hash || '').replace(/^#/, '').toLowerCase();
-  const known = new Set(['dashboard', 'map', 'queue', 'sessions', 'projects']);
+  const known = new Set(['dashboard', 'map', 'queue']);
   if (known.has(t) && t !== currentTab) switchTab(t);
 });
 </script>
