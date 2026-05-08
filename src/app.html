@@ -18,6 +18,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .nav-btn:hover{color:#e2e8f0;background:#0f1629}
 .nav-btn.active{color:#F59E0B;background:#1e2340;font-weight:600}
 .nav-btn .nav-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
+a.nav-btn{text-decoration:none;color:#8892a4}
+a.nav-btn:hover{color:#e2e8f0}
+.nav-btn .nav-ext{margin-left:auto;font-size:11px;color:#555e7a}
+.nav-btn:hover .nav-ext{color:#7c9ef3}
 #sidebar .spacer{flex:1}
 #sidebar .stats{padding:14px 18px 4px;font-size:10px;color:#555e7a;display:flex;flex-direction:column;gap:3px;border-top:1px solid #1e2340}
 #sidebar .stats span{white-space:nowrap}
@@ -65,6 +69,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .dash-row .dash-card{min-height:200px}
 .viz-box-card{display:flex;flex-direction:column}
 .viz-box-card svg{flex:1;width:100%;display:block;min-height:240px}
+.dash-hint{font-size:10px;color:#555e7a;margin:0 0 6px;line-height:1.4}
 .dash-card{background:#1a1d27;border:1px solid #2d3148;border-radius:10px;padding:16px;min-height:200px}
 .dash-card .dc-h{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#555e7a;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
 .dash-card .dc-h .dc-pill{font-size:10px;background:#1e2340;color:#8892a4;padding:2px 7px;border-radius:8px;text-transform:none;letter-spacing:0}
@@ -143,6 +148,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .fb-head h2{font-size:18px;font-weight:600;color:#e2e8f0;margin:0 0 8px}
 .fb-head p{font-size:12px;color:#8892a4;line-height:1.6;margin:0}
 .fb-head code{background:#1e2340;padding:1px 6px;border-radius:4px;color:#7c9ef3;font-family:ui-monospace,monospace;font-size:11px}
+.fb-head .fb-cta{margin-top:10px}
+.fb-head .fb-email{user-select:all}
+.fb-head .fb-email-copy{background:#1a1d27;border:1px solid #3d4468;color:#7c9ef3;font-family:inherit;font-size:10px;padding:2px 8px;border-radius:4px;cursor:pointer;margin-left:4px;text-transform:uppercase;letter-spacing:.5px}
+.fb-head .fb-email-copy:hover{background:#2a3260}
+.fb-head .fb-email-copy:disabled{opacity:.7;cursor:default}
 #feedback-textarea{width:100%;min-height:300px;background:#1a1d27;border:1px solid #2d3148;border-radius:8px;color:#e2e8f0;font-size:13px;line-height:1.5;padding:14px;resize:vertical;outline:none;font-family:ui-monospace,monospace;transition:border-color .15s}
 #feedback-textarea:focus{border-color:#7c9ef3}
 .fb-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -544,6 +554,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="nav-btn" data-tab="map" onclick="switchTab('map')"><span class="nav-icon">◉</span>Explorer</button>
     <button class="nav-btn" data-tab="queue" onclick="switchTab('queue')"><span class="nav-icon">⊟</span>Review Queue</button>
     <button class="nav-btn" data-tab="feedback" onclick="switchTab('feedback')"><span class="nav-icon">✎</span>Feedback</button>
+    <a class="nav-btn" href="https://nvme-git.github.io/rocky/" target="_blank" rel="noopener" title="Open the Rocky docs in a new tab"><span class="nav-icon">?</span>Docs<span class="nav-ext">↗</span></a>
   </div>
   <div class="spacer"></div>
   <div class="stats" id="top-stats">
@@ -595,11 +606,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div class="domain-bars" id="domain-bars"></div>
     </div>
     <div class="dash-card viz-box-card">
-      <p class="section-title" style="margin-bottom:6px">Domain topics</p>
+      <p class="section-title" style="margin-bottom:2px">Domain topics</p>
+      <p class="dash-hint">click a slice to open that domain in the Explorer</p>
       <svg id="domain-mix-svg"></svg>
     </div>
     <div class="dash-card viz-box-card">
-      <p class="section-title" style="margin-bottom:6px">Cross-project topics</p>
+      <p class="section-title" style="margin-bottom:2px">Cross-project topics</p>
+      <p class="dash-hint">click a ribbon to inspect the topics shared between two projects</p>
       <svg id="chord-svg"></svg>
     </div>
   </div>
@@ -614,6 +627,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <button class="timeline-mode-btn" data-mode="domain" onclick="setTimelineMode('domain')">By domain</button>
       </div>
     </div>
+    <p class="dash-hint">click any topic dot to warp to it in the Explorer with its details open</p>
     <svg id="timeline-svg"></svg>
   </div>
 </div>
@@ -698,6 +712,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="fb-head">
       <h2>Feedback</h2>
       <p>Pop your ideas, gripes, or wishlists in here to help Rocky improve. You can also hold the mic and speak — your transcript gets appended to the end. Saved locally to <code>~/.rocky/FEEDBACK.md</code>.</p>
+      <p class="fb-cta">Rocky doesn't track you or your activity — nothing about how you use this tool leaves your machine. That's why feedback has to come the old-fashioned way: send what you've written to
+        <code class="fb-email">rocky@nabeelvandayar.com</code>
+        <button class="fb-email-copy" onclick="feedbackCopyEmail(this)" title="Copy email address">copy</button>
+        — every message lands in front of a human.
+      </p>
     </div>
     <textarea id="feedback-textarea" placeholder="What's on your mind? What's working? What's not?"></textarea>
     <div class="fb-mic-hint" id="feedback-mic-hint"></div>
@@ -709,7 +728,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         ontouchstart="feedbackMicStart(event)" ontouchend="feedbackMicStop(event)">🎤</button>
       <button class="fb-btn fb-save" onclick="feedbackSave()">Save</button>
       <button class="fb-btn fb-copy" onclick="feedbackCopy()">Copy</button>
-      <button class="fb-btn fb-share" onclick="feedbackShare()">Share with Nabeel</button>
+      <button class="fb-btn fb-share" onclick="feedbackShare()">Share with Rocky</button>
     </div>
     <div class="fb-status" id="feedback-status"></div>
   </div>
@@ -2638,7 +2657,7 @@ function closeDetailPanel() {
 function closeTaxPanel() { document.getElementById('taxonomy-panel').classList.remove('open'); }
 
 // ── Feedback view ──────────────────────────────────────────
-const FEEDBACK_EMAIL = 'me@nabeelvandayar.com';
+const FEEDBACK_EMAIL = 'rocky@nabeelvandayar.com';
 
 async function loadFeedback() {
   const ta = document.getElementById('feedback-textarea');
@@ -2673,6 +2692,21 @@ async function feedbackSave() {
   } catch (e) {
     status.classList.add('error');
     status.textContent = 'Save failed.';
+  }
+}
+
+// Copy just the email address (for the call-to-action link) — small win
+// over making the user select-and-copy the inline code element.
+async function feedbackCopyEmail(btn) {
+  const original = btn.textContent;
+  try {
+    await navigator.clipboard.writeText(FEEDBACK_EMAIL);
+    btn.textContent = 'copied ✓';
+    btn.disabled = true;
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1800);
+  } catch (_) {
+    btn.textContent = 'copy failed';
+    setTimeout(() => { btn.textContent = original; }, 1800);
   }
 }
 
