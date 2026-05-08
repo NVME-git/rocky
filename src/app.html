@@ -11,10 +11,10 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;height:100vh;display:flex;flex-direction:row;overflow:hidden}
 
 /* ── sidebar ── */
-#sidebar{width:200px;flex-shrink:0;background:#070b14;border-right:1px solid #1e2340;display:flex;flex-direction:column;padding:14px 0}
-#sidebar .logo{padding:0 18px 18px;font-weight:700;font-size:16px;color:#F59E0B;letter-spacing:.5px}
+#sidebar{position:relative;width:200px;flex-shrink:0;background:#070b14;border-right:1px solid #1e2340;display:flex;flex-direction:column;padding:14px 0;transition:width .22s ease}
+#sidebar .logo{padding:0 18px 18px;font-weight:700;font-size:16px;color:#F59E0B;letter-spacing:.5px;display:flex;align-items:center;gap:6px;white-space:nowrap}
 #sidebar .nav{display:flex;flex-direction:column;gap:2px;padding:0 8px}
-.nav-btn{display:flex;align-items:center;gap:10px;background:none;border:none;color:#8892a4;cursor:pointer;font-size:13px;padding:9px 12px;border-radius:6px;text-align:left;transition:all .12s;font-family:inherit}
+.nav-btn{display:flex;align-items:center;gap:10px;background:none;border:none;color:#8892a4;cursor:pointer;font-size:13px;padding:9px 12px;border-radius:6px;text-align:left;transition:all .12s;font-family:inherit;white-space:nowrap;overflow:hidden}
 .nav-btn:hover{color:#e2e8f0;background:#0f1629}
 .nav-btn.active{color:#F59E0B;background:#1e2340;font-weight:600}
 .nav-btn .nav-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
@@ -26,6 +26,16 @@ a.nav-btn:hover{color:#e2e8f0}
 #sidebar .stats{padding:14px 18px 4px;font-size:10px;color:#555e7a;display:flex;flex-direction:column;gap:3px;border-top:1px solid #1e2340}
 #sidebar .stats span{white-space:nowrap}
 #sidebar .stats b{color:#8892a4}
+/* ── collapsed state ── */
+.sidebar-toggle{position:absolute;top:14px;right:-12px;width:24px;height:24px;border-radius:50%;background:#1e2340;border:1px solid #2d3148;color:#8892a4;cursor:pointer;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;font-family:inherit;transition:background .14s,border-color .14s,color .14s;z-index:11}
+.sidebar-toggle:hover{background:#2a3260;border-color:#7c9ef3;color:#7c9ef3}
+#sidebar.collapsed{width:56px}
+#sidebar.collapsed .logo{padding:0 0 18px;justify-content:center;font-size:18px}
+#sidebar.collapsed .logo-text{display:none}
+#sidebar.collapsed .nav{padding:0 6px}
+#sidebar.collapsed .nav-btn{justify-content:center;padding:9px 0;gap:0}
+#sidebar.collapsed .nav-btn .nav-label,#sidebar.collapsed .nav-btn .nav-ext{display:none}
+#sidebar.collapsed .stats{display:none}
 #main-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
 #loading-bar{position:absolute;top:0;left:0;width:0;height:2px;background:#F59E0B;transition:width .3s;z-index:100}
 .tab-btn{background:none;border:none;color:#8892a4;cursor:pointer;font-size:13px;padding:4px 12px;border-radius:5px;transition:all .15s}
@@ -127,7 +137,10 @@ a.nav-btn:hover{color:#e2e8f0}
 .queue-row .qr-trend{text-align:center;color:#6b7594}
 .queue-row .qr-last{color:#6b7594;font-size:11px;text-align:right}
 .queue-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;padding:10px 14px}
-.queue-card{background:#1a1d27;border:1px solid #2d3148;border-radius:7px;padding:10px 11px;font-size:12px;cursor:pointer;transition:border-color .12s,background .12s;display:flex;flex-direction:column;gap:6px;text-align:left;font-family:inherit;color:inherit}
+.queue-card{position:relative;background:#1a1d27;border:1px solid #2d3148;border-radius:7px;padding:10px 11px;font-size:12px;cursor:pointer;transition:border-color .12s,background .12s;display:flex;flex-direction:column;gap:6px;text-align:left;font-family:inherit;color:inherit}
+.qc-discard{position:absolute;top:5px;right:5px;width:18px;height:18px;border:none;background:rgba(15,17,23,.6);color:#8892a4;border-radius:50%;font-size:11px;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;padding:0;font-family:inherit;transition:background .12s,color .12s;z-index:2}
+.queue-card:hover .qc-discard{display:flex}
+.qc-discard:hover{background:#e74c3c;color:#fff}
 .queue-card:hover{border-color:#7c9ef3;background:#1e2340}
 .queue-card .qc-topic{color:#c4cde0;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .queue-card .qc-meta{display:flex;align-items:center;gap:10px;font-size:10px;color:#6b7594;flex-wrap:wrap}
@@ -144,6 +157,34 @@ a.nav-btn:hover{color:#e2e8f0}
 
 /* ── feedback tab ── */
 #tab-feedback{overflow-y:auto;padding:32px;justify-content:center}
+#tab-recycle{overflow-y:auto;padding:24px}
+.recycle-wrap{max-width:920px;margin:0 auto}
+.recycle-head h2{font-size:18px;color:#e2e8f0;margin-bottom:6px}
+.recycle-head p{font-size:12px;color:#8892a4;line-height:1.55;margin-bottom:18px}
+.recycle-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #1e2340}
+.recycle-count{font-size:12px;color:#8892a4}
+.recycle-spacer{flex:1}
+.recycle-empty-btn{background:rgba(231,76,60,.12);color:#e74c3c;border:1px solid rgba(231,76,60,.35);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-family:inherit;transition:all .12s}
+.recycle-empty-btn:hover:not(:disabled){background:rgba(231,76,60,.22);border-color:#e74c3c}
+.recycle-empty-btn:disabled{opacity:.4;cursor:not-allowed}
+.recycle-list{display:flex;flex-direction:column;gap:8px}
+.recycle-empty-msg{font-size:13px;color:#555e7a;text-align:center;padding:48px 12px;font-style:italic}
+.recycle-card{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:12px 14px;background:rgba(20,26,46,.6);border:1px solid #1e2340;border-radius:8px;transition:border-color .12s}
+.recycle-card:hover{border-color:#3d4468}
+.recycle-card-main{min-width:0}
+.recycle-card-topic{font-size:13px;color:#cfd6e8;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recycle-card-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:10px;color:#8892a4;align-items:center}
+.recycle-card-meta .rc-domain{padding:1px 6px;border-radius:8px;background:rgba(124,158,243,.12);color:#7c9ef3}
+.recycle-card-meta .rc-repo{color:#a4adc4}
+.recycle-card-meta .rc-when{color:#555e7a}
+.recycle-card-actions{display:flex;gap:6px;flex-shrink:0}
+.recycle-action-btn{padding:6px 10px;border-radius:6px;border:1px solid #3d4468;background:rgba(30,35,64,.5);color:#cfd6e8;cursor:pointer;font-size:11px;font-family:inherit;transition:all .12s;display:inline-flex;align-items:center;gap:5px}
+.recycle-action-btn:hover{background:#1e2340;border-color:#7c9ef3}
+.recycle-action-btn.restore{color:#2ecc71;border-color:rgba(46,204,113,.35)}
+.recycle-action-btn.restore:hover{background:rgba(46,204,113,.12);border-color:#2ecc71}
+.recycle-action-btn.delete{color:#e74c3c;border-color:rgba(231,76,60,.35)}
+.recycle-action-btn.delete:hover{background:rgba(231,76,60,.15);border-color:#e74c3c}
+.recycle-action-btn:disabled{opacity:.5;cursor:not-allowed}
 .fb-wrap{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:14px;width:100%}
 .fb-head h2{font-size:18px;font-weight:600;color:#e2e8f0;margin:0 0 8px}
 .fb-head p{font-size:12px;color:#8892a4;line-height:1.6;margin:0}
@@ -306,6 +347,8 @@ a.nav-btn:hover{color:#e2e8f0}
 .r-fill{height:100%;border-radius:3px;transition:width .4s}
 .panel-quiz-btn{width:100%;margin-top:12px;padding:7px;border-radius:6px;border:none;background:#2a3260;color:#7c9ef3;font-weight:600;font-size:12px;cursor:pointer;transition:background .15s}
 .panel-quiz-btn:hover{background:#344080}
+.panel-discard-btn{width:100%;margin-top:8px;padding:7px;border-radius:6px;border:1px solid rgba(231,76,60,.3);background:transparent;color:#a4adc4;font-size:11px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit}
+.panel-discard-btn:hover{background:rgba(231,76,60,.12);border-color:#e74c3c;color:#e74c3c}
 
 /* connections list — edges from the topic, click warps to the neighbour */
 .conn-list{display:flex;flex-direction:column;gap:4px;margin-top:4px}
@@ -586,13 +629,15 @@ a.nav-btn:hover{color:#e2e8f0}
 <body>
 
 <div id="sidebar">
-  <div class="logo">◈ Rocky</div>
+  <button id="sidebar-toggle-btn" class="sidebar-toggle" onclick="toggleSidebar()" title="Collapse sidebar" aria-label="Toggle sidebar">‹</button>
+  <div class="logo"><span class="logo-icon">◈</span><span class="logo-text">Rocky</span></div>
   <div class="nav">
-    <button class="nav-btn active" data-tab="dashboard" onclick="switchTab('dashboard')"><span class="nav-icon">⊞</span>Dashboard</button>
-    <button class="nav-btn" data-tab="map" onclick="switchTab('map')"><span class="nav-icon">◉</span>Explorer</button>
-    <button class="nav-btn" data-tab="queue" onclick="switchTab('queue')"><span class="nav-icon">⊟</span>Review Queue</button>
-    <button class="nav-btn" data-tab="feedback" onclick="switchTab('feedback')"><span class="nav-icon">✎</span>Feedback</button>
-    <a class="nav-btn" href="https://nvme-git.github.io/rocky/" target="_blank" rel="noopener" title="Open the Rocky docs in a new tab"><span class="nav-icon">?</span>Docs<span class="nav-ext">↗</span></a>
+    <button class="nav-btn active" data-tab="dashboard" onclick="switchTab('dashboard')" title="Dashboard"><span class="nav-icon">⊞</span><span class="nav-label">Dashboard</span></button>
+    <button class="nav-btn" data-tab="map" onclick="switchTab('map')" title="Explorer"><span class="nav-icon">◉</span><span class="nav-label">Explorer</span></button>
+    <button class="nav-btn" data-tab="queue" onclick="switchTab('queue')" title="Review Queue"><span class="nav-icon">⊟</span><span class="nav-label">Review Queue</span></button>
+    <button class="nav-btn" data-tab="recycle" onclick="switchTab('recycle')" title="Recycle Bin — discarded topics, restore or delete permanently"><span class="nav-icon">🗑</span><span class="nav-label">Recycle Bin</span><span class="nav-ext" id="recycle-count" style="display:none"></span></button>
+    <button class="nav-btn" data-tab="feedback" onclick="switchTab('feedback')" title="Feedback"><span class="nav-icon">✎</span><span class="nav-label">Feedback</span></button>
+    <a class="nav-btn" href="https://nvme-git.github.io/rocky/" target="_blank" rel="noopener" title="Open the Rocky docs in a new tab"><span class="nav-icon">?</span><span class="nav-label">Docs</span><span class="nav-ext">↗</span></a>
   </div>
   <div class="spacer"></div>
   <div class="stats" id="top-stats">
@@ -745,6 +790,23 @@ a.nav-btn:hover{color:#e2e8f0}
 
 
 <!-- FEEDBACK TAB -->
+<div id="tab-recycle" class="tab-content">
+  <div class="recycle-wrap">
+    <div class="recycle-head">
+      <h2>Recycle Bin</h2>
+      <p>Discarded topics live here. <b>Restore</b> brings them back into the live PKG. <b>Delete permanently</b> drops them and their reviews/edges — that one's final.</p>
+    </div>
+    <div class="recycle-toolbar">
+      <span class="recycle-count" id="recycle-count-label">— topics</span>
+      <span class="recycle-spacer"></span>
+      <button class="recycle-empty-btn" id="recycle-empty-btn" onclick="recycleEmptyAll()" disabled>Empty bin</button>
+    </div>
+    <div class="recycle-list" id="recycle-list">
+      <p class="recycle-empty-msg">Loading…</p>
+    </div>
+  </div>
+</div>
+
 <div id="tab-feedback" class="tab-content">
   <div class="fb-wrap">
     <div class="fb-head">
@@ -955,6 +1017,8 @@ function switchTab(name) {
     renderDashboard();
   } else if (name === 'feedback') {
     loadFeedback();
+  } else if (name === 'recycle') {
+    loadRecycleBin();
   }
 }
 
@@ -2611,7 +2675,8 @@ function openDetailPanel(n) {
     ${fbIcons}
     ${connHTML}
     ${bankHTML}
-    <button class="panel-quiz-btn" onclick="startQuizNodes(['${n.id}'])">Quiz me on this topic</button>`;
+    <button class="panel-quiz-btn" onclick="startQuizNodes(['${n.id}'])">Quiz me on this topic</button>
+    <button class="panel-discard-btn" data-id="${escapeHtml(n.id)}" data-topic="${escapeHtml(n.topic)}" onclick="panelDiscardClick(this)" title="Move this topic to the Recycle Bin">🗑 Discard topic</button>`;
   document.getElementById('detail-panel').classList.add('open');
 }
 
@@ -3660,10 +3725,16 @@ function makeDashCard(n, showDate) {
     : '';
   const dateLine = showDate && n.created_at
     ? `<span class="qc-last" title="Date added to the PKG">${escapeHtml(n.created_at)}</span>` : '';
-  const card = document.createElement('button');
+  const card = document.createElement('div');
   card.className = 'queue-card';
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
   card.onclick = () => quizOne(n.id, n.topic);
+  card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); quizOne(n.id, n.topic); } };
   card.innerHTML = `
+    <button class="qc-discard" title="Discard — moves to Recycle Bin"
+      data-id="${escapeHtml(n.id)}" data-topic="${escapeHtml(n.topic)}"
+      onclick="qcDiscardClick(event, this)">×</button>
     <span class="qc-topic" title="${escapeHtml(n.topic)}">${escapeHtml(n.topic)}</span>
     <span class="qc-meta">
       <span class="qc-domain" title="Knowledge domain">${escapeHtml(n.domain || 'Other')}</span>
@@ -3962,10 +4033,16 @@ function renderQueue() {
     const lastHtml = showLast
       ? `<span class="qc-last" title="Date of the last review">${escapeHtml(n.last_reviewed || 'never reviewed')}</span>`
       : '';
-    const card = document.createElement('button');
+    const card = document.createElement('div');
     card.className = 'queue-card';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
     card.onclick = () => quizOne(n.id, n.topic);
+    card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); quizOne(n.id, n.topic); } };
     card.innerHTML = `
+      <button class="qc-discard" title="Discard — moves to Recycle Bin"
+        data-id="${escapeHtml(n.id)}" data-topic="${escapeHtml(n.topic)}"
+        onclick="qcDiscardClick(event, this)">×</button>
       <span class="qc-topic" title="${escapeHtml(n.topic)}">${escapeHtml(n.topic)}</span>
       <span class="qc-meta">
         <span class="qc-domain" title="Knowledge domain">${escapeHtml(n.domain || 'Other')}</span>
@@ -3992,6 +4069,165 @@ function quizFromQueue() {
   if (sortBy === 'recall')   nodes.sort((a, b) => a.recall_now - b.recall_now);
   const ids = nodes.slice(0, 5).map(n => n.id);
   if (ids.length) startQuizNodes(ids);
+}
+
+// ══════════════════════════════════════════════════════════
+// RECYCLE BIN
+// ══════════════════════════════════════════════════════════
+// Soft-deleted topics live here until restored or permanently deleted.
+// State is held in a module-level array so the count badge can refresh
+// after every discard/restore/delete without a full data reload.
+let RECYCLE_ITEMS = [];
+
+async function loadRecycleBin() {
+  const list = document.getElementById('recycle-list');
+  list.innerHTML = '<p class="recycle-empty-msg">Loading…</p>';
+  try {
+    const r = await fetch('/api/recycle-bin');
+    if (!r.ok) throw new Error('fetch failed');
+    const data = await r.json();
+    RECYCLE_ITEMS = data.items || [];
+    renderRecycleBin();
+  } catch (e) {
+    list.innerHTML = '<p class="recycle-empty-msg" style="color:#e74c3c">Failed to load recycle bin.</p>';
+  }
+}
+
+function renderRecycleBin() {
+  const list = document.getElementById('recycle-list');
+  const countEl = document.getElementById('recycle-count-label');
+  const navCount = document.getElementById('recycle-count');
+  const emptyBtn = document.getElementById('recycle-empty-btn');
+  const n = RECYCLE_ITEMS.length;
+  countEl.textContent = `${n} topic${n === 1 ? '' : 's'}`;
+  if (navCount) {
+    navCount.textContent = n ? String(n) : '';
+    navCount.style.display = n ? '' : 'none';
+  }
+  emptyBtn.disabled = n === 0;
+  if (n === 0) {
+    list.innerHTML = '<p class="recycle-empty-msg">Recycle bin is empty.</p>';
+    return;
+  }
+  list.innerHTML = RECYCLE_ITEMS.map(item => {
+    const when = relTime(item.discarded_at) || item.discarded_at || '—';
+    const created = item.created_at ? `created ${escapeHtml(item.created_at)}` : '';
+    const banks = item.question_bank_size
+      ? `${item.question_bank_size} question${item.question_bank_size === 1 ? '' : 's'}`
+      : '';
+    const reviews = item.review_count ? `${item.review_count} review${item.review_count === 1 ? '' : 's'}` : '';
+    const metaBits = [
+      `<span class="rc-domain">${escapeHtml(item.domain || 'Other')}</span>`,
+      `<span class="rc-repo">${escapeHtml(item.repo || 'Other')}</span>`,
+      banks ? `<span>${banks}</span>` : '',
+      reviews ? `<span>${reviews}</span>` : '',
+      created ? `<span>${created}</span>` : '',
+      `<span class="rc-when" title="${escapeHtml(item.discarded_at || '')}">discarded ${escapeHtml(when)}</span>`,
+    ].filter(Boolean).join('');
+    return `<div class="recycle-card" data-id="${escapeHtml(item.id)}">
+      <div class="recycle-card-main">
+        <div class="recycle-card-topic" title="${escapeHtml(item.topic)}">${escapeHtml(item.topic)}</div>
+        <div class="recycle-card-meta">${metaBits}</div>
+      </div>
+      <div class="recycle-card-actions">
+        <button class="recycle-action-btn restore" data-id="${escapeHtml(item.id)}" data-topic="${escapeHtml(item.topic)}" onclick="recycleRestoreClick(this)" title="Restore this topic to your live PKG">↺ Restore</button>
+        <button class="recycle-action-btn delete" data-id="${escapeHtml(item.id)}" data-topic="${escapeHtml(item.topic)}" onclick="recycleDeleteClick(this)" title="Permanently delete — cannot be undone">⊘ Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function discardTopic(nodeId, topic, opts) {
+  const confirmed = (opts && opts.skipConfirm) || confirm(`Move "${topic}" to the Recycle Bin?\n\nIt will stop appearing in queues and the Explorer. You can restore it later from the Recycle Bin.`);
+  if (!confirmed) return false;
+  try {
+    const r = await fetch('/api/topic/discard', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: nodeId }),
+    });
+    if (!r.ok) throw new Error('discard failed');
+    await refreshData();
+    if (currentTab === 'queue') renderQueue();
+    if (currentTab === 'dashboard') renderDashboard();
+    if (currentTab === 'recycle') await loadRecycleBin();
+    return true;
+  } catch (e) {
+    alert(`Couldn't discard "${topic}". Try again?`);
+    return false;
+  }
+}
+
+// ── Click adapters ──────────────────────────────────────────────────────────
+// All discard/restore/delete buttons read id+topic from data-attrs (set via
+// escapeHtml) and route through these handlers. Keeps inline onclick markup
+// free of nested-quoting hazards (an earlier JSON.stringify-in-onclick was
+// silently breaking the attribute when the topic contained whitespace).
+
+function qcDiscardClick(ev, btn) {
+  ev.stopPropagation();
+  discardTopic(btn.dataset.id, btn.dataset.topic);
+}
+
+async function panelDiscardClick(btn) {
+  const ok = await discardTopic(btn.dataset.id, btn.dataset.topic);
+  if (ok) {
+    document.getElementById('detail-panel').classList.remove('open');
+  }
+}
+
+function recycleRestoreClick(btn) {
+  restoreTopic(btn.dataset.id, btn);
+}
+
+function recycleDeleteClick(btn) {
+  permanentlyDeleteTopic(btn.dataset.id, btn.dataset.topic, btn);
+}
+
+async function restoreTopic(nodeId, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/topic/restore', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: nodeId }),
+    });
+    if (!r.ok) throw new Error('restore failed');
+    await loadRecycleBin();
+    await refreshData();
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    alert('Restore failed — try again?');
+  }
+}
+
+async function permanentlyDeleteTopic(nodeId, topic, btn) {
+  if (!confirm(`Permanently delete "${topic}"?\n\nThis removes the topic, its question bank, and its review history. This cannot be undone.`)) return;
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/topic/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: nodeId }),
+    });
+    if (!r.ok) throw new Error('delete failed');
+    await loadRecycleBin();
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    alert('Permanent delete failed — try again?');
+  }
+}
+
+async function recycleEmptyAll() {
+  if (RECYCLE_ITEMS.length === 0) return;
+  if (!confirm(`Permanently delete all ${RECYCLE_ITEMS.length} discarded topics?\n\nThis removes them and their full review history. This cannot be undone.`)) return;
+  const ids = RECYCLE_ITEMS.map(i => i.id);
+  for (const id of ids) {
+    try {
+      await fetch('/api/topic/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node_id: id }),
+      });
+    } catch (_) {}
+  }
+  await loadRecycleBin();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -4177,6 +4413,36 @@ function resampleLinear(input, srcRate, dstRate) {
   }
   return out;
 }
+
+// ══════════════════════════════════════════════════════════
+// SIDEBAR — collapsible with localStorage-backed pin state
+// ══════════════════════════════════════════════════════════
+const SIDEBAR_KEY = 'rockySidebarCollapsed';
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  if (!sb) return;
+  const collapsed = sb.classList.toggle('collapsed');
+  try { localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0'); } catch (_) {}
+  applySidebarToggleLook(collapsed);
+}
+
+function applySidebarToggleLook(collapsed) {
+  const btn = document.getElementById('sidebar-toggle-btn');
+  if (!btn) return;
+  btn.textContent = collapsed ? '›' : '‹';
+  btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+}
+
+// Restore saved state immediately (sync) so the sidebar doesn't flash open
+// before settling into its pinned width.
+(function restoreSidebar() {
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(SIDEBAR_KEY) === '1'; } catch (_) {}
+  if (collapsed) document.getElementById('sidebar')?.classList.add('collapsed');
+  applySidebarToggleLook(collapsed);
+})();
 
 // ══════════════════════════════════════════════════════════
 // BOOT

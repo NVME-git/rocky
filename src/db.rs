@@ -192,6 +192,9 @@ impl Db {
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN source_commits TEXT NOT NULL DEFAULT '[]'", []);
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN question_bank TEXT NOT NULL DEFAULT '[]'", []);
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN repos TEXT NOT NULL DEFAULT '[]'", []);
+        // Soft-delete: NULL = active, ISO timestamp = sitting in the recycle bin.
+        let _ = conn.execute("ALTER TABLE nodes ADD COLUMN discarded_at TEXT", []);
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS nodes_discarded ON nodes(discarded_at)", []);
         Ok(())
     }
 
@@ -255,6 +258,7 @@ impl Db {
             source_commits,
             question_bank,
             repos,
+            discarded_at: row.get::<_, Option<String>>("discarded_at").ok().flatten(),
         })
     }
 
@@ -316,12 +320,44 @@ impl Db {
 
     pub fn all_nodes(&self) -> Result<Vec<Node>> {
         let conn = self.connect()?;
-        let mut stmt = conn.prepare("SELECT * FROM nodes ORDER BY topic")?;
+        // Soft-deleted topics live in the recycle bin and must not appear
+        // in any "live" view. discarded_nodes() is the explicit opt-in.
+        let mut stmt = conn.prepare("SELECT * FROM nodes WHERE discarded_at IS NULL ORDER BY topic")?;
         let nodes = stmt
             .query_map([], |row| Self::row_to_node(&conn, row))?
             .filter_map(|r| r.ok())
             .collect();
         Ok(nodes)
+    }
+
+    pub fn discarded_nodes(&self) -> Result<Vec<Node>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT * FROM nodes WHERE discarded_at IS NOT NULL ORDER BY discarded_at DESC"
+        )?;
+        let nodes = stmt
+            .query_map([], |row| Self::row_to_node(&conn, row))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(nodes)
+    }
+
+    pub fn discard_node(&self, node_id: &str) -> Result<bool> {
+        let conn = self.connect()?;
+        let n = conn.execute(
+            "UPDATE nodes SET discarded_at = ? WHERE id = ? AND discarded_at IS NULL",
+            params![Self::now(), node_id],
+        )?;
+        Ok(n > 0)
+    }
+
+    pub fn restore_node(&self, node_id: &str) -> Result<bool> {
+        let conn = self.connect()?;
+        let n = conn.execute(
+            "UPDATE nodes SET discarded_at = NULL WHERE id = ?",
+            params![node_id],
+        )?;
+        Ok(n > 0)
     }
 
     pub fn add_or_update(
@@ -470,7 +506,7 @@ impl Db {
         let since_val  = since.unwrap_or("0000-00-00");
         let before_val = before.unwrap_or("9999-99-99");
         let mut stmt = conn.prepare(
-            "SELECT * FROM nodes WHERE kind != 'domain'
+            "SELECT * FROM nodes WHERE kind != 'domain' AND discarded_at IS NULL
              AND created_at >= ?1 AND created_at <= ?2
              ORDER BY created_at DESC, topic",
         )?;
@@ -485,7 +521,8 @@ impl Db {
         let conn = self.connect()?;
         let pattern = format!("%{}%", query.to_lowercase());
         let mut stmt = conn.prepare(
-            "SELECT * FROM nodes WHERE kind != 'domain' AND (LOWER(topic) LIKE ? OR LOWER(description) LIKE ?) ORDER BY topic",
+            "SELECT * FROM nodes WHERE kind != 'domain' AND discarded_at IS NULL \
+             AND (LOWER(topic) LIKE ? OR LOWER(description) LIKE ?) ORDER BY topic",
         )?;
         let nodes = stmt
             .query_map(params![pattern, pattern], |row| Self::row_to_node(&conn, row))?
@@ -693,7 +730,8 @@ impl Db {
     pub fn nodes_missing_clue(&self) -> Result<Vec<Node>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
-            "SELECT * FROM nodes WHERE canonical_question != '' AND canonical_clue = '' ORDER BY topic"
+            "SELECT * FROM nodes WHERE discarded_at IS NULL \
+             AND canonical_question != '' AND canonical_clue = '' ORDER BY topic"
         )?;
         let nodes = stmt
             .query_map([], |row| Self::row_to_node(&conn, row))?
@@ -708,7 +746,8 @@ impl Db {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
             "SELECT * FROM nodes \
-             WHERE (question_bank = '' OR question_bank = '[]') \
+             WHERE discarded_at IS NULL \
+               AND (question_bank = '' OR question_bank = '[]') \
                AND domain != 'taxonomy' \
              ORDER BY topic"
         )?;
@@ -722,7 +761,7 @@ impl Db {
 
     pub fn undomained_nodes(&self) -> Result<Vec<Node>> {
         let conn = self.connect()?;
-        let mut stmt = conn.prepare("SELECT * FROM nodes WHERE domain = '' ORDER BY topic")?;
+        let mut stmt = conn.prepare("SELECT * FROM nodes WHERE discarded_at IS NULL AND domain = '' ORDER BY topic")?;
         let nodes = stmt
             .query_map([], |row| Self::row_to_node(&conn, row))?
             .filter_map(|r| r.ok())

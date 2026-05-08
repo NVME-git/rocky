@@ -118,4 +118,7 @@ pub struct Node {
     /// Distinct repo names this topic has been encountered in. Cross-project
     /// audit trail — `repo` is where it was first seen, `repos` accumulates.
     pub repos: Vec<String>,
+    /// Soft-delete timestamp. None = active; Some(ts) = sitting in the
+    /// Recycle Bin awaiting restore or permanent delete.
+    pub discarded_at: Option<String>,
 }

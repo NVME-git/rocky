@@ -53,6 +53,10 @@ pub fn run(db: &Db, cfg: &Config) -> Result<()> {
             .route("/api/prompt-iq", get(get_prompt_iq))
             .route("/api/topic/delete-question", post(delete_bank_question))
             .route("/api/topic/generate-questions", post(generate_bank_questions))
+            .route("/api/topic/discard", post(discard_topic))
+            .route("/api/topic/restore", post(restore_topic))
+            .route("/api/topic/delete", post(delete_topic_permanently))
+            .route("/api/recycle-bin", get(list_recycle_bin))
             .route("/api/feedback", get(read_feedback).post(write_feedback))
             .route("/api/feedback/append", post(append_feedback))
             .layer(CorsLayer::permissive())
@@ -1094,6 +1098,85 @@ async fn generate_bank_questions(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({ "ok": true, "added": added })))
+}
+
+// ── Discard / restore / permanent-delete (recycle bin) ──────────────────────
+
+#[derive(Deserialize)]
+struct NodeIdReq {
+    node_id: String,
+}
+
+async fn discard_topic(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<NodeIdReq>,
+) -> Result<Json<Value>, StatusCode> {
+    let db = state.db.clone();
+    let ok = tokio::task::spawn_blocking(move || db.discard_node(&req.node_id))
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !ok {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn restore_topic(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<NodeIdReq>,
+) -> Result<Json<Value>, StatusCode> {
+    let db = state.db.clone();
+    let ok = tokio::task::spawn_blocking(move || db.restore_node(&req.node_id))
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !ok {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn delete_topic_permanently(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<NodeIdReq>,
+) -> Result<Json<Value>, StatusCode> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        db.delete_node(&req.node_id)?;
+        Ok(())
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn list_recycle_bin(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, StatusCode> {
+    let db = state.db.clone();
+    let nodes = tokio::task::spawn_blocking(move || db.discarded_nodes())
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let items: Vec<Value> = nodes
+        .into_iter()
+        .map(|n| {
+            json!({
+                "id": n.id,
+                "topic": n.topic,
+                "domain": n.domain,
+                "repo": if n.repo.is_empty() { "Other".to_string() } else { n.repo.clone() },
+                "review_count": n.review_count,
+                "encounter_count": n.encounter_count,
+                "created_at": n.created_at.to_string(),
+                "discarded_at": n.discarded_at,
+                "question_bank_size": n.question_bank.len(),
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "items": items })))
 }
 
 // ── Feedback file ────────────────────────────────────────────────────────────
