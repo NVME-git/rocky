@@ -372,7 +372,7 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum HookTarget {
-    /// Git post-commit hook — runs `rocky diff` after every commit (default)
+    /// Git post-commit hook — silently queues each commit for the `/rocky-checkpoint` skill (default)
     Git,
     /// Claude Code hook — logs prompts to `.rocky` for `rocky quiz` to review
     Claude,
@@ -495,7 +495,7 @@ fn run() -> Result<()> {
                     let (ok1, msg1) = install_claude_hook()?;
                     println!("    {} {msg1}", if ok1 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
 
-                    let (ok3, msg3) = install_git_hook_queue_mode()?;
+                    let (ok3, msg3) = install_git_hook()?;
                     println!("    {} {msg3}", if ok3 { "✓".truecolor(29, 158, 117) } else { "·".dimmed() });
 
                     let (ok4, msg4) = local_log::install_prompt_marker()?;
@@ -2742,31 +2742,6 @@ fn rocky_bin_path() -> String {
         .unwrap_or_else(|| "rocky".into())
 }
 
-fn install_git_hook() -> Result<(bool, String)> {
-    let hook_path = std::path::Path::new(".git/hooks/post-commit");
-    if !std::path::Path::new(".git").exists() {
-        return Ok((false, "not a git repository".into()));
-    }
-    let bin = rocky_bin_path();
-    let cmd = format!("{bin} diff");
-    if hook_path.exists() {
-        let existing = std::fs::read_to_string(hook_path)?;
-        if existing.contains("rocky") {
-            return Ok((false, "hook already installed".into()));
-        }
-        let appended = format!("{existing}\n{cmd}\n");
-        std::fs::write(hook_path, appended)?;
-    } else {
-        std::fs::write(hook_path, format!("#!/bin/sh\n{cmd}\n"))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(hook_path, std::fs::Permissions::from_mode(0o755))?;
-        }
-    }
-    local_log::ensure_gitignored()?;
-    Ok((true, "git post-commit hook installed — .rocky added to .gitignore".into()))
-}
 
 fn uninstall_git_hook() -> Result<(bool, String)> {
     let hook_path = std::path::Path::new(".git/hooks/post-commit");
@@ -2910,7 +2885,14 @@ fn uninstall_claude_hook() -> Result<(bool, String)> {
 
 /// Like install_git_hook but uses queue-mode (`rocky post-commit`) so commits
 /// stay fast and the Stop hook handles enrichment in one batch at session end.
-fn install_git_hook_queue_mode() -> Result<(bool, String)> {
+/// Install the git post-commit hook in queue mode — every commit silently
+/// enqueues its diff for the `/rocky-checkpoint` skill to drain at session
+/// end. No LLM call from the hook itself, so it's safe to run as a default.
+///
+/// If a legacy `rocky diff` hook is already present (the pre-queue interactive
+/// path), it's transparently replaced with the queue-mode invocation so users
+/// who installed earlier versions get fixed by re-running `rocky install`.
+fn install_git_hook() -> Result<(bool, String)> {
     let hook_path = std::path::Path::new(".git/hooks/post-commit");
     if !std::path::Path::new(".git").exists() {
         return Ok((false, "not a git repository".into()));
@@ -2929,7 +2911,7 @@ fn install_git_hook_queue_mode() -> Result<(bool, String)> {
                 .replace("rocky diff", &cmd);
             std::fs::write(hook_path, updated)?;
             local_log::ensure_gitignored()?;
-            return Ok((true, "git hook switched to queue mode".into()));
+            return Ok((true, "git hook upgraded from legacy `rocky diff` to queue mode".into()));
         }
         let appended = format!("{existing}\n{cmd}\n");
         std::fs::write(hook_path, appended)?;
@@ -2942,7 +2924,7 @@ fn install_git_hook_queue_mode() -> Result<(bool, String)> {
         }
     }
     local_log::ensure_gitignored()?;
-    Ok((true, "git hook installed in queue mode".into()))
+    Ok((true, "git post-commit hook installed in queue mode".into()))
 }
 
 // ── skill-facing CLI primitives ──────────────────────────────────────────────
