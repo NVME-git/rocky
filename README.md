@@ -54,10 +54,11 @@ Three steps. The first one is *work normally*.
    ──> Each commit silently queues its diff. Each prompt is logged.
        No interruption to your flow.
 
-2. End of session, type:                /rocky-checkpoint
-   ──> The agent reads the queue + transcript, extracts the
-       concepts that came up, writes them to your PKG with a
-       four-question bank each.
+2. End of session, type:                /rocky-review
+   ──> Umbrella skill: runs /rocky-checkpoint (extract topics from
+       diffs + transcript) then /rocky-promptiq (rescore your recent
+       prompts), prints a fused summary. The recommended default for
+       interactive sessions.
 
 3. When you're ready to drill, run:     rocky view
    ──> Browser opens to your Dashboard with your live Rocky IQ,
@@ -67,7 +68,8 @@ Three steps. The first one is *work normally*.
 
 Inline reviews without leaving the agent: type `/rocky-quiz` in Claude Code.
 Adopting Rocky on an existing repo: type `/rocky-backfill` once.
-Re-score how well you've been prompting: `/rocky-promptiq`.
+
+For **CI / automation**, prefer the underlying skills directly: call `/rocky-checkpoint` after every push, and `/rocky-promptiq` on a slower cadence (e.g., weekly cron). `/rocky-review` is built for interactive wrap-ups; in CI it makes a single failure look like two.
 
 ---
 
@@ -150,10 +152,11 @@ rocky/
 │   └── config.rs                 # config + paths
 │
 ├── skills/                       # Claude Code skills installed by `rocky install claude-all`
+│   ├── rocky-review/             # umbrella: runs checkpoint + promptiq end-to-end (default)
 │   ├── rocky-checkpoint/         # extract topics from session diffs + transcript
+│   ├── rocky-promptiq/           # PromptIQ scoring of recent prompts
 │   ├── rocky-quiz/               # inline quiz on weakest topics
-│   ├── rocky-backfill/           # one-shot seed from existing git history
-│   └── rocky-promptiq/   # PromptIQ scoring of recent prompts
+│   └── rocky-backfill/           # one-shot seed from existing git history
 │
 ├── docs/                         # Astro static site → nvme-git.github.io/rocky/
 │   ├── src/content/docs/         # markdown sources (one .md per section)

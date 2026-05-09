@@ -21,23 +21,35 @@ After a real chunk of work, you'll have a queue and a transcript ready for extra
 
 ---
 
-## Step 2: End of session — extract topics
+## Step 2: End of session — review
 
 In the same Claude Code session, type:
 
 ```
-/rocky-checkpoint
+/rocky-review
 ```
 
-The agent reads the queued diffs + your prompt transcript, identifies the new concepts that came up, and writes them to your PKG with a four-question bank each — generic enough that the same topic resurfacing in a different project still matches.
+This is the recommended default. It's an **umbrella skill** that runs two passes back-to-back:
 
-What you get:
+1. `/rocky-checkpoint` — reads the queued diffs + your prompt transcript, identifies new concepts, and writes them to your PKG with a four-question bank each (generic enough that the same topic resurfacing in a different project still matches).
+2. `/rocky-promptiq` — rescores the prompts you've used in this session for prompting quality, with one-line feedback per prompt.
+
+You get one fused two-line summary at the end — what you learned and how you asked.
+
+**Underneath, both can be called individually.** For CI / automation that runs after every push, prefer the underlying skill directly so failures stay isolated to their own queue:
+
+```
+/rocky-checkpoint    # CI: every push
+/rocky-promptiq      # CI: weekly cron (slower cadence)
+```
+
+What you get from the checkpoint pass:
 
 - **New nodes** for each distinct concept the session introduced.
 - **Updated nodes** when something already in your PKG appeared again — Rocky bumps the encounter count and refreshes its weighting.
 - **Cross-project dedup** — the same idea across two projects becomes one node with multiple `repos[]` entries, not two duplicates.
 
-No LLM cost on the Rocky side here either. The agent's own context window does the extraction.
+No LLM cost on the Rocky side. The agent's own context window does the extraction.
 
 ---
 
@@ -107,7 +119,7 @@ This is best for *quick* reviews — a couple of questions between tasks. For a 
 
 Rocky uses FSRS — the same family of spaced-repetition algorithm Anki moved to. Topics you know well decay slowly. Topics you barely know decay fast. Over time, Rocky surfaces the right things at the right moments without spamming you.
 
-Your **Rocky IQ** is built from `recall_now = retrievability × mastery` averaged across your PKG. It moves down when you stop engaging and up when you can answer for what you've shipped. There's no daily cap on `/rocky-checkpoint` or `rocky view` — you control when you extract and when you review.
+Your **Rocky IQ** is built from `recall_now = retrievability × mastery` averaged across your PKG. It moves down when you stop engaging and up when you can answer for what you've shipped. There's no daily cap on `/rocky-review` or `rocky view` — you control when you extract and when you review.
 
 ---
 

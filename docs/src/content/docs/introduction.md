@@ -32,17 +32,19 @@ Rocky's primary mode is alongside your AI agent. When Claude Code is doing the w
 
 ### With your AI agent (Claude Code)
 
-This is the canonical Rocky workflow. After `rocky install claude`, the agent picks up four skills it can invoke at the right moments — no separate Ollama call, no per-prompt logging in the critical path:
+This is the canonical Rocky workflow. After `rocky install claude`, the agent picks up five skills it can invoke at the right moments — no separate Ollama call, no per-prompt logging in the critical path:
 
-- `/rocky-checkpoint` — at the end of a session, the agent reads the diffs and transcript, extracts topics with question banks, and writes them straight into your PKG using the cross-project dedup list.
-- `/rocky-quiz` — runs a Socratic review session inside the Claude session, using the canonical questions Rocky stored.
+- **`/rocky-review` — the default** — umbrella skill that runs `/rocky-checkpoint` and `/rocky-promptiq` back-to-back at the end of a session, then prints a single fused summary. Use this unless you need one of the underlying skills on its own.
+- `/rocky-checkpoint` — extract topics from recent commits + the conversation. Called by `/rocky-review`, but invoke directly from CI / automation so a failure stays isolated to one queue.
+- `/rocky-quiz` — runs a Socratic review session inside the agent session, using the canonical questions Rocky stored.
 - `/rocky-backfill` — seeds the PKG from a project's existing git history when you're new to a repo or first installing Rocky.
-- `/rocky-promptiq` — re-evaluates your recent prompts and produces a PromptIQ score with feedback.
+- `/rocky-promptiq` — re-evaluates your recent prompts and produces a PromptIQ score with feedback. Also called by `/rocky-review`; suitable for a slower CI cadence (weekly, etc.).
 
 ```bash
 rocky install claude     # one-time: drops the skills into ~/.claude/skills/
 # ... work normally with the agent ...
-# inside Claude: /rocky-checkpoint  (or /rocky-quiz any time)
+# inside Claude: /rocky-review  (at end of session — runs checkpoint + promptiq)
+#                /rocky-quiz    (any time — drill weakest topics)
 ```
 
 The alternative workflows below exist for the moments you're not in an agent session — useful supplements, not the main story.

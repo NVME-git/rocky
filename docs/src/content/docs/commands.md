@@ -12,6 +12,23 @@ The CLI surface beneath those skills is also documented here, but most of it fal
 
 You invoke these by typing `/skill-name` inside an active agent session — not from the shell.
 
+### `/rocky-review` — the recommended default
+
+Umbrella skill. Runs `/rocky-checkpoint` (extracts learnings from recent commits) followed by `/rocky-promptiq` (rescores recent prompts), then prints a fused two-line summary:
+
+```
+/rocky-review complete.
+
+  PKG  · Checkpointed N commits → M new topics, K merged
+         (J cross-project), Q questions, E edges.
+  Prompts · Rescored N prompts. Avg <score>, lift +<N> vs heuristic.
+            Top pattern: <one-line synthesis>.
+```
+
+Deliberately runs the two passes **sequentially**, not blended into one — checkpoint is *generative* (mine atomic concepts), promptiq is *critical* (judge how you asked). Switching evaluative stance between two clean runs is cleaner than dragging them through one pass together.
+
+Use this at the end of an interactive session. **For CI / automation, prefer the underlying skills directly** — call `/rocky-checkpoint` after every push and `/rocky-promptiq` on a slower cadence. Bundling them in CI makes a single failure look like two.
+
 ### `/rocky-checkpoint`
 
 End-of-session extractor. The agent reads recent diffs queued by the post-commit hook plus the prompt transcript, identifies the new concepts, and writes them to your PKG with a four-question bank each.
@@ -52,7 +69,7 @@ The minimum CLI surface for a first-time user. Everything else is in **Alternati
 
 ### `rocky install claude-all`
 
-The one-time install. Wires the four skills, the prompt-logging hook, and the queue-mode post-commit hook in one shot.
+The one-time install. Wires the five skills (`rocky-review`, `rocky-checkpoint`, `rocky-quiz`, `rocky-backfill`, `rocky-promptiq`), the prompt-logging hook, and the queue-mode post-commit hook in one shot.
 
 ```bash
 rocky install claude-all

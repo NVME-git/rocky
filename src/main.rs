@@ -484,7 +484,8 @@ fn run() -> Result<()> {
                         }
                     }
                     println!();
-                    println!("  {}", "In Claude Code or OpenCode, type  /rocky-checkpoint  after a commit to extract topics.".dimmed());
+                    println!("  {}", "In Claude Code or OpenCode, type  /rocky-review  at the end of a session — runs checkpoint + promptiq in one go.".dimmed());
+                    println!("  {}", "For CI / automation, call  /rocky-checkpoint  or  /rocky-promptiq  directly so failures stay isolated.".dimmed());
                     println!("  {}", "Type  /rocky-quiz  any time to drill the weakest topics.".dimmed());
                     println!("  {}", "(OpenCode also discovers skills from ~/.claude/skills/, so the default install works for both.)".dimmed());
                 }
@@ -507,7 +508,9 @@ fn run() -> Result<()> {
 
                     println!();
                     println!("  {}", "Next: run  rocky explore  to build the project context summary.".dimmed());
-                    println!("  {}", "Then in Claude Code or OpenCode:  /rocky-checkpoint  after each commit, or  /rocky-quiz  any time.".dimmed());
+                    println!("  {}", "Then in Claude Code or OpenCode:  /rocky-review  at the end of a session (checkpoint + promptiq in one go),".dimmed());
+                    println!("  {}", "or call  /rocky-checkpoint  /  /rocky-promptiq  individually for CI / scripted use.".dimmed());
+                    println!("  {}", "Type  /rocky-quiz  any time to drill the weakest topics.".dimmed());
                 }
             }
         }
@@ -3412,6 +3415,11 @@ const SKILL_CHECKPOINT: &str = include_str!("../skills/rocky-checkpoint/SKILL.md
 const SKILL_QUIZ: &str = include_str!("../skills/rocky-quiz/SKILL.md");
 const SKILL_PROMPTIQ_RESCORE: &str = include_str!("../skills/rocky-promptiq/SKILL.md");
 const SKILL_BACKFILL: &str = include_str!("../skills/rocky-backfill/SKILL.md");
+/// Umbrella skill that calls rocky-checkpoint then rocky-promptiq in
+/// sequence. The recommended default for an interactive end-of-session
+/// review; CI should still invoke the underlying skills directly so
+/// failures stay isolated to their own queue.
+const SKILL_REVIEW: &str = include_str!("../skills/rocky-review/SKILL.md");
 
 fn claude_skills_dir() -> Result<std::path::PathBuf> {
     let home = dirs::home_dir().context("could not resolve home directory")?;
@@ -3431,6 +3439,7 @@ fn install_claude_skills() -> Result<Vec<(bool, String)>> {
         ("rocky-quiz", SKILL_QUIZ),
         ("rocky-promptiq", SKILL_PROMPTIQ_RESCORE),
         ("rocky-backfill", SKILL_BACKFILL),
+        ("rocky-review", SKILL_REVIEW),
     ];
     let mut out = Vec::new();
     for (name, body) in skills {
@@ -3446,7 +3455,7 @@ fn install_claude_skills() -> Result<Vec<(bool, String)>> {
 fn uninstall_claude_skills() -> Result<Vec<(bool, String)>> {
     let base = claude_skills_dir()?;
     let mut out = Vec::new();
-    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq", "rocky-backfill"] {
+    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq", "rocky-backfill", "rocky-review"] {
         let dir = base.join(name);
         if dir.exists() {
             std::fs::remove_dir_all(&dir)?;
@@ -3466,6 +3475,7 @@ fn install_opencode_skills() -> Result<Vec<(bool, String)>> {
         ("rocky-quiz", SKILL_QUIZ),
         ("rocky-promptiq", SKILL_PROMPTIQ_RESCORE),
         ("rocky-backfill", SKILL_BACKFILL),
+        ("rocky-review", SKILL_REVIEW),
     ];
     let mut out = Vec::new();
     for (name, body) in skills {
@@ -3481,7 +3491,7 @@ fn install_opencode_skills() -> Result<Vec<(bool, String)>> {
 fn uninstall_opencode_skills() -> Result<Vec<(bool, String)>> {
     let base = opencode_skills_dir()?;
     let mut out = Vec::new();
-    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq", "rocky-backfill"] {
+    for name in ["rocky-checkpoint", "rocky-quiz", "rocky-promptiq", "rocky-backfill", "rocky-review"] {
         let dir = base.join(name);
         if dir.exists() {
             std::fs::remove_dir_all(&dir)?;
