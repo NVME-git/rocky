@@ -44,22 +44,34 @@ a.nav-btn:hover{color:#e2e8f0}
 
 /* ── dashboard tab ── */
 #tab-dashboard{overflow-y:auto;padding:24px}
-.iq-row{display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.iq-row{display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap;align-items:stretch}
 .iq-row .iq-half{flex:1;min-width:280px;margin-bottom:0}
-/* IQ half-tiles split vertically: a horizontal row of [label/value][bar][spark]
-   on top, then the meta description as a single ellipsised line below — keeps
-   long meta strings ("sharp — recent material is being retained · last
-   checkpoint 2d ago") from wrapping into the value's column. */
-.iq-row .iq-half{flex-direction:column;align-items:stretch}
-.iq-row .iq-half .iq-half-top{display:flex;align-items:center;gap:18px;flex:1}
-.iq-row .iq-half .score-meta{
-  width:100%;margin-top:0;
+/* IQ half-tiles, compact layout: a label/trend header on top, a slim
+   sparkline below it carrying the 30-day trend, and a single row at the
+   bottom with the score next to its description. The old redundant
+   fill-bar is hidden (the sparkline already encodes "where am I trending")
+   and the description sitting beside the score keeps the tile from
+   ballooning vertically. Height now matches the Learning Days counter. */
+.iq-row .iq-half{
+  flex-direction:column;align-items:stretch;
+  padding:14px 20px 14px;gap:6px
+}
+.iq-row .iq-half .iq-half-head{
+  display:flex;align-items:baseline;justify-content:space-between;gap:8px
+}
+.iq-row .iq-half .iq-half-head .label,
+.iq-row .iq-half .iq-half-head .iq-trend{margin:0;line-height:1;white-space:nowrap}
+.iq-row .iq-half .iq-spark{height:26px;width:100%}
+.iq-row .iq-half .iq-half-body{
+  display:flex;align-items:baseline;gap:14px;min-width:0
+}
+.iq-row .iq-half .iq-half-body .score-value{
+  flex:0 0 auto;font-size:28px;line-height:1;margin:0
+}
+.iq-row .iq-half .iq-half-body .score-meta{
+  flex:1;min-width:0;margin:0;font-size:11px;line-height:1.4;color:#6b7594;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis
 }
-/* The label + trend live in the value column on the left of the top row;
-   if either wraps, the column expands and squeezes the bar/sparkline. */
-.iq-row .iq-half .label,
-.iq-row .iq-half .iq-trend{white-space:nowrap}
 /* Compact engagement counters that flank the IQ tiles. They share the
    .atrophy-banner shell but switch to a column layout (label/number/meta
    stacked) and drop the score-bar/sparkline since "days" and "streak" are
@@ -762,28 +774,31 @@ a.nav-btn:hover{color:#e2e8f0}
       <div class="score-meta" id="rocky-streak-meta">consecutive days</div>
     </div>
     <div class="atrophy-banner iq-half">
-      <div class="iq-half-top">
-        <div>
-          <div class="label">Rocky IQ</div>
-          <div class="iq-trend" id="atrophy-trend">—</div>
-          <div class="score-value" id="atrophy-value">—</div>
-        </div>
-        <div class="score-bar"><div class="score-fill" id="atrophy-fill" style="width:0"></div></div>
-        <svg class="iq-spark" id="atrophy-spark" preserveAspectRatio="none"></svg>
+      <div class="iq-half-head">
+        <span class="label">Rocky IQ</span>
+        <span class="iq-trend" id="atrophy-trend">—</span>
       </div>
-      <div class="score-meta" id="atrophy-meta">how well you are retaining recent material</div>
+      <svg class="iq-spark" id="atrophy-spark" preserveAspectRatio="none"></svg>
+      <div class="iq-half-body">
+        <span class="score-value" id="atrophy-value">—</span>
+        <span class="score-meta" id="atrophy-meta">how well you are retaining recent material</span>
+      </div>
+      <!-- Kept for JS compatibility (renderDashboard still writes .style.width
+           here). Visually hidden — the sparkline now carries the trend; a
+           redundant fill bar was eating vertical space. -->
+      <div class="score-bar" hidden><div class="score-fill" id="atrophy-fill"></div></div>
     </div>
     <div class="atrophy-banner iq-half" id="prompt-iq-banner" title="Click for recent prompts" style="cursor:pointer" onclick="openPromptIqModal()">
-      <div class="iq-half-top">
-        <div>
-          <div class="label">Prompt IQ</div>
-          <div class="iq-trend" id="prompt-iq-trend">—</div>
-          <div class="score-value" id="prompt-iq-value">—</div>
-        </div>
-        <div class="score-bar"><div class="score-fill" id="prompt-iq-fill" style="width:0;background:linear-gradient(90deg,#e74c3c,#e6a817 40%,#7c9ef3 80%)"></div></div>
-        <svg class="iq-spark" id="prompt-iq-spark" preserveAspectRatio="none"></svg>
+      <div class="iq-half-head">
+        <span class="label">Prompt IQ</span>
+        <span class="iq-trend" id="prompt-iq-trend">—</span>
       </div>
-      <div class="score-meta" id="prompt-iq-meta">how well you direct your AI agents</div>
+      <svg class="iq-spark" id="prompt-iq-spark" preserveAspectRatio="none"></svg>
+      <div class="iq-half-body">
+        <span class="score-value" id="prompt-iq-value">—</span>
+        <span class="score-meta" id="prompt-iq-meta">how well you direct your AI agents</span>
+      </div>
+      <div class="score-bar" hidden><div class="score-fill" id="prompt-iq-fill"></div></div>
     </div>
   </div>
   <div class="dash-row dash-row-5">
@@ -3958,8 +3973,13 @@ function renderDashboard() {
   // how fresh the underlying graph is (the IQ derives from it).
   const ckptList = DATA.recentlyAdded || [];
   const lastCkpt = ckptList.length ? relTime(ckptList[0].created_at) : null;
-  document.getElementById('atrophy-meta').textContent =
-    lastCkpt ? `${meta} · last checkpoint ${lastCkpt}` : meta;
+  const atrophyText = lastCkpt ? `${meta} · last checkpoint ${lastCkpt}` : meta;
+  const atrophyMetaEl = document.getElementById('atrophy-meta');
+  atrophyMetaEl.textContent = atrophyText;
+  // Title attribute carries the full string for hover-tooltip when the
+  // ellipsis truncates — the user still sees the whole description on
+  // mouse-over even if the tile width can't fit it all on one line.
+  atrophyMetaEl.title = atrophyText;
 
   const rDelta = Number(DATA.rockyIqDelta || 0);
   const rTrendEl = document.getElementById('atrophy-trend');
@@ -4034,7 +4054,7 @@ function renderDashboard() {
 
   const dhEl = document.getElementById('domain-bars');
   dhEl.innerHTML = dh.length ? '' : '<div class="empty-msg">No domain data yet.</div>';
-  for (const d of dh.slice(0, 8)) {
+  for (const d of dh) {
     const r = Math.round((d.avg_recall || 0) * 100);
     const colour = DOMAIN_COLORS[d.domain] || '#607d8b';
     const row = document.createElement('div');
@@ -4213,7 +4233,10 @@ function applyPromptIq(p) {
                : v >= 40 ? `building the habit · ${n} prompt${n === 1 ? '' : 's'} sampled`
                :           `lots of room to grow · ${n} prompt${n === 1 ? '' : 's'} sampled`;
     const rescored = relTime(p.last_rescored_at);
-    metaEl.textContent = rescored ? `${base} · last rescored ${rescored}` : base;
+    const full = rescored ? `${base} · last rescored ${rescored}` : base;
+    metaEl.textContent = full;
+    // Hover-tooltip with full text when the ellipsis truncates.
+    metaEl.title = full;
   }
 }
 
