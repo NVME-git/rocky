@@ -46,12 +46,12 @@ a.nav-btn:hover{color:#e2e8f0}
 #tab-dashboard{overflow-y:auto;padding:24px}
 .iq-row{display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap;align-items:stretch}
 .iq-row .iq-half{flex:1;min-width:280px;margin-bottom:0}
-/* IQ half-tiles, compact layout: a label/trend header on top, a slim
-   sparkline below it carrying the 30-day trend, and a single row at the
-   bottom with the score next to its description. The old redundant
-   fill-bar is hidden (the sparkline already encodes "where am I trending")
-   and the description sitting beside the score keeps the tile from
-   ballooning vertically. Height now matches the Learning Days counter. */
+/* IQ half-tiles, compact layout:
+     header (label + trend)        spans full width
+     mid    (score | sparkline)    score-value on the left, sparkline 80%
+     meta   (description)          full-width single-line ellipsised below
+   The old fill-bar is hidden (the sparkline already encodes "where am I
+   trending"). Height matches the Learning Days counter. */
 .iq-row .iq-half{
   flex-direction:column;align-items:stretch;
   padding:14px 20px 14px;gap:6px
@@ -61,18 +61,18 @@ a.nav-btn:hover{color:#e2e8f0}
 }
 .iq-row .iq-half .iq-half-head .label,
 .iq-row .iq-half .iq-half-head .iq-trend{margin:0;line-height:1;white-space:nowrap}
-/* Sparkline at 75% of the tile width, left-aligned so the leftmost data
-   point lines up with the score value sitting below it. The flex-stretch
-   default would force 100% width; align-self:flex-start opts out. */
-.iq-row .iq-half .iq-spark{height:26px;width:75%;align-self:flex-start}
-.iq-row .iq-half .iq-half-body{
-  display:flex;align-items:baseline;gap:14px;min-width:0
+/* Mid row: score-value on the left, sparkline filling the 80% to its
+   right. Baseline-aligned so the line bottom sits on the score's
+   baseline (sparkline visually rests on the same floor as the digits). */
+.iq-row .iq-half .iq-half-mid{
+  display:flex;align-items:center;gap:12px;min-width:0
 }
-.iq-row .iq-half .iq-half-body .score-value{
+.iq-row .iq-half .iq-half-mid .score-value{
   flex:0 0 auto;font-size:28px;line-height:1;margin:0
 }
-.iq-row .iq-half .iq-half-body .score-meta{
-  flex:1;min-width:0;margin:0;font-size:11px;line-height:1.4;color:#6b7594;
+.iq-row .iq-half .iq-spark{height:26px;width:80%;flex:0 0 80%}
+.iq-row .iq-half .score-meta{
+  margin:0;font-size:11px;line-height:1.4;color:#6b7594;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis
 }
 /* Compact engagement counters that flank the IQ tiles. They share the
@@ -781,11 +781,11 @@ a.nav-btn:hover{color:#e2e8f0}
         <span class="label">Rocky IQ</span>
         <span class="iq-trend" id="atrophy-trend">—</span>
       </div>
-      <svg class="iq-spark" id="atrophy-spark" preserveAspectRatio="none"></svg>
-      <div class="iq-half-body">
+      <div class="iq-half-mid">
         <span class="score-value" id="atrophy-value">—</span>
-        <span class="score-meta" id="atrophy-meta">how well you are retaining recent material</span>
+        <svg class="iq-spark" id="atrophy-spark" preserveAspectRatio="none"></svg>
       </div>
+      <span class="score-meta" id="atrophy-meta">how well you are retaining recent material</span>
       <!-- Kept for JS compatibility (renderDashboard still writes .style.width
            here). Visually hidden — the sparkline now carries the trend; a
            redundant fill bar was eating vertical space. -->
@@ -796,11 +796,11 @@ a.nav-btn:hover{color:#e2e8f0}
         <span class="label">Prompt IQ</span>
         <span class="iq-trend" id="prompt-iq-trend">—</span>
       </div>
-      <svg class="iq-spark" id="prompt-iq-spark" preserveAspectRatio="none"></svg>
-      <div class="iq-half-body">
+      <div class="iq-half-mid">
         <span class="score-value" id="prompt-iq-value">—</span>
-        <span class="score-meta" id="prompt-iq-meta">how well you direct your AI agents</span>
+        <svg class="iq-spark" id="prompt-iq-spark" preserveAspectRatio="none"></svg>
       </div>
+      <span class="score-meta" id="prompt-iq-meta">how well you direct your AI agents</span>
       <div class="score-bar" hidden><div class="score-fill" id="prompt-iq-fill"></div></div>
     </div>
   </div>
