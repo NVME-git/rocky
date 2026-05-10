@@ -148,23 +148,28 @@ a.nav-btn:hover{color:#e2e8f0}
 .dash-cards .queue-card .qc-meta{gap:8px}
 .domain-bars{display:flex;flex-direction:column;gap:8px}
 /* Highlight badges at the top of the Domain Health tile — strongest +
-   most-improved domain shown as small pill cards. The .db-chip is
-   tinted with the domain's own colour so the badge reads as that
-   domain even before the user reads the name. */
-.domain-badges{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(45,49,72,.5)}
-.domain-badge{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.domain-badge .db-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#8892a4}
+   most-improved domain rendered as small rectangular cards (not pills).
+   Each card has a domain-coloured left stripe that telegraphs which
+   domain it represents before the user reads the name. */
+.domain-badges{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid rgba(45,49,72,.5)}
+.domain-badge{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:8px 12px;
+  background:rgba(26,29,39,.6);
+  border:1px solid #2d3148;
+  border-left:3px solid var(--domain-colour,#3d4468);
+  border-radius:4px;
+  --domain-colour:#3d4468
+}
+.domain-badge .db-label{
+  font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#8892a4
+}
 .domain-badge .db-chip{
-  font-size:10px;font-weight:600;letter-spacing:.4px;
-  padding:3px 9px;border-radius:999px;
-  background:rgba(124,158,243,.15);color:#cfd6e8;
-  border:1px solid rgba(124,158,243,.35);
+  font-size:11px;font-weight:600;color:#e2e8f0;
   white-space:nowrap;
-  --domain-colour:#7c9ef3
+  background:none;border:none;padding:0
 }
 .domain-badge .db-chip[data-domain]:not([data-domain=""]){
-  background:color-mix(in srgb, var(--domain-colour) 16%, transparent);
-  border-color:color-mix(in srgb, var(--domain-colour) 50%, transparent);
   color:#e2e8f0
 }
 .domain-badge .db-chip-trend{font-weight:500;color:#8892a4;margin-left:6px;font-size:10px}
@@ -4136,9 +4141,10 @@ function makeDashCard(n, showDate) {
   return card;
 }
 
-// Set a domain badge's chip text + colour based on a domain name. Pass
-// null/empty to reset to a placeholder dash. Trend (e.g. "+12%") is
-// optional and renders in muted text after the domain name.
+// Set a domain badge's chip text + the card's left-stripe colour based
+// on a domain name. Pass null/empty to reset to a placeholder dash.
+// Trend (e.g. "+12%") is optional and renders in muted text after the
+// domain name.
 function paintDomainBadge(containerId, domain, trend) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -4147,13 +4153,15 @@ function paintDomainBadge(containerId, domain, trend) {
   if (!domain) {
     chip.textContent = '—';
     chip.dataset.domain = '';
-    chip.style.removeProperty('--domain-colour');
+    container.style.removeProperty('--domain-colour');
     return;
   }
   const colour = DOMAIN_COLORS[domain] || '#7c9ef3';
   chip.dataset.domain = domain;
-  chip.style.setProperty('--domain-colour', colour);
-  // Domain name first; trend (if any) trails as a smaller hint span.
+  // Colour lives on the card so the left stripe picks it up via the
+  // --domain-colour variable; the chip inside is plain paper-coloured
+  // text now that the card carries the domain identity visually.
+  container.style.setProperty('--domain-colour', colour);
   chip.textContent = '';
   chip.appendChild(document.createTextNode(domain));
   if (trend) {
