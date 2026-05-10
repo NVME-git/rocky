@@ -72,6 +72,24 @@ pub struct Review {
     pub score: f64,
 }
 
+/// A captured LLM conversation tied to a topic — the return trip from
+/// "Teach Me Copy & Go". The browser extension scrapes the conversation off
+/// the LLM site and POSTs it to /api/lessons; the server enriches the topic
+/// (refines description + appends new question-bank items) via the Teacher.
+#[derive(Debug, Clone)]
+pub struct Lesson {
+    pub id: String,
+    pub node_id: String,
+    pub source_url: String,
+    pub source_agent: String,
+    pub raw_content: String,
+    pub enriched_at: Option<String>,
+    pub enrichment_summary: String,
+    pub added_questions: i64,
+    pub enrichment_error: Option<String>,
+    pub created_at: String,
+}
+
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS session_state (
     key        TEXT PRIMARY KEY,
@@ -153,6 +171,20 @@ CREATE TABLE IF NOT EXISTS iq_snapshots (
     rocky_iq  INTEGER NOT NULL,
     prompt_iq INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS lessons (
+    id                 TEXT PRIMARY KEY,
+    node_id            TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    source_url         TEXT NOT NULL DEFAULT '',
+    source_agent       TEXT NOT NULL DEFAULT '',
+    raw_content        TEXT NOT NULL DEFAULT '',
+    enriched_at        TEXT,
+    enrichment_summary TEXT NOT NULL DEFAULT '',
+    added_questions    INTEGER NOT NULL DEFAULT 0,
+    enrichment_error   TEXT,
+    created_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS lessons_node ON lessons(node_id);
 ";
 
 #[derive(Clone)]
@@ -905,6 +937,79 @@ impl Db {
         Ok(())
     }
 
+    /// Number of distinct calendar days the user has at least one review on.
+    /// Both LLM-evaluated answers and self-assessments land in the reviews
+    /// table (record_quiz_review and add_review both write here), so this
+    /// counts any active engagement with a topic regardless of how it was
+    /// scored. Drives the **Rocky Days** dashboard counter.
+    pub fn distinct_review_days(&self) -> Result<i64> {
+        let conn = self.connect()?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT date(reviewed_at)) FROM reviews",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Current consecutive-day review streak ending today or yesterday.
+    ///
+    /// Streak rules:
+    ///   - If the user reviewed today, the run includes today.
+    ///   - If they only reviewed yesterday (today is still open), the run is
+    ///     alive but doesn't yet include today — there's still time before
+    ///     midnight to extend it.
+    ///   - If the most recent review was older than yesterday, the streak is 0.
+    ///
+    /// Drives the **Rocky Streak** dashboard counter. Distinct dates only —
+    /// multiple reviews on the same day count once.
+    pub fn current_review_streak(&self) -> Result<i64> {
+        use chrono::Duration;
+        let today = chrono::Local::now().date_naive();
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT date(reviewed_at) FROM reviews
+             ORDER BY date(reviewed_at) DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let s: String = row.get(0)?;
+            NaiveDate::parse_from_str(&s, "%Y-%m-%d").map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })
+        })?;
+        let dates: Vec<NaiveDate> = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if dates.is_empty() {
+            return Ok(0);
+        }
+
+        // Anchor: today, or yesterday with today as a grace day.
+        let yesterday = today - Duration::days(1);
+        let mut anchor = if dates[0] == today {
+            today
+        } else if dates[0] == yesterday {
+            yesterday
+        } else {
+            return Ok(0);
+        };
+
+        let mut streak = 0i64;
+        for d in &dates {
+            if *d == anchor {
+                streak += 1;
+                anchor -= Duration::days(1);
+            } else if *d < anchor {
+                break;
+            }
+            // *d > anchor can't happen given DESC order.
+        }
+        Ok(streak)
+    }
+
     /// Last `limit` review scores for a node, oldest first.
     /// Used by `fsrs::mastery` to weight the "did you actually know it" signal.
     pub fn recent_review_scores(&self, node_id: &str, limit: usize) -> Result<Vec<f64>> {
@@ -1120,6 +1225,105 @@ impl Db {
         } else {
             anyhow::bail!("topic not found: {topic}")
         }
+    }
+
+    /// Replace a node's description in place. Used by the lesson-enrichment
+    /// flow when the LLM proposes a refined description from a captured
+    /// teaching conversation.
+    pub fn set_description(&self, node_id: &str, description: &str) -> Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE nodes SET description = ? WHERE id = ?",
+            params![description, node_id],
+        )?;
+        Ok(())
+    }
+
+    // ── lessons ─────────────────────────────────────────────────────────────
+
+    /// Insert a freshly captured lesson (un-enriched). Returns the new lesson id.
+    pub fn insert_lesson(
+        &self,
+        node_id: &str,
+        source_url: &str,
+        source_agent: &str,
+        raw_content: &str,
+    ) -> Result<String> {
+        let conn = self.connect()?;
+        let id = format!("lesson-{}", chrono::Utc::now().timestamp_millis());
+        let now = chrono::Local::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO lessons
+              (id, node_id, source_url, source_agent, raw_content, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            params![id, node_id, source_url, source_agent, raw_content, now],
+        )?;
+        Ok(id)
+    }
+
+    /// Mark a lesson processed (success). `summary` is a one-line takeaway
+    /// the LLM extracted; `added` is how many new question-bank items were
+    /// appended.
+    pub fn mark_lesson_enriched(
+        &self,
+        lesson_id: &str,
+        summary: &str,
+        added: i64,
+    ) -> Result<()> {
+        let conn = self.connect()?;
+        let now = chrono::Local::now().to_rfc3339();
+        conn.execute(
+            "UPDATE lessons
+               SET enriched_at = ?, enrichment_summary = ?, added_questions = ?,
+                   enrichment_error = NULL
+             WHERE id = ?",
+            params![now, summary, added, lesson_id],
+        )?;
+        Ok(())
+    }
+
+    /// Mark a lesson processed (failure). The raw content sticks around so a
+    /// future retry can re-run the enrichment.
+    pub fn mark_lesson_failed(&self, lesson_id: &str, error: &str) -> Result<()> {
+        let conn = self.connect()?;
+        let now = chrono::Local::now().to_rfc3339();
+        conn.execute(
+            "UPDATE lessons
+               SET enriched_at = ?, enrichment_error = ?
+             WHERE id = ?",
+            params![now, error, lesson_id],
+        )?;
+        Ok(())
+    }
+
+    /// All lessons for a topic, newest first. Used by the web UI's lesson
+    /// section on the topic detail card.
+    pub fn lessons_for_node(&self, node_id: &str) -> Result<Vec<Lesson>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, node_id, source_url, source_agent, raw_content,
+                    enriched_at, enrichment_summary, added_questions,
+                    enrichment_error, created_at
+               FROM lessons WHERE node_id = ?
+              ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![node_id], |row| {
+            Ok(Lesson {
+                id:                 row.get(0)?,
+                node_id:            row.get(1)?,
+                source_url:         row.get(2)?,
+                source_agent:       row.get(3)?,
+                raw_content:        row.get(4)?,
+                enriched_at:        row.get(5)?,
+                enrichment_summary: row.get(6)?,
+                added_questions:    row.get(7)?,
+                enrichment_error:   row.get(8)?,
+                created_at:         row.get(9)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows { out.push(r?); }
+        Ok(out)
     }
 
     /// Hard-delete a node (and cascading contexts/edges/reviews via FK).
@@ -1397,5 +1601,87 @@ mod tests {
         db.set_domain("some-topic", "Language").unwrap();
         let node = db.get_node("some topic").unwrap().unwrap();
         assert_eq!(node.domain, "Language");
+    }
+
+    /// Helper: insert a review row dated `day_offset` from today (negative = past).
+    fn insert_review_on_day(db: &Db, node_id: &str, day_offset: i64) {
+        use chrono::Duration;
+        let day = chrono::Local::now().date_naive() + Duration::days(day_offset);
+        let conn = db.connect().unwrap();
+        conn.execute(
+            "INSERT INTO reviews (node_id, reviewed_at, question, answer, feedback, score)
+             VALUES (?1, ?2, '', '', '', 0.5)",
+            rusqlite::params![node_id, day.to_string()],
+        ).unwrap();
+    }
+
+    #[test]
+    fn distinct_review_days_counts_unique_dates_only() {
+        let (db, _dir) = open_temp_db();
+        db.add_or_update("topic-a", 0.8, &Kind::Concept, "", "d", "c", None, "", None).unwrap();
+        let id = Db::node_id("topic-a");
+        // Three reviews on the same day → 1 distinct day.
+        insert_review_on_day(&db, &id, 0);
+        insert_review_on_day(&db, &id, 0);
+        insert_review_on_day(&db, &id, 0);
+        assert_eq!(db.distinct_review_days().unwrap(), 1);
+        // Add reviews on two earlier days → 3 distinct.
+        insert_review_on_day(&db, &id, -1);
+        insert_review_on_day(&db, &id, -3);
+        assert_eq!(db.distinct_review_days().unwrap(), 3);
+    }
+
+    #[test]
+    fn streak_zero_when_no_reviews() {
+        let (db, _dir) = open_temp_db();
+        assert_eq!(db.current_review_streak().unwrap(), 0);
+    }
+
+    #[test]
+    fn streak_counts_consecutive_run_ending_today() {
+        let (db, _dir) = open_temp_db();
+        db.add_or_update("topic-a", 0.8, &Kind::Concept, "", "d", "c", None, "", None).unwrap();
+        let id = Db::node_id("topic-a");
+        // 3 consecutive days ending today.
+        for offset in [-2, -1, 0] {
+            insert_review_on_day(&db, &id, offset);
+        }
+        assert_eq!(db.current_review_streak().unwrap(), 3);
+    }
+
+    #[test]
+    fn streak_alive_with_yesterday_grace() {
+        let (db, _dir) = open_temp_db();
+        db.add_or_update("topic-a", 0.8, &Kind::Concept, "", "d", "c", None, "", None).unwrap();
+        let id = Db::node_id("topic-a");
+        // Reviewed yesterday but not today — streak still alive (today is a grace day).
+        insert_review_on_day(&db, &id, -2);
+        insert_review_on_day(&db, &id, -1);
+        assert_eq!(db.current_review_streak().unwrap(), 2);
+    }
+
+    #[test]
+    fn streak_zero_when_last_review_older_than_yesterday() {
+        let (db, _dir) = open_temp_db();
+        db.add_or_update("topic-a", 0.8, &Kind::Concept, "", "d", "c", None, "", None).unwrap();
+        let id = Db::node_id("topic-a");
+        // Last review was 2 days ago — streak is broken.
+        insert_review_on_day(&db, &id, -3);
+        insert_review_on_day(&db, &id, -2);
+        assert_eq!(db.current_review_streak().unwrap(), 0);
+    }
+
+    #[test]
+    fn streak_breaks_at_first_gap() {
+        let (db, _dir) = open_temp_db();
+        db.add_or_update("topic-a", 0.8, &Kind::Concept, "", "d", "c", None, "", None).unwrap();
+        let id = Db::node_id("topic-a");
+        // Today, yesterday, then a gap, then earlier — streak is 2.
+        insert_review_on_day(&db, &id, 0);
+        insert_review_on_day(&db, &id, -1);
+        // -2 is missing
+        insert_review_on_day(&db, &id, -3);
+        insert_review_on_day(&db, &id, -4);
+        assert_eq!(db.current_review_streak().unwrap(), 2);
     }
 }

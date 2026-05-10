@@ -46,6 +46,19 @@ a.nav-btn:hover{color:#e2e8f0}
 #tab-dashboard{overflow-y:auto;padding:24px}
 .iq-row{display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap}
 .iq-row .iq-half{flex:1;min-width:280px;margin-bottom:0}
+/* Compact engagement counters that flank the IQ tiles. They share the
+   .atrophy-banner shell but switch to a column layout (label/number/meta
+   stacked) and drop the score-bar/sparkline since "days" and "streak" are
+   discrete counts, not gauges. */
+.iq-row .iq-counter{flex:0 0 auto;min-width:140px;flex-direction:column;align-items:flex-start;gap:0;padding:18px 22px;margin-bottom:0}
+.iq-counter .label{margin-bottom:6px}
+.iq-counter .score-value{font-size:30px;font-weight:700;line-height:1;margin-bottom:6px}
+.iq-counter .score-meta{font-size:11px;color:#6b7594}
+.iq-counter[data-metric="days"] .score-value{color:#1d9e75}
+.iq-counter[data-metric="streak"] .score-value{color:#F59E0B}
+.iq-counter[data-metric="streak"] .streak-flame{font-size:20px;margin-right:4px;vertical-align:0;filter:saturate(1.1)}
+.iq-counter[data-metric="streak"][data-state="cold"] .score-value{color:#555e7a}
+.iq-counter[data-metric="streak"][data-state="cold"] .streak-flame{filter:grayscale(1) opacity(0.5)}
 .atrophy-banner .label{margin-bottom:2px}
 .iq-trend{display:block;font-size:11px;color:#7c9ef3;font-weight:400;letter-spacing:0;text-transform:none;margin-bottom:6px}
 .iq-trend.up{color:#1d9e75}
@@ -457,6 +470,22 @@ a.nav-btn:hover{color:#e2e8f0}
 .bank-teach-btn svg{width:14px;height:14px;display:block}
 .bank-teach-btn.copied{background:rgba(46,204,113,.18)!important;border-color:#2ecc71!important;color:#2ecc71!important;transform:scale(1.08)}
 .bank-teach-btn.copy-failed{background:rgba(231,76,60,.15)!important;border-color:#e74c3c!important;color:#e74c3c!important}
+.lessons-section{margin-top:14px}
+.lesson-row{display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:rgba(26,29,39,.55);border:1px solid rgba(45,49,72,.5);border-radius:6px;margin-top:6px}
+.lesson-row[data-state="ok"]{border-left:2px solid #2ecc71}
+.lesson-row[data-state="err"]{border-left:2px solid #e74c3c}
+.lesson-row[data-state="pending"]{border-left:2px solid #e67e22}
+.lesson-meta{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#555e7a}
+.lesson-agent{text-transform:capitalize;color:#7c9ef3;font-weight:600}
+.lesson-summary{font-size:11px;color:#cfd6e8;line-height:1.45}
+.lesson-summary.err{color:#e74c3c}
+.lesson-added{display:inline-block;margin-left:6px;padding:1px 6px;font-size:9px;background:rgba(46,204,113,.15);color:#2ecc71;border-radius:9px}
+.lesson-toggle{background:transparent;border:0;color:#7c9ef3;font-size:10px;cursor:pointer;padding:2px 0;text-align:left;font-family:inherit}
+.lesson-toggle:hover{text-decoration:underline}
+.lesson-msgs{display:none;margin-top:6px;padding:8px;background:rgba(20,26,46,.78);border-radius:5px;font-size:10px;color:#a4adc4;line-height:1.5;max-height:280px;overflow-y:auto}
+.lesson-msgs.open{display:block}
+.lesson-msgs .role{font-weight:600;color:#7c9ef3;text-transform:uppercase;font-size:9px;letter-spacing:.5px;display:block;margin-top:6px}
+.lesson-msgs .role:first-child{margin-top:0}
 .bank-teach-btn[data-agent="chatgpt"]{color:#00e5a0}
 .bank-teach-btn[data-agent="chatgpt"]:hover{border-color:#00e5a0}
 .bank-teach-btn[data-agent="gemini"]{color:#4da6ff}
@@ -673,6 +702,18 @@ a.nav-btn:hover{color:#e2e8f0}
       </div>
       <div class="score-bar"><div class="score-fill" id="prompt-iq-fill" style="width:0;background:linear-gradient(90deg,#e74c3c,#e6a817 40%,#7c9ef3 80%)"></div></div>
       <svg class="iq-spark" id="prompt-iq-spark" preserveAspectRatio="none"></svg>
+    </div>
+    <!-- Engagement counters: lifetime distinct review days + current
+         consecutive streak. Discrete counts, no sparkline. -->
+    <div class="atrophy-banner iq-counter" data-metric="days" title="Distinct days you've recorded a review (quiz or self-assessment)">
+      <div class="label">Rocky Days</div>
+      <div class="score-value" id="rocky-days-value">—</div>
+      <div class="score-meta" id="rocky-days-meta">days reviewed</div>
+    </div>
+    <div class="atrophy-banner iq-counter" data-metric="streak" id="rocky-streak-tile" title="Consecutive days of at least one review — extends if you review today (or yesterday until midnight)">
+      <div class="label">Rocky Streak</div>
+      <div class="score-value" id="rocky-streak-value">—</div>
+      <div class="score-meta" id="rocky-streak-meta">consecutive days</div>
     </div>
   </div>
   <div class="dash-row dash-row-5">
@@ -2675,10 +2716,90 @@ function openDetailPanel(n) {
     ${fbIcons}
     ${connHTML}
     ${bankHTML}
+    <div class="lessons-section" id="lessons-section-${cssId(n.id)}" data-node-id="${escapeHtml(n.id)}"></div>
     <button class="panel-quiz-btn" onclick="startQuizNodes(['${n.id}'])">Quiz me on this topic</button>
     <button class="panel-discard-btn" data-id="${escapeHtml(n.id)}" data-topic="${escapeHtml(n.topic)}" onclick="panelDiscardClick(this)" title="Move this topic to the Recycle Bin">🗑 Discard topic</button>`;
   document.getElementById('detail-panel').classList.add('open');
+  loadLessonsForTopic(n.id);
 }
+
+// Lessons section — captured "Teach Me" conversations from the browser
+// extension. Lazy-loaded once per panel open so the topic card render itself
+// stays cheap. The pill in the extension calls /api/lessons; this just shows
+// the result.
+async function loadLessonsForTopic(nodeId) {
+  const root = document.getElementById('lessons-section-' + cssId(nodeId));
+  if (!root) return;
+  root.innerHTML = '<p class="panel-label">Lessons</p><p style="font-size:11px;color:#555e7a;margin-top:4px">Loading…</p>';
+  try {
+    const resp = await fetch('/api/topic/lessons?node_id=' + encodeURIComponent(nodeId));
+    if (!resp.ok) throw new Error('http ' + resp.status);
+    const json = await resp.json();
+    const items = json.items || [];
+    if (!items.length) {
+      root.innerHTML = `<p class="panel-label">Lessons</p>
+        <p style="font-size:11px;color:#555e7a;margin-top:4px">
+          No captured conversations yet — open this topic with <b>Teach Me</b>, chat with the LLM, and the browser extension will save the lesson back here.
+        </p>`;
+      return;
+    }
+    const rows = items.map(renderLessonRow).join('');
+    root.innerHTML = `<p class="panel-label">Lessons (${items.length})</p>${rows}`;
+  } catch (e) {
+    root.innerHTML = `<p class="panel-label">Lessons</p>
+      <p style="font-size:11px;color:#e74c3c;margin-top:4px">Failed to load: ${escapeHtml(String(e))}</p>`;
+  }
+}
+
+function renderLessonRow(l) {
+  const state = l.enrichment_error ? 'err' : (l.enriched_at ? 'ok' : 'pending');
+  const agent = l.source_agent || 'unknown';
+  const when = l.created_at ? relTime(l.created_at) : '';
+  const summary = l.enrichment_error
+    ? `<p class="lesson-summary err">${escapeHtml(l.enrichment_error)}</p>`
+    : (l.enrichment_summary
+        ? `<p class="lesson-summary">${escapeHtml(l.enrichment_summary)}${l.added_questions > 0 ? `<span class="lesson-added">+${l.added_questions} Q</span>` : ''}</p>`
+        : `<p class="lesson-summary" style="color:#555e7a">Awaiting enrichment…</p>`);
+  const msgs = Array.isArray(l.messages) ? l.messages : [];
+  const msgsHTML = msgs.length
+    ? msgs.map(m => `<span class="role">${escapeHtml(m.role || 'msg')}</span>${escapeHtml(m.content || '')}`).join('')
+    : '<em>(empty)</em>';
+  // Source-link line — when scraped from a chat the URL points to the
+  // conversation tab; surfacing it lets the user reopen the dialogue.
+  const linkLine = l.source_url
+    ? `<a href="${escapeHtml(l.source_url)}" target="_blank" rel="noopener" style="color:#7c9ef3;font-size:10px">source ↗</a>`
+    : '';
+  return `<div class="lesson-row" data-state="${state}">
+    <div class="lesson-meta">
+      <span><span class="lesson-agent">${escapeHtml(agent)}</span>${when ? ` · ${escapeHtml(when)}` : ''}</span>
+      ${linkLine}
+    </div>
+    ${summary}
+    <button class="lesson-toggle" data-action="lesson-toggle">show conversation</button>
+    <div class="lesson-msgs">${msgsHTML}</div>
+  </div>`;
+}
+
+function lessonToggle(btn) {
+  const msgs = btn.nextElementSibling;
+  if (!msgs) return;
+  const open = msgs.classList.toggle('open');
+  btn.textContent = open ? 'hide conversation' : 'show conversation';
+}
+
+// Delegated handler — keeps the lesson rows free of inline `onclick=`
+// attributes so they pass CSP on hosts that disallow inline event handlers.
+document.addEventListener('click', (ev) => {
+  const t = ev.target;
+  if (!(t instanceof HTMLElement)) return;
+  if (t.dataset.action === 'lesson-toggle') {
+    lessonToggle(t);
+  }
+});
+
+// Sanitise a node id for use as part of an element id (UUIDs are safe; this
+// is defensive against any future change to id format).
+function cssId(s) { return String(s).replace(/[^A-Za-z0-9_-]/g, '_'); }
 
 // Reusable feedback widget. Two icons, each opens an inline textarea on
 // click; submitting appends `## kind\n<text>\n` to FEEDBACK.md. No date —
@@ -3280,6 +3401,19 @@ async function bankTeachCopyGo(ev, btn) {
   if (copied) {
     btn.classList.add('copied');
     btn.setAttribute('title', `Copied · opening ${agent.name}…`);
+    // Hand-off to the browser extension: register an active teach session
+    // so the "Save lesson to Rocky" pill appears on the LLM site for this
+    // topic. Best-effort — failure here doesn't block Copy & Go.
+    fetch('/api/teach-sessions/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        node_id: nodeId,
+        topic: node.topic,
+        question: q.question,
+        agent: btn.dataset.agent,
+      }),
+    }).catch(() => {});
     // Brief delay so the user sees the green flash before the new tab steals focus.
     setTimeout(() => window.open(agent.url, '_blank', 'noopener'), 350);
   } else {
@@ -3644,6 +3778,31 @@ function renderDashboard() {
 
   drawIqSparkline(document.getElementById('atrophy-spark'), (DATA.iqHistory || []).map(s => s.rocky_iq), '#7c9ef3');
   drawIqSparkline(document.getElementById('prompt-iq-spark'), (DATA.iqHistory || []).map(s => s.prompt_iq), '#e6a817');
+
+  // Rocky Days + Rocky Streak — engagement counters. Days is the lifetime
+  // count of distinct review days; Streak is the consecutive run ending
+  // today or yesterday. Both come from the reviews table on the server.
+  const days = Math.max(0, parseInt(DATA.rockyDays, 10) || 0);
+  document.getElementById('rocky-days-value').textContent = days;
+  document.getElementById('rocky-days-meta').textContent =
+    days === 0 ? 'no reviews yet — try /rocky-quiz' :
+    days === 1 ? 'day reviewed (one down, many to go)' :
+                 'days reviewed';
+
+  const streak = Math.max(0, parseInt(DATA.rockyStreak, 10) || 0);
+  const streakEl  = document.getElementById('rocky-streak-value');
+  const streakTile = document.getElementById('rocky-streak-tile');
+  const streakMeta = document.getElementById('rocky-streak-meta');
+  // Visual: flame emoji prefix when alive (≥1), greyed out when 0.
+  if (streak === 0) {
+    streakEl.innerHTML = '<span class="streak-flame">·</span>0';
+    streakMeta.textContent = 'start one with /rocky-quiz today';
+    streakTile.dataset.state = 'cold';
+  } else {
+    streakEl.innerHTML = '<span class="streak-flame">🔥</span>' + streak;
+    streakMeta.textContent = streak === 1 ? 'day · keep it going tomorrow' : 'consecutive days';
+    streakTile.dataset.state = 'hot';
+  }
 
   // PromptIQ — fetched lazily; the tile-paint logic lives in a helper so the
   // modal's own fetch can also refresh the tile and we never end up with a
