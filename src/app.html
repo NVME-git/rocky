@@ -129,6 +129,30 @@ a.nav-btn:hover{color:#e2e8f0}
 .viz-box-card svg{flex:1;width:100%;display:block;min-height:240px}
 .dash-hint{font-size:10px;color:#555e7a;margin:0 0 6px;line-height:1.4}
 .dash-card{background:#1a1d27;border:1px solid #2d3148;border-radius:10px;padding:16px;min-height:200px}
+/* ── responsive ─────────────────────────────────────────────────────────
+   The wide-screen layout assumes ~1100px+ of real estate. Below that the
+   rigid `1fr 2fr 2fr 2fr` second row crushes its tiles into unreadable
+   strips. Collapse to 2-up at the tablet breakpoint and a single column
+   at phone widths. The .iq-row already wraps via flex-wrap; we just need
+   to relax its min-widths at phone size and switch the score-vs-spark
+   row inside each IQ tile to a vertical stack so neither gets crushed. */
+@media (max-width: 1100px) {
+  .dash-row-5{grid-template-columns:1fr 1fr}
+  .dash-row-5 .dash-card{min-height:200px}
+}
+@media (max-width: 700px) {
+  .dash-row-5{grid-template-columns:1fr}
+  .dash-row-5 .dash-card{min-height:0}
+  .dash-stack{min-height:0}
+  .iq-row{gap:10px}
+  /* Inside each IQ tile, sparkline drops below the score so it isn't
+     crushed once the tile is full-row-narrow. The iq-half / iq-counter
+     min-widths are left alone — they're what triggers flex-wrap to
+     stack the tiles one-per-row. */
+  .iq-row .iq-half .iq-half-mid{flex-direction:column;align-items:stretch;gap:6px}
+  .iq-row .iq-half .iq-spark{width:100%;flex:0 0 26px}
+  #tab-dashboard{padding:14px}
+}
 .dash-card .dc-h{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#555e7a;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
 .dash-card .dc-h .dc-pill{font-size:10px;background:#1e2340;color:#8892a4;padding:2px 7px;border-radius:8px;text-transform:none;letter-spacing:0}
 .dash-list{display:flex;flex-direction:column;gap:6px}
