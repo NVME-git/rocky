@@ -2,6 +2,10 @@
 name = "rocky"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
+description = "Personal Knowledge Graph that spaces-repeats whatever you ship — observe what your AI agent built, quiz yourself so you don't lose the thread."
+repository = "https://github.com/NVME-git/rocky"
+authors = ["Nabeel Vandayar"]
 
 [[bin]]
 name = "rocky"

@@ -129,7 +129,7 @@ Optional browser STT (Web Speech API) is opt-in and gated by `privacy.strict`. S
 
 ## Open source. Team tier coming.
 
-Rocky is free and open source for individuals — the entire flow above is and will remain MIT-licensed.
+Rocky is free and open source for individuals — the entire flow above is and will remain Apache-2.0-licensed.
 
 A **team tier** is on the roadmap: shared PKGs, manager dashboards, and a PR-gate that requires the author to demonstrate understanding of the topics introduced in their diff before it can merge. Designed for engineering leaders who want a measurable answer to "is the team actually keeping up with what AI is shipping?"
 
@@ -192,4 +192,6 @@ The major design choices — the rich-context pipeline, the FSRS-based recall mo
 
 ## License
 
-MIT
+Apache License 2.0 — see [LICENSE](LICENSE).
+
+Copyright © 2026 Nabeel Vandayar. Apache-2.0 includes an explicit patent grant, which MIT does not — choosing it now keeps Rocky safe to depend on as the project (and any future team tier) grows.
