@@ -3834,7 +3834,18 @@ fn load_or_create_project_summary(
 }
 
 fn print_header() {
-    println!("\n  {}", "Rocky · Personal Knowledge Graph".bold());
+    // ROCKY in ANSI Shadow block letters — matches the README cover and the
+    // docs masthead so the brand reads consistently across every surface.
+    let banner = r#"
+██████╗  ██████╗  ██████╗██╗  ██╗██╗   ██╗
+██╔══██╗██╔═══██╗██╔════╝██║ ██╔╝╚██╗ ██╔╝
+██████╔╝██║   ██║██║     █████╔╝  ╚████╔╝
+██╔══██╗██║   ██║██║     ██╔═██╗   ╚██╔╝
+██║  ██║╚██████╔╝╚██████╗██║  ██╗   ██║
+╚═╝  ╚═╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝   ╚═╝
+"#;
+    println!("{}", banner.truecolor(239, 159, 39));
+    println!("  {}", "Personal Knowledge Graph".bold());
     println!("{}", " ──────────────────────────────────────".dimmed());
 }
 
