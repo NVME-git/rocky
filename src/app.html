@@ -79,8 +79,14 @@ a.nav-btn:hover{color:#e2e8f0}
 .dash-row-2{grid-template-columns:1fr 1fr}
 .dash-row-3{grid-template-columns:1fr 1fr 1fr}
 /* 5-column dashboard row: A=1/8 B=1/8 C=2/8 D=2/8 E=2/8 (= 1/4 each on the wider cells). */
-.dash-row-5{grid-template-columns:1fr 1fr 2fr 2fr 2fr;gap:10px}
+.dash-row-5{grid-template-columns:1fr 2fr 2fr 2fr;gap:10px}
 .dash-row-5 .dash-card{min-height:240px;padding:12px}
+/* Recently + Due stacked vertically inside one column. The wrapper takes
+   the same width as a single narrow tile used to; each inner card splits
+   the parent's height. */
+.dash-stack{display:flex;flex-direction:column;gap:10px;min-height:240px}
+.dash-stack .dash-card{min-height:0 !important;flex:1;display:flex;flex-direction:column}
+.dash-stack .dash-card .dash-list{flex:1;overflow:hidden}
 .dash-card-narrow{padding:10px 8px}
 .dash-card-narrow .dc-h{font-size:10px;letter-spacing:.5px}
 .dash-card-narrow .dash-cards{gap:5px}
@@ -719,7 +725,7 @@ a.nav-btn:hover{color:#e2e8f0}
     </div>
     <div class="atrophy-banner iq-half" id="prompt-iq-banner" title="Click for recent prompts" style="cursor:pointer" onclick="openPromptIqModal()">
       <div>
-        <div class="label">PromptIQ</div>
+        <div class="label">Prompt-IQ</div>
         <div class="iq-trend" id="prompt-iq-trend">—</div>
         <div class="score-value" id="prompt-iq-value">—</div>
         <div class="score-meta" id="prompt-iq-meta">how well you direct your AI agents</div>
@@ -730,24 +736,29 @@ a.nav-btn:hover{color:#e2e8f0}
     <!-- Engagement counters: lifetime distinct review days + current
          consecutive streak. Discrete counts, no sparkline. -->
     <div class="atrophy-banner iq-counter" data-metric="days" title="Distinct days you've recorded a review (quiz or self-assessment)">
-      <div class="label">Rocky Days</div>
+      <div class="label">Learning Days</div>
       <div class="score-value" id="rocky-days-value">—</div>
       <div class="score-meta" id="rocky-days-meta">days reviewed</div>
     </div>
     <div class="atrophy-banner iq-counter" data-metric="streak" id="rocky-streak-tile" title="Consecutive days of at least one review — extends if you review today (or yesterday until midnight)">
-      <div class="label">Rocky Streak</div>
+      <div class="label">Learning Streak</div>
       <div class="score-value" id="rocky-streak-value">—</div>
       <div class="score-meta" id="rocky-streak-meta">consecutive days</div>
     </div>
   </div>
   <div class="dash-row dash-row-5">
-    <div class="dash-card dash-card-narrow">
-      <div class="dc-h"><span>Recently</span><span class="dc-pill" id="recent-pill">—</span></div>
-      <div class="dash-list" id="recent-list"></div>
-    </div>
-    <div class="dash-card dash-card-narrow">
-      <div class="dc-h"><span>Due</span><span class="dc-pill" id="due-pill">—</span></div>
-      <div class="dash-list" id="due-list"></div>
+    <!-- Stacked column: Recently on top, Due below. Together they take one
+         narrow-tile-width column to free horizontal room for the three
+         visualisations on the right. -->
+    <div class="dash-stack">
+      <div class="dash-card dash-card-narrow">
+        <div class="dc-h"><span>Recently</span><span class="dc-pill" id="recent-pill">—</span></div>
+        <div class="dash-list" id="recent-list"></div>
+      </div>
+      <div class="dash-card dash-card-narrow">
+        <div class="dc-h"><span>Due</span><span class="dc-pill" id="due-pill">—</span></div>
+        <div class="dash-list" id="due-list"></div>
+      </div>
     </div>
     <div class="dash-card">
       <div class="dc-h"><span>Domain health</span><span class="dc-pill" id="dh-pill">—</span></div>
@@ -3939,10 +3950,11 @@ function renderDashboard() {
   }).catch(() => { /* endpoint not available — leave defaults */ });
 
   // Due for review — same card style as the review queue (compact column).
-  // Cap at 5 cards: the dashboard is for at-a-glance triage, not the full
-  // queue (which lives in the Review Queue tab).
+  // Cap at 3 cards: the dashboard is for at-a-glance triage, not the full
+  // queue (which lives in the Review Queue tab). The Recently+Due stack
+  // shares one column with limited vertical room.
   const dueList = document.getElementById('due-list');
-  const due = (DATA.dueForReview || []).slice(0, 5);
+  const due = (DATA.dueForReview || []).slice(0, 3);
   document.getElementById('due-pill').textContent = due.length;
   dueList.classList.add('dash-cards');
   dueList.innerHTML = due.length ? '' : '<div class="empty-msg">Nothing due yet.</div>';
@@ -3967,8 +3979,8 @@ function renderDashboard() {
   }
 
   // Recently added — date header per cluster + queue-style cards under it.
-  // Capped at 5 to match Due — dashboard is the highlight reel, not the log.
-  const ra = (DATA.recentlyAdded || []).slice(0, 5);
+  // Capped at 3 to match Due — Recently+Due share one stacked column.
+  const ra = (DATA.recentlyAdded || []).slice(0, 3);
   document.getElementById('recent-pill').textContent = ra.length;
   const raEl = document.getElementById('recent-list');
   raEl.classList.add('dash-cards');
