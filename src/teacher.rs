@@ -69,6 +69,16 @@ pub struct EvalResult {
     pub followup: Option<String>,
 }
 
+/// Output of `Teacher::enrich_topic_from_conversation` — what to merge back
+/// into a topic after a "Teach Me Copy & Go" conversation lands via the
+/// browser extension.
+#[derive(Debug, Clone)]
+pub struct EnrichmentResult {
+    pub summary: String,
+    pub refined_description: String,
+    pub new_questions: Vec<crate::node::QuestionBankItem>,
+}
+
 pub struct Teacher {
     provider: Provider,
 }
@@ -706,6 +716,92 @@ Respond ONLY with valid JSON — no other text:
         let name = val["name"].as_str().unwrap_or(a).to_string();
         let desc = val["description"].as_str().unwrap_or(desc_a).to_string();
         Ok((name, desc))
+    }
+
+    /// Mine a captured "Teach Me" conversation for new question-bank items
+    /// and (optionally) a refined description. The browser extension scrapes
+    /// the conversation off the LLM site and POSTs it; the server then asks
+    /// the local LLM to extract durable lessons.
+    ///
+    /// Returns:
+    /// - `summary`: one-line takeaway shown on the topic detail card.
+    /// - `refined_description`: empty string when the existing description
+    ///   already covers what the conversation taught.
+    /// - `new_questions`: 1–3 fresh Q&A items, deduped against `existing_questions`.
+    pub fn enrich_topic_from_conversation(
+        &self,
+        topic: &str,
+        description: &str,
+        existing_questions: &[String],
+        conversation: &str,
+    ) -> Result<EnrichmentResult> {
+        let system = r#"You analyse a teaching conversation between a developer and an LLM
+and extract durable lessons for the developer's personal knowledge graph.
+
+The developer already has a topic card with a description and a question bank.
+Your job is to harvest the conversation for new insights — NOT to recap it.
+
+Return JSON of this exact shape:
+{
+  "summary": "<one sentence describing the most important thing the developer learned, or '' if the conversation added nothing new>",
+  "refined_description": "<a tighter, more accurate ≤200-char description, or '' to keep the existing one>",
+  "new_questions": [
+    {"question": "...", "answer": "...", "clue": "..."}
+  ]
+}
+
+Rules:
+- Each new question must probe a non-trivial implication, trade-off, edge case,
+  or consequence that emerged from the conversation. No definition recall.
+- Skip anything that overlaps with the existing questions in spirit, not just wording.
+- Return between 0 and 3 new questions. Empty array is fine when nothing
+  durable was learned.
+- "answer" is 3-5 sentences demonstrating real understanding.
+- "clue" is 1-2 sentences nudging toward the answer without revealing it.
+- Only set "refined_description" if the existing one is wrong or materially
+  weaker than what the conversation revealed."#;
+
+        let truncated = if conversation.len() > 12_000 {
+            let mut end = 12_000;
+            while !conversation.is_char_boundary(end) && end > 0 { end -= 1; }
+            &conversation[..end]
+        } else {
+            conversation
+        };
+
+        let existing_block = if existing_questions.is_empty() {
+            "(none)".to_string()
+        } else {
+            existing_questions
+                .iter()
+                .map(|q| format!("- {q}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let user = format!(
+            "Topic: {topic}\nCurrent description: {description}\n\n\
+             Existing question bank:\n{existing_block}\n\n\
+             Conversation transcript:\n{truncated}"
+        );
+
+        let raw = self.ask_with_overrides(system, &user, None, 2048)?;
+        let cleaned = strip_code_fence(&raw);
+
+        #[derive(Deserialize)]
+        struct Wire {
+            #[serde(default)] summary: String,
+            #[serde(default)] refined_description: String,
+            #[serde(default)] new_questions: Vec<crate::node::QuestionBankItem>,
+        }
+        let wire: Wire = serde_json::from_str(cleaned)
+            .map_err(|e| anyhow!("enrichment parse failed: {e} — raw: {raw}"))?;
+
+        Ok(EnrichmentResult {
+            summary: wire.summary,
+            refined_description: wire.refined_description,
+            new_questions: wire.new_questions,
+        })
     }
 
     /// Ask the LLM whether two topics from the PKG represent the same concept.
