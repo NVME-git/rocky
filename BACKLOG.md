@@ -209,6 +209,25 @@ Out of scope for this entry but worth noting: a custom URL scheme
 step and a browser security prompt — defer unless the click-to-copy or
 terminal-spawn paths prove insufficient.
 
+### Embedded LLM chat panel inside `rocky view` `[idea]`
+
+Inline chat panel right in the topic detail card — clicking Teach Me opens
+a conversation surface inside Rocky instead of copying a prompt and sending
+the user to ChatGPT/Claude/etc. Backed by the user's Anthropic / OpenAI
+key or a local Ollama, configured via `~/.config/rocky/config.toml`.
+
+Why this matters: it eliminates the round-trip-back-into-Rocky problem
+that originally motivated the browser-extension scraper. The conversation
+is already structured data the moment the user closes the panel, ready
+to feed straight into `Teacher::enrich_topic_from_conversation` — no
+DOM scraping, no extension install, no fragile per-vendor selectors.
+
+Trade-offs to weigh before building: loses the user's preferred LLM brand
+/ chat history continuity, adds an API-key configuration step (or Ollama
+dependency). The current paste-back flow stays as the universal fallback
+for anyone who'd rather chat in their LLM tab and copy-paste the result
+back into Rocky.
+
 ### Rocky as a retroactive clue filler `[in progress]`
 
 `rocky backfill --fill-clues` — generates missing clues for nodes that already have canonical Q&A.

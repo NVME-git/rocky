@@ -471,6 +471,30 @@ a.nav-btn:hover{color:#e2e8f0}
 .bank-teach-btn.copied{background:rgba(46,204,113,.18)!important;border-color:#2ecc71!important;color:#2ecc71!important;transform:scale(1.08)}
 .bank-teach-btn.copy-failed{background:rgba(231,76,60,.15)!important;border-color:#e74c3c!important;color:#e74c3c!important}
 .lessons-section{margin-top:14px}
+/* Paste-back capture surface — collapsed by default to a single brass-link
+   button; expands into a textarea + Save row. Sits at the top of the
+   Lessons block so it's the first thing the user sees when they open a
+   topic detail panel. */
+.lesson-capture{margin:6px 0 12px;padding:8px 0 4px;border-bottom:1px solid rgba(45,49,72,.4)}
+.lesson-capture-toggle{background:transparent;border:0;color:#7c9ef3;font-size:11px;cursor:pointer;padding:4px 0;font-family:inherit}
+.lesson-capture-toggle:hover{color:#99b3f7;text-decoration:underline}
+.lesson-capture-form{display:none;margin-top:6px}
+.lesson-capture.open .lesson-capture-toggle{display:none}
+.lesson-capture.open .lesson-capture-form{display:block}
+.lesson-capture textarea{width:100%;min-height:120px;resize:vertical;padding:10px 12px;background:rgba(20,26,46,.78);border:1px solid #3d4468;border-radius:5px;color:#cfd6e8;font-family:inherit;font-size:12px;line-height:1.5;outline:none}
+.lesson-capture textarea:focus{border-color:#7c9ef3}
+.lesson-capture textarea:disabled{opacity:.6;cursor:wait}
+.lesson-capture-actions{display:flex;gap:8px;margin-top:8px;align-items:center}
+.lesson-capture-actions button{font-family:inherit;font-size:11px;padding:6px 12px;border-radius:5px;cursor:pointer}
+.lesson-capture-save{background:#7c9ef3;color:#0b0d18;border:1px solid #7c9ef3;font-weight:600}
+.lesson-capture-save:hover:not(:disabled){background:#99b3f7;border-color:#99b3f7}
+.lesson-capture-save:disabled{opacity:.5;cursor:wait}
+.lesson-capture-cancel{background:transparent;color:#8892a4;border:1px solid #3d4468}
+.lesson-capture-cancel:hover{color:#cfd6e8;border-color:#7c9ef3}
+.lesson-capture-status{font-size:10px;color:#7c9ef3;margin:6px 0 0;font-style:italic;line-height:1.5}
+.lesson-capture-status.err{color:#e74c3c;font-style:normal}
+.lesson-capture-status.ok{color:#2ecc71;font-style:normal}
+.lesson-capture-hint{font-size:10px;color:#555e7a;margin:4px 0 0;line-height:1.5}
 .lesson-row{display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:rgba(26,29,39,.55);border:1px solid rgba(45,49,72,.5);border-radius:6px;margin-top:6px}
 .lesson-row[data-state="ok"]{border-left:2px solid #2ecc71}
 .lesson-row[data-state="err"]{border-left:2px solid #e74c3c}
@@ -2723,31 +2747,141 @@ function openDetailPanel(n) {
   loadLessonsForTopic(n.id);
 }
 
-// Lessons section — captured "Teach Me" conversations from the browser
-// extension. Lazy-loaded once per panel open so the topic card render itself
-// stays cheap. The pill in the extension calls /api/lessons; this just shows
-// the result.
+// Lessons section — captured study conversations attached to a topic.
+// The paste-back surface at the top is the round-trip from the user's LLM
+// chat back into Rocky: chat with ChatGPT/Claude/etc., copy the dialogue,
+// paste here, server runs Whisper-style enrichment to refine the topic
+// description and append new question-bank items.
+//
+// Re-rendered on each panel open. In-flight textarea state doesn't survive
+// the close — that's a deliberate trade-off; users either save quickly or
+// re-paste. Persisting unsent text would be more complex than it's worth.
 async function loadLessonsForTopic(nodeId) {
   const root = document.getElementById('lessons-section-' + cssId(nodeId));
   if (!root) return;
-  root.innerHTML = '<p class="panel-label">Lessons</p><p style="font-size:11px;color:#555e7a;margin-top:4px">Loading…</p>';
+
+  // Capture surface — always rendered first so it's available even before
+  // the lessons list loads (or if the load fails).
+  const captureHtml = `
+    <div class="lesson-capture" data-node-id="${escapeHtml(nodeId)}">
+      <button class="lesson-capture-toggle" data-action="capture-open">+ Capture a study chat</button>
+      <div class="lesson-capture-form">
+        <textarea placeholder="Paste your conversation from ChatGPT / Claude / Gemini / etc. Rocky mines it for new question-bank items and a refined topic description."></textarea>
+        <div class="lesson-capture-actions">
+          <button class="lesson-capture-save" data-action="capture-save">▸ Save lesson</button>
+          <button class="lesson-capture-cancel" data-action="capture-cancel">Cancel</button>
+        </div>
+        <p class="lesson-capture-status"></p>
+      </div>
+      <p class="lesson-capture-hint">Click <b>Teach Me</b> on a question card → chat with your LLM → paste the dialogue here when you're done.</p>
+    </div>`;
+
+  root.innerHTML = `<p class="panel-label">Lessons</p>${captureHtml}<p class="lessons-list-loading" style="font-size:11px;color:#555e7a">Loading…</p>`;
+
   try {
     const resp = await fetch('/api/topic/lessons?node_id=' + encodeURIComponent(nodeId));
     if (!resp.ok) throw new Error('http ' + resp.status);
     const json = await resp.json();
     const items = json.items || [];
+
+    const loading = root.querySelector('.lessons-list-loading');
+    if (loading) loading.remove();
+
     if (!items.length) {
-      root.innerHTML = `<p class="panel-label">Lessons</p>
-        <p style="font-size:11px;color:#555e7a;margin-top:4px">
-          No captured conversations yet — open this topic with <b>Teach Me</b>, chat with the LLM, and the browser extension will save the lesson back here.
-        </p>`;
+      const empty = document.createElement('p');
+      empty.style.cssText = 'font-size:11px;color:#555e7a;margin-top:4px';
+      empty.textContent = 'No lessons captured yet for this topic.';
+      root.appendChild(empty);
       return;
     }
-    const rows = items.map(renderLessonRow).join('');
-    root.innerHTML = `<p class="panel-label">Lessons (${items.length})</p>${rows}`;
+
+    const labelEl = root.querySelector('.panel-label');
+    if (labelEl) labelEl.textContent = `Lessons (${items.length})`;
+
+    const tmp = document.createElement('div');
+    tmp.innerHTML = items.map(renderLessonRow).join('');
+    while (tmp.firstChild) root.appendChild(tmp.firstChild);
   } catch (e) {
-    root.innerHTML = `<p class="panel-label">Lessons</p>
-      <p style="font-size:11px;color:#e74c3c;margin-top:4px">Failed to load: ${escapeHtml(String(e))}</p>`;
+    const loading = root.querySelector('.lessons-list-loading');
+    if (loading) loading.remove();
+    const err = document.createElement('p');
+    err.style.cssText = 'font-size:11px;color:#e74c3c;margin-top:4px';
+    err.textContent = 'Failed to load: ' + e;
+    root.appendChild(err);
+  }
+}
+
+// ── paste-back capture handlers ────────────────────────────────────────────
+
+function captureOpen(btn) {
+  const wrap = btn.closest('.lesson-capture');
+  if (!wrap) return;
+  wrap.classList.add('open');
+  const ta = wrap.querySelector('textarea');
+  if (ta) setTimeout(() => ta.focus(), 0);
+}
+
+function captureCancel(btn) {
+  const wrap = btn.closest('.lesson-capture');
+  if (!wrap) return;
+  wrap.classList.remove('open');
+  const ta = wrap.querySelector('textarea');
+  if (ta) ta.value = '';
+  const status = wrap.querySelector('.lesson-capture-status');
+  if (status) { status.textContent = ''; status.className = 'lesson-capture-status'; }
+}
+
+async function captureSave(btn) {
+  const wrap = btn.closest('.lesson-capture');
+  if (!wrap) return;
+  const nodeId = wrap.dataset.nodeId;
+  if (!nodeId) return;
+  const ta = wrap.querySelector('textarea');
+  const status = wrap.querySelector('.lesson-capture-status');
+  const cancelBtn = wrap.querySelector('.lesson-capture-cancel');
+  const text = (ta?.value || '').trim();
+
+  if (!text) {
+    status.textContent = 'Paste a conversation first.';
+    status.className = 'lesson-capture-status err';
+    return;
+  }
+
+  // Lock the form while the server enriches — Ollama can take 30-90 s on
+  // base.en, and a second click would create a duplicate lesson row.
+  btn.disabled = true;
+  if (cancelBtn) cancelBtn.disabled = true;
+  if (ta) ta.disabled = true;
+  status.className = 'lesson-capture-status';
+  status.textContent = 'Enriching… can take a minute on local Ollama.';
+
+  try {
+    const resp = await fetch('/api/lessons', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ node_id: nodeId, text, source_agent: 'paste' }),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      throw new Error('HTTP ' + resp.status + (errText ? ' — ' + errText.slice(0, 200) : ''));
+    }
+    const data = await resp.json();
+    const detail = data.summary
+      ? data.summary
+      : (data.added_questions > 0
+          ? `Added ${data.added_questions} new question${data.added_questions === 1 ? '' : 's'}.`
+          : 'Captured.');
+    status.textContent = '✓ ' + detail;
+    status.className = 'lesson-capture-status ok';
+    // Refresh the list so the new entry appears. Small delay so the user
+    // can read the success line before the surface re-renders.
+    setTimeout(() => loadLessonsForTopic(nodeId), 1400);
+  } catch (e) {
+    status.textContent = 'Failed: ' + e;
+    status.className = 'lesson-capture-status err';
+    btn.disabled = false;
+    if (cancelBtn) cancelBtn.disabled = false;
+    if (ta) ta.disabled = false;
   }
 }
 
@@ -2787,13 +2921,16 @@ function lessonToggle(btn) {
   btn.textContent = open ? 'hide conversation' : 'show conversation';
 }
 
-// Delegated handler — keeps the lesson rows free of inline `onclick=`
-// attributes so they pass CSP on hosts that disallow inline event handlers.
+// Delegated handler — keeps the lesson rows / capture surface free of
+// inline `onclick=` attributes so they pass CSP on strict hosts.
 document.addEventListener('click', (ev) => {
   const t = ev.target;
   if (!(t instanceof HTMLElement)) return;
-  if (t.dataset.action === 'lesson-toggle') {
-    lessonToggle(t);
+  switch (t.dataset.action) {
+    case 'lesson-toggle':  lessonToggle(t); break;
+    case 'capture-open':   captureOpen(t); break;
+    case 'capture-cancel': captureCancel(t); break;
+    case 'capture-save':   captureSave(t); break;
   }
 });
 
@@ -3401,20 +3538,10 @@ async function bankTeachCopyGo(ev, btn) {
   if (copied) {
     btn.classList.add('copied');
     btn.setAttribute('title', `Copied · opening ${agent.name}…`);
-    // Hand-off to the browser extension: register an active teach session
-    // so the "Save lesson to Rocky" pill appears on the LLM site for this
-    // topic. Best-effort — failure here doesn't block Copy & Go.
-    fetch('/api/teach-sessions/start', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        node_id: nodeId,
-        topic: node.topic,
-        question: q.question,
-        agent: btn.dataset.agent,
-      }),
-    }).catch(() => {});
-    // Brief delay so the user sees the green flash before the new tab steals focus.
+    // Brief delay so the user sees the green flash before the new tab steals
+    // focus. After the chat, the user comes back here and pastes the
+    // conversation into the topic card's "Capture a study chat" surface to
+    // close the loop — see loadLessonsForTopic for that UI.
     setTimeout(() => window.open(agent.url, '_blank', 'noopener'), 350);
   } else {
     btn.classList.add('copy-failed');

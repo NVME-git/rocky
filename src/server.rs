@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::Result;
 use axum::{
@@ -24,25 +23,10 @@ use crate::voice;
 
 // ── state ────────────────────────────────────────────────────────────────────
 
-/// One active "Teach Me" hand-off — the user clicked Teach Me on the topic
-/// card, so the next captured conversation on `agent` should be filed back to
-/// `node_id`. Held in memory only; sessions expire 30 minutes after start.
-#[derive(Debug, Clone)]
-pub struct TeachSession {
-    pub node_id: String,
-    pub topic: String,
-    pub question: String,
-    pub agent: String,
-    pub started_at: chrono::DateTime<chrono::Utc>,
-}
-
-const TEACH_SESSION_TTL_SECS: i64 = 1800;
-
 pub struct AppState {
     pub db: Db,
     pub teacher: Option<Teacher>,
     pub config: Config,
-    pub teach_sessions: Mutex<HashMap<String, TeachSession>>,
 }
 
 // ── public entry point ───────────────────────────────────────────────────────
@@ -54,7 +38,6 @@ pub fn run(db: &Db, cfg: &Config) -> Result<()> {
         db: db.clone(),
         teacher,
         config: cfg.clone(),
-        teach_sessions: Mutex::new(HashMap::new()),
     });
 
     let rt = tokio::runtime::Runtime::new()?;
@@ -76,15 +59,10 @@ pub fn run(db: &Db, cfg: &Config) -> Result<()> {
             .route("/api/recycle-bin", get(list_recycle_bin))
             .route("/api/feedback", get(read_feedback).post(write_feedback))
             .route("/api/feedback/append", post(append_feedback))
-            // Browser-extension round-trip endpoints. The web UI calls /start
-            // when "Teach Me Copy & Go" fires; the extension polls /active on
-            // the LLM site to decide whether to inject the "Save lesson"
-            // pill; on click it scrapes and POSTs to /api/lessons. Saving a
-            // lesson runs the Teacher enrichment to refine the topic and add
+            // Lesson capture: paste-back transcript from the topic card's
+            // "Capture a study chat" surface. POST goes to /api/lessons,
+            // server runs Teacher enrichment to refine the topic and add
             // new question-bank items.
-            .route("/api/teach-sessions/start", post(start_teach_session))
-            .route("/api/teach-sessions/active", get(active_teach_session))
-            .route("/api/teach-sessions/end", post(end_teach_session))
             .route("/api/lessons", post(ingest_lesson))
             .route("/api/topic/lessons", get(list_topic_lessons))
             .layer(CorsLayer::permissive())
@@ -1215,77 +1193,7 @@ async fn list_recycle_bin(
     Ok(Json(json!({ "items": items })))
 }
 
-// ── Teach-me round-trip (browser extension hand-off) ────────────────────────
-
-#[derive(Deserialize)]
-struct StartSessionReq {
-    node_id: String,
-    topic: String,
-    #[serde(default)]
-    question: String,
-    agent: String,
-}
-
-async fn start_teach_session(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<StartSessionReq>,
-) -> Result<Json<Value>, StatusCode> {
-    if req.agent.trim().is_empty() || req.node_id.trim().is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    let session = TeachSession {
-        node_id: req.node_id,
-        topic: req.topic,
-        question: req.question,
-        agent: req.agent.clone(),
-        started_at: chrono::Utc::now(),
-    };
-    let mut map = state.teach_sessions.lock().unwrap();
-    map.insert(req.agent, session);
-    Ok(Json(json!({ "ok": true })))
-}
-
-#[derive(Deserialize)]
-struct ActiveSessionQuery {
-    agent: String,
-}
-
-async fn active_teach_session(
-    State(state): State<Arc<AppState>>,
-    Query(q): Query<ActiveSessionQuery>,
-) -> Json<Value> {
-    let now = chrono::Utc::now();
-    let mut map = state.teach_sessions.lock().unwrap();
-    // Drop anything older than the TTL — keeps stale "Save lesson" pills from
-    // appearing if the user wandered off without saving.
-    map.retain(|_, s| (now - s.started_at).num_seconds() < TEACH_SESSION_TTL_SECS);
-
-    match map.get(&q.agent) {
-        Some(s) => Json(json!({
-            "active": true,
-            "node_id": s.node_id,
-            "topic": s.topic,
-            "question": s.question,
-            "agent": s.agent,
-            "started_at": s.started_at.to_rfc3339(),
-        })),
-        None => Json(json!({ "active": false })),
-    }
-}
-
-#[derive(Deserialize)]
-struct EndSessionReq {
-    agent: String,
-}
-
-async fn end_teach_session(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<EndSessionReq>,
-) -> Json<Value> {
-    let mut map = state.teach_sessions.lock().unwrap();
-    map.remove(&req.agent);
-    Json(json!({ "ok": true }))
-}
+// ── Lesson capture (paste-back from the topic card) ─────────────────────────
 
 #[derive(Deserialize)]
 struct ScrapedMessage {
@@ -1298,28 +1206,33 @@ struct IngestLessonReq {
     node_id: String,
     #[serde(default)]
     source_url: String,
+    /// Free-form label for *where* the conversation came from
+    /// (e.g. "chatgpt", "claude", "ollama-local"). Optional.
     #[serde(default)]
     source_agent: String,
+    /// Structured transcript — array of {role, content}. Used when the
+    /// caller already has the conversation parsed.
+    #[serde(default)]
     messages: Vec<ScrapedMessage>,
+    /// Pasted-back transcript — one big text blob the user copied out
+    /// of an LLM tab. Used by the topic-card paste-back surface.
+    /// Either `messages` or `text` must be present (not both, not
+    /// neither). When `text` is set, it's stored as a single
+    /// "conversation" message and format_conversation emits it raw.
+    #[serde(default)]
+    text: String,
 }
 
-/// Format a scraped conversation into a human-readable transcript the LLM
-/// can analyse. Cap each message to keep prompts tractable on local models.
+/// Format a conversation into a human-readable transcript the LLM can
+/// analyse. Cap each message to keep prompts tractable on local models.
+///
+/// Special-case role "conversation": the message is a paste-back blob
+/// where the user has already structured the dialogue (or hasn't —
+/// either way we emit it as-is, no role prefix). This is how the
+/// topic-card paste-back surface delivers a free-form transcript.
 fn format_conversation(messages: &[ScrapedMessage]) -> String {
     let mut out = String::new();
     for m in messages {
-        let role = match m.role.to_lowercase().as_str() {
-            "user" | "human" => "User",
-            "assistant" | "ai" | "model" => "Assistant",
-            other => {
-                // Preserve unknown roles verbatim — better than dropping the message.
-                let mut chars = other.chars();
-                let first = chars.next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
-                let rest: String = chars.collect();
-                let _ = (first, rest);
-                "Other"
-            }
-        };
         let trimmed = m.content.trim();
         if trimmed.is_empty() { continue; }
         // Hard cap per message — long pasted code blocks shouldn't blow the
@@ -1331,7 +1244,18 @@ fn format_conversation(messages: &[ScrapedMessage]) -> String {
         } else {
             trimmed.to_string()
         };
-        out.push_str(&format!("{role}: {snippet}\n\n"));
+
+        match m.role.to_lowercase().as_str() {
+            // Paste-back transcript — emit the raw text. The user may have
+            // included User:/Assistant: prefixes themselves; we preserve them.
+            "conversation" | "transcript" | "" => {
+                out.push_str(&snippet);
+                out.push_str("\n\n");
+            }
+            "user" | "human" => out.push_str(&format!("User: {snippet}\n\n")),
+            "assistant" | "ai" | "model" => out.push_str(&format!("Assistant: {snippet}\n\n")),
+            _ => out.push_str(&format!("{snippet}\n\n")),
+        };
     }
     out.trim_end().to_string()
 }
@@ -1340,26 +1264,37 @@ async fn ingest_lesson(
     State(state): State<Arc<AppState>>,
     Json(req): Json<IngestLessonReq>,
 ) -> Result<Json<Value>, StatusCode> {
-    if req.messages.is_empty() {
+    // Normalise the two shapes — structured `messages` from a programmatic
+    // caller, or a single `text` blob from the paste-back surface — into one
+    // Vec<ScrapedMessage>. Reject if neither is provided.
+    let messages: Vec<ScrapedMessage> = if !req.messages.is_empty() {
+        req.messages
+    } else if !req.text.trim().is_empty() {
+        vec![ScrapedMessage {
+            role: "conversation".to_string(),
+            content: req.text.clone(),
+        }]
+    } else {
         return Err(StatusCode::BAD_REQUEST);
-    }
+    };
+
     if state.teacher.is_none() {
-        // Without an LLM we can't enrich; tell the extension so it doesn't
+        // Without an LLM we can't enrich; tell the caller so it doesn't
         // silently swallow captures the user expected to be processed.
         return Err(StatusCode::SERVICE_UNAVAILABLE);
     }
 
-    // Persist the raw capture first, then enrich. That way a scrape that
-    // crashes the LLM is still recoverable later via a retry.
+    // Persist the raw capture first, then enrich. That way a normalisation
+    // bug or LLM crash leaves a recoverable artifact for retry.
     let raw_json = serde_json::to_string(
-        &req.messages
+        &messages
             .iter()
             .map(|m| json!({"role": m.role, "content": m.content}))
             .collect::<Vec<_>>(),
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let conversation = format_conversation(&req.messages);
+    let conversation = format_conversation(&messages);
     let node_id = req.node_id.clone();
     let source_url = req.source_url.clone();
     let source_agent = req.source_agent.clone();
@@ -1372,12 +1307,6 @@ async fn ingest_lesson(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Clear the active session for this agent — the round-trip is closed.
-    {
-        let mut map = state.teach_sessions.lock().unwrap();
-        map.remove(&req.source_agent);
-    }
 
     // Run enrichment synchronously inside spawn_blocking. Local Ollama can
     // take 30-90s; the extension's content script awaits the response and
