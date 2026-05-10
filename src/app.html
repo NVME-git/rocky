@@ -61,7 +61,10 @@ a.nav-btn:hover{color:#e2e8f0}
 }
 .iq-row .iq-half .iq-half-head .label,
 .iq-row .iq-half .iq-half-head .iq-trend{margin:0;line-height:1;white-space:nowrap}
-.iq-row .iq-half .iq-spark{height:26px;width:100%}
+/* Sparkline at 75% of the tile width, left-aligned so the leftmost data
+   point lines up with the score value sitting below it. The flex-stretch
+   default would force 100% width; align-self:flex-start opts out. */
+.iq-row .iq-half .iq-spark{height:26px;width:75%;align-self:flex-start}
 .iq-row .iq-half .iq-half-body{
   display:flex;align-items:baseline;gap:14px;min-width:0
 }
