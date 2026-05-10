@@ -70,8 +70,8 @@ pub struct EvalResult {
 }
 
 /// Output of `Teacher::enrich_topic_from_conversation` — what to merge back
-/// into a topic after a "Teach Me Copy & Go" conversation lands via the
-/// browser extension.
+/// into a topic after a "Teach Me Copy & Go" conversation is pasted back
+/// into the topic card's capture surface.
 #[derive(Debug, Clone)]
 pub struct EnrichmentResult {
     pub summary: String,
@@ -719,9 +719,9 @@ Respond ONLY with valid JSON — no other text:
     }
 
     /// Mine a captured "Teach Me" conversation for new question-bank items
-    /// and (optionally) a refined description. The browser extension scrapes
-    /// the conversation off the LLM site and POSTs it; the server then asks
-    /// the local LLM to extract durable lessons.
+    /// and (optionally) a refined description. The user pastes the dialogue
+    /// into the topic card's capture surface, which POSTs it to /api/lessons;
+    /// the server then asks the local LLM to extract durable lessons.
     ///
     /// Returns:
     /// - `summary`: one-line takeaway shown on the topic detail card.

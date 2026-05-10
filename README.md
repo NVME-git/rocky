@@ -80,7 +80,6 @@ For **CI / automation**, prefer the underlying skills directly: call `/rocky-che
 |---|---|
 | **Claude Code skills** | The four `/rocky-*` skills do the work — extraction, quizzing, backfill, prompt scoring |
 | **`rocky view`** (web UI) | Recommended quiz interface — graph + IQ banner + voice (local `whisper.cpp`) + Saga timelapse |
-| **Browser extension** | Capture YouTube + articles into your PKG — see [`extensions/browser/`](extensions/browser/) |
 | **Obsidian export** | Markdown notes with Dataview dashboards in your vault |
 | **CLI** | All the primitives the skills compose — useful for scripting, backups, ad-hoc analysis |
 
@@ -96,7 +95,7 @@ A walkthrough video and a hosted example PKG are on the [Demo page](https://nvme
 
 Rocky uses **FSRS** (the same family of spaced-repetition algorithm Anki moved to). Every topic has a `recall_now` score — `retrievability × mastery` — that combines freshness and how well you've actually been answering. Topics decay; Rocky surfaces the right ones at the right moments.
 
-Your **Rocky IQ** is the rolling average across your PKG, scaled 0–100. It's the headline metric in the web UI and the browser extension badge.
+Your **Rocky IQ** is the rolling average across your PKG, scaled 0–100. It's the headline metric in the web UI.
 
 ---
 
@@ -167,9 +166,6 @@ rocky/
 │   │                             #   :::details, ```youtube, terminal-chrome
 │   ├── public/                   # PWA manifest, icons, favicon
 │   └── decisions/                # ADRs (Nygard format)
-│
-├── extensions/
-│   └── browser/                  # Chrome MV3 extension — capture YouTube + articles
 │
 ├── scripts/
 │   └── install-whisper.sh        # one-shot local STT install

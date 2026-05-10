@@ -73,9 +73,9 @@ pub struct Review {
 }
 
 /// A captured LLM conversation tied to a topic — the return trip from
-/// "Teach Me Copy & Go". The browser extension scrapes the conversation off
-/// the LLM site and POSTs it to /api/lessons; the server enriches the topic
-/// (refines description + appends new question-bank items) via the Teacher.
+/// "Teach Me Copy & Go". The user pastes the dialogue into the topic card's
+/// capture surface, which POSTs it to /api/lessons; the server enriches the
+/// topic (refines description + appends new question-bank items) via Teacher.
 #[derive(Debug, Clone)]
 pub struct Lesson {
     pub id: String,
