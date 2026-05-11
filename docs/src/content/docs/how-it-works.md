@@ -22,7 +22,7 @@ The motivation: a single commit message like *"feat: rotate refresh tokens"* is 
 
 ### Inspecting what was generated
 
-The web UI is the canonical viewer — see **Quick Start → Step 3** for screenshots of each tab. The Knowledge Map shows the topic graph; the Review Queue surfaces what's most overdue; the Sessions tab lets you scrub through what landed day by day.
+The web UI is the canonical viewer — see **Quick Start → Step 3** for screenshots of each tab. The Knowledge Map shows the topic graph; the Review Queue surfaces what's most overdue; the Saga tab is a cinematic timelapse of the graph growing.
 
 ### Cross-project dedup
 

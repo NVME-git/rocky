@@ -2,6 +2,8 @@
 title: "What is Rocky?"
 order: 1
 ---
+**Rocky is an open-source personal knowledge management platform that helps developers fight AI skill atrophy.**
+
 ## Why it exists
 
 Every senior engineer knows the feeling: you stop writing something by hand, and six months later you can't remember how it works without looking it up. That's normal. That's how memory works.
@@ -11,6 +13,10 @@ What's new is the speed. AI tools don't just accelerate your output — they rem
 This is **AI skill atrophy** — and it compounds silently. You don't notice it until the day the AI gives you the wrong answer and you can't tell.
 
 Rocky exists for one reason: **to shine a light on blind spots in systems developers are responsible for — systems co-created with AI agents.**
+
+![Rocky IQ dashboard](screenshots/rocky-dashboard.png)
+
+See it in action: **[watch the demo →](/rocky/demo/)**
 
 ---
 
@@ -113,20 +119,13 @@ Rocky tracks a **Personal Knowledge Graph (PKG)** — a local database of every 
 
 Knowledge decays. A topic you understood deeply three months ago might be at 25% today — Rocky surfaces it before you trip over it.
 
+![Knowledge Explorer](screenshots/rocky-explore.png)
+
+Want to see the whole loop end-to-end? **[Watch the demo →](/rocky/demo/)**
+
 ---
 
 ## Rocky the alien
-
-```
-     _____
-   .'     '.
-  /  .   .  \
- |  . _____ .|
- |   |     | |
- |   |_____|  |
-  \   .   .  /
-   '.______.'
-```
 
 Rocky has a personality based on Rocky the alien from Andy Weir's [*Project Hail Mary*](https://www.imdb.com/title/tt12042730/) — enthusiastic, direct, and genuinely rooting for you.
 

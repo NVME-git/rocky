@@ -48,6 +48,16 @@ const pageTitle = title ? `${title} · Rocky` : 'Rocky · Personal Knowledge Gra
     {/* Tap-to-close backdrop, only active when sidebar is open on mobile. */}
     <div id="backdrop" class="backdrop" aria-hidden="true"></div>
 
+    {/* Lightbox overlay — first click on an article image enlarges in-place;
+        clicking the enlarged image (a "second click") opens the raw file in
+        a new tab. Esc / backdrop / close-button all dismiss. */}
+    <div id="lightbox" class="lightbox" aria-hidden="true" role="dialog">
+      <button id="lightbox-close" class="lightbox-close" type="button" aria-label="Close">×</button>
+      <a id="lightbox-link" class="lightbox-link" href="#" target="_blank" rel="noopener" title="Open full size in new tab">
+        <img id="lightbox-img" alt="" />
+      </a>
+    </div>
+
     <div class="shell">
       <Sidebar activeSlug={activeSlug} />
       <main class="content">
@@ -83,6 +93,45 @@ const pageTitle = title ? `${title} · Rocky` : 'Rocky · Personal Knowledge Gra
       document.querySelectorAll('aside.sidebar a.nav-item').forEach((a) => {
         a.addEventListener('click', close);
       });
+
+      // ── Lightbox ──────────────────────────────────────────────────
+      const lb = document.getElementById('lightbox') as HTMLElement | null;
+      const lbImg = document.getElementById('lightbox-img') as HTMLImageElement | null;
+      const lbLink = document.getElementById('lightbox-link') as HTMLAnchorElement | null;
+      const lbClose = document.getElementById('lightbox-close');
+
+      function openLightbox(src: string, alt: string) {
+        if (!lb || !lbImg || !lbLink) return;
+        lbImg.src = src;
+        lbImg.alt = alt;
+        lbLink.href = src;
+        lb.classList.add('open');
+        lb.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+      }
+      function closeLightbox() {
+        if (!lb) return;
+        lb.classList.remove('open');
+        lb.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+      }
+
+      document.querySelectorAll('article.prose img').forEach((el) => {
+        const img = el as HTMLImageElement;
+        img.classList.add('zoomable');
+        img.addEventListener('click', () => openLightbox(img.src, img.alt));
+      });
+
+      lb?.addEventListener('click', (e) => {
+        // Click on backdrop closes; click bubbling from the anchor/img is
+        // ignored here (anchor's target=_blank handles "open in new tab").
+        if (e.target === lb) closeLightbox();
+      });
+      lbClose?.addEventListener('click', closeLightbox);
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && lb?.classList.contains('open')) closeLightbox();
+      });
     </script>
 
     <style>
@@ -92,6 +141,14 @@ const pageTitle = title ? `${title} · Rocky` : 'Rocky · Personal Knowledge Gra
         max-width: 860px;
         margin: 0 auto;
         padding: 40px 48px;
+      }
+      /* Widen the reading column on larger screens — capped so line length
+         stays readable (we never go past ~80ch even on a 4K display). */
+      @media (min-width: 1280px) {
+        .content-inner { max-width: 1040px; }
+      }
+      @media (min-width: 1536px) {
+        .content-inner { max-width: 1200px; padding: 48px 64px; }
       }
 
       /* ── Mobile-only topbar ──────────────────────────────────────── */
@@ -166,6 +223,93 @@ const pageTitle = title ? `${title} · Rocky` : 'Rocky · Personal Knowledge Gra
         :global(body.sidebar-open) {
           overflow: hidden;
         }
+      }
+
+      /* ── Side-by-side panel row for demo screenshots ─────────────── */
+      :global(article.prose .topic-row) {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin: 24px 0;
+        align-items: start;
+      }
+      :global(article.prose .topic-row > div) {
+        display: flex;
+        flex-direction: column;
+      }
+      :global(article.prose .topic-row p) {
+        font-size: 0.85rem;
+        margin: 8px 0 0;
+        line-height: 1.55;
+      }
+      :global(article.prose .topic-row img) {
+        width: 100%;
+        height: auto;
+        align-self: start;
+      }
+      @media (max-width: 1100px) {
+        :global(article.prose .topic-row) { grid-template-columns: repeat(2, 1fr); }
+      }
+      @media (max-width: 600px) {
+        :global(article.prose .topic-row) { grid-template-columns: 1fr; }
+      }
+
+      /* ── Zoomable inline images ──────────────────────────────────── */
+      :global(article.prose img.zoomable) {
+        cursor: zoom-in;
+        border-radius: 8px;
+        transition: transform 150ms ease;
+      }
+      @media (hover: hover) {
+        :global(article.prose img.zoomable:hover) { transform: scale(1.02); }
+      }
+
+      /* ── Lightbox overlay ────────────────────────────────────────── */
+      .lightbox {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.88);
+        z-index: 100;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+        cursor: zoom-out;
+      }
+      .lightbox.open { display: flex; }
+      .lightbox-link {
+        display: block;
+        max-width: 100%;
+        max-height: 100%;
+        cursor: zoom-in;
+      }
+      .lightbox-link img {
+        max-width: 100%;
+        max-height: calc(100vh - 80px);
+        display: block;
+        border-radius: 8px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+      .lightbox-close {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        width: 40px;
+        height: 40px;
+        border: 0;
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+        font-size: 28px;
+        line-height: 1;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .lightbox-close:hover { background: rgba(255, 255, 255, 0.18); }
+      @media (max-width: 768px) {
+        .lightbox { padding: 16px; }
       }
     </style>
   </body>

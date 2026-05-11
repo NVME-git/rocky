@@ -108,7 +108,7 @@ rocky view
 # ✓ Rocky running at http://127.0.0.1:XXXXX
 ```
 
-Six tabs: **Dashboard** (Rocky IQ banner), **Knowledge Map** (interactive 2-hop wormhole graph), **Review Queue** (one-click *Quiz top 5*), **Sessions**, **Projects**, **Saga** (cinematic timelapse). Voice input via the 🎤 button uses local `whisper.cpp`.
+Four tabs: **Dashboard** (Rocky IQ banner), **Knowledge Map** (interactive 2-hop wormhole graph), **Review Queue** (one-click *Quiz top 5*), **Saga** (cinematic timelapse). Voice input via the 🎤 button uses local `whisper.cpp`.
 
 Environment overrides:
 

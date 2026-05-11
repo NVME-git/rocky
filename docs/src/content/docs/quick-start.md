@@ -63,7 +63,7 @@ rocky view
 
 A local server starts on `127.0.0.1:<random-port>` and your browser opens straight into the **Dashboard**. The first thing you see is your **Rocky IQ** — a single 0–100 number that summarises how well you'd recall everything in your PKG right now.
 
-Six tabs share the same data: **Dashboard**, **Knowledge Map**, **Review Queue**, **Sessions**, **Projects**, **Saga**. Click **Quiz top 5** in the Review Queue (or **Quiz ▶** on a project card) to start a focused session on your weakest topics. Answers go in via keyboard or the 🎤 button (voice is local via `whisper.cpp`; nothing leaves the machine). The IQ banner updates live as your scores come in.
+Four tabs share the same data: **Dashboard**, **Knowledge Map**, **Review Queue**, **Saga**. Click **Quiz top 5** in the Review Queue to start a focused session on your weakest topics. Answers go in via keyboard or the 🎤 button (voice is local via `whisper.cpp`; nothing leaves the machine). The IQ banner updates live as your scores come in.
 
 **Why the browser instead of the terminal?** The graph view turns the PKG from a flat list into something you can actually feel — clusters, gaps, and the shape of what you've learned all become visible. The answer experience is also just nicer: real text wrapping, voice input, instant graph updates, and the IQ dial right there.
 
@@ -77,25 +77,13 @@ Rocky IQ banner with the live score and gradient bar, recent activity, and weake
 
 Interactive 2-hop "wormhole" graph — bounded to ~28 nodes on screen at a time regardless of PKG size. Click any node to warp focus to it. Edges are colour-coded by kind, weakest topics glow for attention.
 
-![Knowledge Map](screenshots/rocky-map.png)
+![Knowledge Explorer](screenshots/rocky-explore.png)
 
 ### Review Queue
 
 Flat list of every topic that needs attention, ranked by `recall_now` ascending. **Quiz top 5** is a single click — the most direct path from "open the app" to "start drilling."
 
 ![Review Queue](screenshots/rocky-queue.png)
-
-### Sessions
-
-What landed in your PKG day by day. Useful for "what did I learn this week?" — and for spotting weeks where nothing went in (a good sign you should check in).
-
-![Sessions](screenshots/rocky-sessions.png)
-
-### Projects
-
-Per-project breakdown — which repos contributed which topics, with cross-project dedup made visible. **Quiz ▶** scopes a session to a single project.
-
-![Projects](screenshots/rocky-projects.png)
 
 The **Saga** tab is a cinematic timelapse of your knowledge graph growing over time — gated behind ~30 days of consistent reviewing as a reward, so it doesn't get a screenshot here.
 
