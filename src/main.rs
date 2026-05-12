@@ -1840,9 +1840,9 @@ fn run_socratic_loop(
         println!("{}{} {display_q}", format!("Q{questions_asked}.").bold(), source_label);
 
         let hint_line = if cli_voice.is_some() {
-            "   🎤 recording — [Enter] to stop  ·  [s] simpler  [h] harder  [c] clue  [?] explain  [x] delete  (override after stop)"
+            "   🎤 recording — [Enter] to stop  ·  [s] simpler  [h] harder  [c] clue  [t] teach me  [x] delete  (override after stop)"
         } else {
-            "   [s] simpler  [h] harder  [c] clue  [?] explain it  [x] delete  or type your answer:"
+            "   [s] simpler  [h] harder  [c] clue  [t] teach me  [x] delete  or type your answer:"
         };
         println!("{}", hint_line.dimmed());
         if cli_voice.is_none() {
@@ -1930,8 +1930,9 @@ fn run_socratic_loop(
         // topics as known without demonstrating mastery. The new metric requires
         // an actual quiz score to drive recall_now upward.
 
-        // Explain it — show explanation, mark with low confidence
-        if answer == "?" {
+        // Teach me — show explanation, mark with low confidence.
+        // `?` is kept as a backwards-compat alias for muscle memory.
+        if answer == "t" || answer == "?" {
             println!("{}", "   Fetching explanation...".dimmed());
             let explanation = teacher.generate_explanation(
                 topic,

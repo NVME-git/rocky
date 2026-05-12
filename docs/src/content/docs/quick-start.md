@@ -146,7 +146,7 @@ At any question:
 - **`s`** — simpler — regenerate at lower difficulty
 - **`h`** — harder — regenerate with edge cases
 - **`c`** — clue — short hint
-- **`?`** — explain it — reveal the ideal answer (records 0.0)
+- **`t`** — teach me — reveal the ideal answer (records 0.0)
 - **`x`** — delete the topic (Rocky confirms first)
 
 Rocky View has the same options as buttons in the quiz modal.
