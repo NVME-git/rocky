@@ -227,6 +227,13 @@ impl Db {
         // Soft-delete: NULL = active, ISO timestamp = sitting in the recycle bin.
         let _ = conn.execute("ALTER TABLE nodes ADD COLUMN discarded_at TEXT", []);
         let _ = conn.execute("CREATE INDEX IF NOT EXISTS nodes_discarded ON nodes(discarded_at)", []);
+        // Backfill: topics created before record_topic_encounter was invoked on
+        // the no-commit path landed with `repo` set but `repos[]` empty. The
+        // invariant is `repos[] ⊇ {repo}` — restore it idempotently.
+        let _ = conn.execute(
+            "UPDATE nodes SET repos = json_array(repo) WHERE repo != '' AND json_array_length(repos) = 0",
+            [],
+        );
         Ok(())
     }
 
@@ -461,12 +468,21 @@ impl Db {
             } else if score < 0.65 {
                 stability *= 0.6;
             }
+            // Seed repos[] with the canonical repo at insert time so the
+            // invariant `repos[] ⊇ {repo}` holds from the first write, even
+            // if no subsequent record_topic_encounter fires (manual add,
+            // legacy callers, etc.).
+            let initial_repos = if repo.is_empty() {
+                "[]".to_string()
+            } else {
+                serde_json::to_string(&[repo])?
+            };
             conn.execute(
                 "INSERT INTO nodes
                     (id, topic, kind, domain, description, difficulty, stability,
-                     last_reviewed, last_encountered, review_count, created_at, repo)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 0.3, ?6, ?7, ?8, 1, ?9, ?10)",
-                params![node_id, topic, kind.as_str(), domain, description, stability, reviewed, reviewed, created_at, repo],
+                     last_reviewed, last_encountered, review_count, created_at, repo, repos)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0.3, ?6, ?7, ?8, 1, ?9, ?10, ?11)",
+                params![node_id, topic, kind.as_str(), domain, description, stability, reviewed, reviewed, created_at, repo, initial_repos],
             )?;
         }
 
